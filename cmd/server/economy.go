@@ -21,7 +21,7 @@ func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
 		var invested, populationCapacity int64
 		rows.Scan(&id, &name, &level, &invested, &slots, &populationCapacity, &used, &industries)
 		expandCost := int64(20000) << max(0, slots-2)
-		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity":populationCapacity,"nextExpansionCost": expandCost, "industries": industries})
+		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity": populationCapacity, "nextExpansionCost": expandCost, "industries": industries})
 	}
 	var cityCount int
 	var last sql.NullTime
@@ -285,12 +285,15 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	dailyCash := int64(baseDaily * employmentFactor * educationFactor * satisfactionFactor * productivityFactor)
 	hourlyCash := dailyCash / 24
 	var populationCapacity int64
-	a.db.QueryRow(r.Context(),`SELECT COALESCE(sum(population_capacity),0) FROM cities WHERE nation_id=?`,nid).Scan(&populationCapacity)
-	dailyPopulationGrowth:=int64(float64(pop)*0.002*satisfactionFactor);hourlyPopulationGrowth:=dailyPopulationGrowth/24
-	if remaining:=populationCapacity-pop;remaining<hourlyPopulationGrowth{hourlyPopulationGrowth=max(int64(0),remaining)}
+	a.db.QueryRow(r.Context(), `SELECT COALESCE(sum(population_capacity),0) FROM cities WHERE nation_id=?`, nid).Scan(&populationCapacity)
+	dailyPopulationGrowth := int64(float64(pop) * 0.002 * satisfactionFactor)
+	hourlyPopulationGrowth := dailyPopulationGrowth / 24
+	if remaining := populationCapacity - pop; remaining < hourlyPopulationGrowth {
+		hourlyPopulationGrowth = max(int64(0), remaining)
+	}
 	now := time.Now().UTC()
 	next := now.Truncate(time.Hour).Add(time.Hour)
-	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "hourlyResources": map[string]int64{"food": food, "coal": coal, "steel": steel}, "dailyResources": map[string]int64{"food": food * 24, "coal": coal * 24, "steel": steel * 24},"population":pop,"populationCapacity":populationCapacity,"hourlyPopulationGrowth":hourlyPopulationGrowth,"dailyPopulationGrowth":hourlyPopulationGrowth*24, "treasury": treasury, "nextTurnAt": next})
+	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "hourlyResources": map[string]int64{"food": food, "coal": coal, "steel": steel}, "dailyResources": map[string]int64{"food": food * 24, "coal": coal * 24, "steel": steel * 24}, "population": pop, "populationCapacity": populationCapacity, "hourlyPopulationGrowth": hourlyPopulationGrowth, "dailyPopulationGrowth": hourlyPopulationGrowth * 24, "treasury": treasury, "nextTurnAt": next})
 }
 
 func (a *app) worldStatus(w http.ResponseWriter, r *http.Request, u user) {

@@ -40,17 +40,20 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		var id string
 		var pop, populationCapacity, food, coal, steel int64
 		var employment, education, satisfaction, technology float64
-		if rows.Scan(&id, &pop, &employment, &education, &satisfaction, &technology,&populationCapacity, &food, &coal, &steel) != nil {
+		if rows.Scan(&id, &pop, &employment, &education, &satisfaction, &technology, &populationCapacity, &food, &coal, &steel) != nil {
 			continue
 		}
 		daily := float64(pop) * 0.02 * (employment / 100) * (0.5 + education/200) * (0.5 + satisfaction/200) * (1 + technology/500)
 		cash := int64(daily) / 24
-		growth:=int64(float64(pop)*0.002*(satisfaction/100))/24;if remaining:=populationCapacity-pop;remaining<growth{growth=max(int64(0),remaining)}
-		payouts = append(payouts, payout{id, cash, food, coal, steel,growth,populationCapacity})
+		growth := int64(float64(pop)*0.002*(satisfaction/100)) / 24
+		if remaining := populationCapacity - pop; remaining < growth {
+			growth = max(int64(0), remaining)
+		}
+		payouts = append(payouts, payout{id, cash, food, coal, steel, growth, populationCapacity})
 	}
 	rows.Close()
 	for _, p := range payouts {
-		if _, err = tx.Exec(ctx, `UPDATE nations SET treasury=treasury+?,food=food+?,coal=coal+?,steel=steel+?,population=LEAST(?,population+?) WHERE id=?`, p.cash, p.food, p.coal, p.steel,p.capacity,p.growth, p.id); err != nil {
+		if _, err = tx.Exec(ctx, `UPDATE nations SET treasury=treasury+?,food=food+?,coal=coal+?,steel=steel+?,population=LEAST(?,population+?) WHERE id=?`, p.cash, p.food, p.coal, p.steel, p.capacity, p.growth, p.id); err != nil {
 			return
 		}
 		if _, err = tx.Exec(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'hourly_income',?,'Hourly economic turn')`, uuid(), p.id, p.cash); err != nil {
