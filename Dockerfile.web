@@ -12,4 +12,4 @@ RUN apt-get update \
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
-CMD ["sh", "-c", "until curl --silent --output /dev/null --connect-timeout 2 http://backend.railway.internal:8080/api/me; do echo 'Waiting for Diplomatia backend...'; sleep 2; done; echo 'Backend reachable; starting frontend.'; exec nginx -g 'daemon off;'"]
+CMD ["sh", "-c", "until curl --fail --silent --output /dev/null --connect-timeout 2 http://backend.railway.internal:8080/api/health; do echo 'Waiting for Diplomatia backend...'; sleep 2; done; echo 'Backend ready; starting frontend.'; exec nginx -g 'daemon off;'"]
