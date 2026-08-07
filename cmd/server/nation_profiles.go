@@ -52,11 +52,11 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 	var id, name, leader, government, continent, motto, capital, userType, allianceID, allianceName string
 	var cityCount int
 	var created time.Time
-	var lastActive *time.Time
-	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,n.owner_id,a.id,a.name`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive)
+	var lastActive, guardianUntil *time.Time
+	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,n.owner_id,a.id,a.name`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive, &guardianUntil)
 	if e != nil {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "allianceID": allianceID, "allianceName": allianceName})
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "allianceID": allianceID, "allianceName": allianceName})
 }
