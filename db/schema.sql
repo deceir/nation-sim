@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS nations (
   name VARCHAR(100) NOT NULL UNIQUE,
 	leader_name VARCHAR(100) NOT NULL,
 	government_type VARCHAR(60) NOT NULL,
-	continent VARCHAR(30) NOT NULL,
+  continent VARCHAR(30) NOT NULL,
+	user_type ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER',
   motto VARCHAR(120) NOT NULL DEFAULT '',
   currency_name VARCHAR(30) NOT NULL DEFAULT 'Yen',
   treasury BIGINT NOT NULL DEFAULT 100000,
@@ -32,6 +33,7 @@ CREATE TABLE IF NOT EXISTS nations (
   technology INT NOT NULL DEFAULT 20 CHECK (technology BETWEEN 0 AND 100),
   quality_of_life INT NOT NULL DEFAULT 45 CHECK (quality_of_life BETWEEN 0 AND 100),
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+	UNIQUE KEY uq_nations_leader_name (leader_name),
   CONSTRAINT fk_nations_owner FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS cities (

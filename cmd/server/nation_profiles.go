@@ -25,7 +25,7 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	q := strings.TrimSpace(r.URL.Query().Get("search"))
 	q = strings.ReplaceAll(strings.ReplaceAll(q, "\\", "\\\\"), "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
-	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,count(c.id) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto ORDER BY n.name LIMIT 100`, q, q, q)
+	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,count(c.id) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type ORDER BY n.name LIMIT 100`, q, q, q)
 	if e != nil {
 		problem(w, 500, "Nation directory unavailable.")
 		return
@@ -33,22 +33,22 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, name, leader, government, continent, motto string
+		var id, name, leader, government, continent, motto, userType string
 		var cityCount int
-		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &cityCount)
-		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "cityCount": cityCount})
+		rows.Scan(&id, &name, &leader, &government, &continent, &motto,&userType, &cityCount)
+		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto,"userType":userType, "cityCount": cityCount})
 	}
 	write(w, 200, out)
 }
 
 func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
-	var id, name, leader, government, continent, motto, capital string
+	var id, name, leader, government, continent, motto, capital,userType string
 	var cityCount int
 	var created time.Time
-	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.created_at,count(c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.created_at`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &created, &cityCount, &capital)
+	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto,&userType, &created, &cityCount, &capital)
 	if e != nil {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "capital": capital, "cityCount": cityCount, "createdAt": created})
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto,"userType":userType, "capital": capital, "cityCount": cityCount, "createdAt": created})
 }

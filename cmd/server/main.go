@@ -85,7 +85,7 @@ func main() {
 }
 
 func (a *app) register(w http.ResponseWriter, r *http.Request) {
-	var in struct{ Email, Password, LeaderName, NationName, Capital, Government, Continent string }
+	var in struct{ Email, Password string }
 	if !decode(w, r, &in) {
 		return
 	}
@@ -103,40 +103,13 @@ func (a *app) register(w http.ResponseWriter, r *http.Request) {
 		problem(w, 500, "Unable to secure the password. Please try again.")
 		return
 	}
-	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.NationName, in.Capital, in.Government, in.Continent})
-	if !ok {
-		problem(w, 400, "Complete the leader, nation, capital, government, and continent fields.")
-		return
-	}
-	tx, err := a.db.Begin(r.Context())
-	if err != nil {
-		problem(w, 500, "Registration unavailable.")
-		return
-	}
-	defer tx.Rollback(r.Context())
-	id, nid, cid, gid := uuid(), uuid(), uuid(), uuid()
-	if _, err = tx.Exec(r.Context(), `INSERT INTO users(id,email,password_hash) VALUES(?,?,?)`, id, email, string(hash)); err != nil {
-		problem(w, 409, "That email or nation name is already registered.")
-		return
-	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name) VALUES(?,?,?,?,?,?,'Yen')`, nid, id, p.NationName, p.LeaderName, p.Government, p.Continent); err != nil {
-		problem(w, 409, "That email or nation name is already registered.")
-		return
-	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, cid, nid, p.Capital); err != nil {
-		problem(w, 500, "Capital creation failed.")
-		return
-	}
-	if _, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(),INTERVAL 30 DAY),'new_nation','system')`, gid, nid); err != nil {
-		problem(w, 500, "Guardian grant failed.")
-		return
-	}
-	if err = tx.Commit(r.Context()); err != nil {
-		problem(w, 500, "Registration could not be completed.")
+	id := uuid()
+	if _, err = a.db.Exec(r.Context(), `INSERT INTO users(id,email,password_hash) VALUES(?,?,?)`, id, email, string(hash)); err != nil {
+		problem(w, 409, "That email is already registered.")
 		return
 	}
 	a.newSession(w, r, id)
-	write(w, 201, map[string]any{"needsNation": false, "nationID": nid})
+	write(w, 201, map[string]any{"needsNation": true})
 }
 func (a *app) login(w http.ResponseWriter, r *http.Request) {
 	var in struct{ Email, Password string }
@@ -167,12 +140,12 @@ func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) 
 
 func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	var n struct {
-		ID, Name, Motto, Currency, LeaderName, Government, Continent string
+		ID, Name, Motto, Currency, LeaderName, Government, Continent, UserType string
 		Treasury, Coal, Steel, Food, Population                      int64
 		Happiness, Education, Technology, QOL                        int
 		GuardianUntil                                                *time.Time
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent,&n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
@@ -198,8 +171,10 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	defer tx.Rollback(r.Context())
 	nid, cid, gid := uuid(), uuid(), uuid()
-	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name) VALUES(?,?,?,?,?,?,'Yen')`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent); err != nil {
-		problem(w, 409, "Nation name unavailable or you already have a nation.")
+	userType := "PLAYER"
+	if strings.EqualFold(p.NationName, "Japan") { userType = "DEV" }
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name,user_type) VALUES(?,?,?,?,?,?,'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, userType); err != nil {
+		problem(w, 409, "That nation or leader name is already taken, or this account already has a nation.")
 		return
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?);`, cid, nid, p.Capital)

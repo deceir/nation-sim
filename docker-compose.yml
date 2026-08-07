@@ -13,6 +13,12 @@ services:
     build: {context: ., dockerfile: Dockerfile.api}
     environment: {DATABASE_URL: "diplomatia:diplomatia@tcp(db:3306)/diplomatia?parseTime=true&multiStatements=true", COOKIE_SECURE: "false"}
     depends_on: {migrate: {condition: service_completed_successfully}}
+  feeder:
+    profiles: [tools]
+    build: {context: ., dockerfile: Dockerfile.api}
+    command: [./feed]
+    environment: {DATABASE_URL: "diplomatia:diplomatia@tcp(db:3306)/diplomatia?parseTime=true"}
+    depends_on: {migrate: {condition: service_completed_successfully}}
   web:
     build: {context: ., dockerfile: Dockerfile.web}
     ports: ["3000:80"]
