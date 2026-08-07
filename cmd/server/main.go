@@ -61,6 +61,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/register", a.register)
 	mux.HandleFunc("POST /api/auth/login", a.login)
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
+	mux.HandleFunc("GET /api/health", a.health)
 	mux.HandleFunc("GET /api/me", a.auth(a.me))
 	mux.HandleFunc("PATCH /api/user/settings", a.auth(a.userSettings))
 	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
@@ -100,6 +101,16 @@ func main() {
 	go a.runHourlyTurns()
 	log.Printf("api listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, logging(cors(mux))))
+}
+
+func (a *app) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	if err := a.db.PingContext(ctx); err != nil {
+		problem(w, http.StatusServiceUnavailable, "Database unavailable.")
+		return
+	}
+	write(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (a *app) register(w http.ResponseWriter, r *http.Request) {
