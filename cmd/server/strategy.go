@@ -438,6 +438,7 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 }
 
 func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult) error {
+	produced := []string{}
 	for _, commodity := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		hourly := result.Production[commodity] / 24
 		if hourly <= 0 {
@@ -446,9 +447,7 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 		if _, e := tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, commodity, hourly); e != nil {
 			return e
 		}
-		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Resource production',?)`, uuid(), nid, fmt.Sprintf("You earned %.2f %s last turn.", hourly, commodityName(commodity))); e != nil {
-			return e
-		}
+		produced = append(produced, fmt.Sprintf("%.2f %s", hourly, commodityName(commodity)))
 	}
 	for _, commodity := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 		wanted := result.Production[commodity] / 24
@@ -472,7 +471,11 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 		if _, e := tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, commodity, actual); e != nil {
 			return e
 		}
-		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Resource production',?)`, uuid(), nid, fmt.Sprintf("You earned %.2f %s last turn.", actual, commodityName(commodity))); e != nil {
+		produced = append(produced, fmt.Sprintf("%.2f %s", actual, commodityName(commodity)))
+	}
+	if len(produced) > 0 {
+		message := "Last turn you produced: " + strings.Join(produced, ", ") + "."
+		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Turn production summary',?)`, uuid(), nid, message); e != nil {
 			return e
 		}
 	}
