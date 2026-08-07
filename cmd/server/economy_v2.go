@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -15,6 +16,21 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	result := calculateEconomy(n)
+	if strategy, e := a.loadStrategy(r.Context(), nid); e == nil {
+		strategic := calculateStrategy(strategy)
+		result.DailyTax *= strategic.IncomeMultiplier
+		result.NetDailyCash = result.DailyTax - result.DailyUpkeep
+		for i := range result.Cities {
+			result.Cities[i].TaxRevenue *= strategic.IncomeMultiplier
+		}
+		result.Contributors["economicGearIncome"] = strategic.IncomeMultiplier
+	}
+	alliance := map[string]any{"name": "", "taxRate": float64(0), "projectedDailyTax": int64(0)}
+	var allianceName string
+	var allianceRate float64
+	if a.db.QueryRowContext(r.Context(), `SELECT a.name,a.tax_rate FROM alliance_members m JOIN alliances a ON a.id=m.alliance_id WHERE m.nation_id=?`, nid).Scan(&allianceName, &allianceRate) == nil {
+		alliance = map[string]any{"name": allianceName, "taxRate": allianceRate, "projectedDailyTax": int64(math.Max(0, result.NetDailyCash) * allianceRate / 100)}
+	}
 	types := make([]map[string]any, 0, len(buildings))
 	keys := make([]string, 0, len(buildings))
 	for k := range buildings {
@@ -38,7 +54,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var totalInfra float64
 	a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, nid).Scan(&totalInfra)
 	slots := int(totalInfra / 300)
-	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
+	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
 }
 
 func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (ModelNation, string, int64, error) {

@@ -71,9 +71,15 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, cost, nid)
-	if _, e := tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, uuid(), nid, in.Name); e != nil {
+	provinceID := uuid()
+	if _, e := tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, provinceID, nid, in.Name); e != nil {
 		problem(w, 409, "That city name is unavailable.")
 		return
+	}
+	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id) VALUES(?)`, provinceID)
+	for _, resource := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
+		richness := .8 + float64(len(in.Name+resource)%8)/10
+		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,?)`, provinceID, resource, richness)
 	}
 	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'city_founding',?,?)`, uuid(), nid, -cost, "Founded "+in.Name)
 	tx.Commit(r.Context())
@@ -192,78 +198,6 @@ func (a *app) investIndustry(w http.ResponseWriter, r *http.Request, u user) {
 	tx.Exec(r.Context(), `INSERT INTO city_industries(id,city_id,resource,level,total_invested) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE level=level+1,total_invested=total_invested+VALUES(total_invested)`, uuid(), in.CityID, in.Resource, 1, cost)
 	tx.Exec(r.Context(), `INSERT INTO city_investments(id,city_id,nation_id,program,amount) VALUES(?,?,?,?,?)`, uuid(), in.CityID, nid, "industry_"+in.Resource, cost)
 	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'industry',?,?)`, uuid(), nid, -cost, "Expanded "+in.Resource+" production")
-	tx.Commit(r.Context())
-	write(w, 200, map[string]any{"ok": true, "cost": cost})
-}
-
-var techPrograms = map[string]string{"artificial_intelligence": "Artificial intelligence research", "cybersecurity": "National cybersecurity", "biotechnology": "Biotechnology and genomics", "renewable_energy": "Renewable energy systems", "advanced_manufacturing": "Advanced manufacturing", "space_systems": "Space and satellite systems"}
-
-func (a *app) technology(w http.ResponseWriter, r *http.Request, u user) {
-	var nationalToday int
-	a.db.QueryRow(r.Context(), `SELECT count(*) FROM technology_investments t JOIN nations n ON n.id=t.nation_id WHERE n.owner_id=? AND t.created_at>=CURRENT_DATE()`, u.ID).Scan(&nationalToday)
-	rows, e := a.db.Query(r.Context(), `SELECT t.program,count(*),COALESCE(sum(t.amount),0),sum(t.created_at>=CURRENT_DATE()) FROM technology_investments t JOIN nations n ON n.id=t.nation_id WHERE n.owner_id=? GROUP BY t.program`, u.ID)
-	if e != nil {
-		problem(w, 500, "Programs unavailable.")
-		return
-	}
-	defer rows.Close()
-	progress := map[string]map[string]any{}
-	for rows.Next() {
-		var key string
-		var total, today int
-		var spent int64
-		rows.Scan(&key, &total, &spent, &today)
-		progress[key] = map[string]any{"total": total, "today": today, "spent": spent}
-	}
-	out := []map[string]any{}
-	for key, name := range techPrograms {
-		p := progress[key]
-		if p == nil {
-			p = map[string]any{"total": 0, "today": 0, "spent": int64(0)}
-		}
-		p["key"] = key
-		p["name"] = name
-		p["today"] = nationalToday
-		p["dailyLimit"] = 3
-		p["overallLimit"] = 20
-		out = append(out, p)
-	}
-	write(w, 200, out)
-}
-
-func (a *app) investTechnology(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Program string }
-	if !decode(w, r, &in) {
-		return
-	}
-	if techPrograms[in.Program] == "" {
-		problem(w, 400, "Unknown technology program.")
-		return
-	}
-	tx, _ := a.db.Begin(r.Context())
-	defer tx.Rollback(r.Context())
-	var nid string
-	var cash int64
-	var total, today int
-	if tx.QueryRow(r.Context(), `SELECT n.id,n.treasury,(SELECT count(*) FROM technology_investments WHERE nation_id=n.id AND program=?),(SELECT count(*) FROM technology_investments WHERE nation_id=n.id AND created_at>=CURRENT_DATE()) FROM nations n WHERE owner_id=? FOR UPDATE`, in.Program, u.ID).Scan(&nid, &cash, &total, &today) != nil {
-		return
-	}
-	if today >= 3 {
-		problem(w, 429, "Your nation has reached its three technology investments for today.")
-		return
-	}
-	if total >= 20 {
-		problem(w, 409, "This program has reached its overall investment limit.")
-		return
-	}
-	cost := int64(25000 * (total + 1))
-	if cash < cost {
-		problem(w, 409, "Insufficient treasury.")
-		return
-	}
-	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-?,technology=LEAST(100,technology+1) WHERE id=?`, cost, nid)
-	tx.Exec(r.Context(), `INSERT INTO technology_investments(id,nation_id,program,amount) VALUES(?,?,?,?)`, uuid(), nid, in.Program, cost)
-	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'technology',?,?)`, uuid(), nid, -cost, techPrograms[in.Program])
 	tx.Commit(r.Context())
 	write(w, 200, map[string]any{"ok": true, "cost": cost})
 }

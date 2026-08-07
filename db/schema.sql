@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS users (
   id CHAR(36) PRIMARY KEY,
   email VARCHAR(320) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
+  theme_preference ENUM('dark','light') NOT NULL DEFAULT 'dark',
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS sessions (
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS cities (
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS city_investments (id CHAR(36) PRIMARY KEY,city_id CHAR(36) NOT NULL,nation_id CHAR(36) NOT NULL,program VARCHAR(40) NOT NULL,amount BIGINT NOT NULL,created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),CONSTRAINT fk_city_investment_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE,CONSTRAINT fk_city_investment_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,INDEX idx_city_investments_daily(nation_id,created_at)) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS city_industries (id CHAR(36) PRIMARY KEY,city_id CHAR(36) NOT NULL,resource ENUM('coal','steel','food') NOT NULL,level INT NOT NULL DEFAULT 1,total_invested BIGINT NOT NULL,UNIQUE KEY uq_city_industry(city_id,resource),CONSTRAINT fk_industries_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE) ENGINE=InnoDB;
-CREATE TABLE IF NOT EXISTS technology_investments (id CHAR(36) PRIMARY KEY,nation_id CHAR(36) NOT NULL,program VARCHAR(50) NOT NULL,amount BIGINT NOT NULL,created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),CONSTRAINT fk_technology_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,INDEX idx_technology_limits(nation_id,program,created_at)) ENGINE=InnoDB;
+DROP TABLE IF EXISTS technology_investments;
 CREATE TABLE IF NOT EXISTS economy_turns (turn_at DATETIME PRIMARY KEY,processed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),nations_processed INT NOT NULL DEFAULT 0) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS guardian_grants (
   id CHAR(36) PRIMARY KEY,
@@ -132,4 +133,180 @@ CREATE TABLE IF NOT EXISTS economic_snapshots (
   breakdown JSON NOT NULL,
   UNIQUE KEY uq_economic_snapshot (nation_id, turn_at),
   CONSTRAINT fk_snapshots_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliances (
+  id CHAR(36) PRIMARY KEY,
+  founder_nation_id CHAR(36) NOT NULL,
+  name VARCHAR(80) NOT NULL UNIQUE,
+  description VARCHAR(1000) NOT NULL DEFAULT '',
+  emblem_url VARCHAR(500) NOT NULL DEFAULT '',
+  community_url VARCHAR(500) NOT NULL DEFAULT '',
+  join_policy ENUM('open','apply','invite_only') NOT NULL DEFAULT 'apply',
+  minimum_cities INT NOT NULL DEFAULT 1,
+  minimum_age_days INT NOT NULL DEFAULT 0,
+  minimum_infrastructure INT NOT NULL DEFAULT 0,
+  tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  level INT NOT NULL DEFAULT 1,
+  experience BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_alliance_founder FOREIGN KEY(founder_nation_id) REFERENCES nations(id),
+  CHECK(tax_rate BETWEEN 0 AND 100)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_roles (
+  id CHAR(36) PRIMARY KEY,
+  alliance_id CHAR(36) NOT NULL,
+  title VARCHAR(60) NOT NULL,
+  rank_order INT NOT NULL,
+  can_manage_bank BOOLEAN NOT NULL DEFAULT FALSE,
+  can_set_tax BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_members BOOLEAN NOT NULL DEFAULT FALSE,
+  can_declare_war BOOLEAN NOT NULL DEFAULT FALSE,
+  can_post_announcements BOOLEAN NOT NULL DEFAULT FALSE,
+  daily_withdrawal_limit BIGINT NOT NULL DEFAULT 0,
+  UNIQUE KEY uq_alliance_role_title(alliance_id,title),
+  CONSTRAINT fk_alliance_roles_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_members (
+  alliance_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  role_id CHAR(36) NOT NULL,
+  cash_contributed BIGINT NOT NULL DEFAULT 0,
+  resources_contributed BIGINT NOT NULL DEFAULT 0,
+  joined_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(alliance_id,nation_id),
+  UNIQUE KEY uq_nation_alliance(nation_id),
+  CONSTRAINT fk_members_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_members_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_members_role FOREIGN KEY(role_id) REFERENCES alliance_roles(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_applications (
+  id CHAR(36) PRIMARY KEY,
+  alliance_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  message VARCHAR(500) NOT NULL DEFAULT '',
+  status ENUM('pending','accepted','rejected','withdrawn') NOT NULL DEFAULT 'pending',
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  resolved_at TIMESTAMP(6) NULL,
+  resolved_by CHAR(36) NULL,
+  INDEX idx_alliance_applications(alliance_id,status,created_at),
+  CONSTRAINT fk_applications_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_applications_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_bank (
+  alliance_id CHAR(36) PRIMARY KEY,
+  cash BIGINT NOT NULL DEFAULT 0, food BIGINT NOT NULL DEFAULT 0, coal BIGINT NOT NULL DEFAULT 0,
+  iron BIGINT NOT NULL DEFAULT 0, oil BIGINT NOT NULL DEFAULT 0, bauxite BIGINT NOT NULL DEFAULT 0,
+  steel BIGINT NOT NULL DEFAULT 0, aluminum BIGINT NOT NULL DEFAULT 0, gasoline BIGINT NOT NULL DEFAULT 0,
+  munitions BIGINT NOT NULL DEFAULT 0, uranium BIGINT NOT NULL DEFAULT 0,
+  CONSTRAINT fk_alliance_bank_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_bank_transactions (
+  id CHAR(36) PRIMARY KEY, alliance_id CHAR(36) NOT NULL, actor_nation_id CHAR(36) NULL,
+  recipient_nation_id CHAR(36) NULL, kind ENUM('deposit','withdrawal','grant','tax','loan','repayment') NOT NULL,
+  resource VARCHAR(30) NOT NULL, amount BIGINT NOT NULL, memo VARCHAR(255) NOT NULL DEFAULT '',
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_alliance_bank_log(alliance_id,created_at),
+  CONSTRAINT fk_bank_log_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_stockpiles (
+  alliance_id CHAR(36) NOT NULL,
+  commodity VARCHAR(40) NOT NULL,
+  amount DECIMAL(20,3) NOT NULL DEFAULT 0,
+  PRIMARY KEY(alliance_id,commodity),
+  CONSTRAINT fk_alliance_stockpiles_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_announcements (
+  id CHAR(36) PRIMARY KEY, alliance_id CHAR(36) NOT NULL, author_nation_id CHAR(36) NOT NULL,
+  title VARCHAR(120) NOT NULL, body TEXT NOT NULL, created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_announcements_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_loans (
+  id CHAR(36) PRIMARY KEY, alliance_id CHAR(36) NOT NULL, nation_id CHAR(36) NOT NULL,
+  principal BIGINT NOT NULL, outstanding BIGINT NOT NULL, interest_rate DECIMAL(6,3) NOT NULL DEFAULT 0,
+  status ENUM('active','repaid','defaulted','forgiven') NOT NULL DEFAULT 'active', due_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_loans_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_treaties (
+  id CHAR(36) PRIMARY KEY, alliance_a_id CHAR(36) NOT NULL, alliance_b_id CHAR(36) NOT NULL,
+  treaty_type ENUM('NAP','MDP','MDoAP','protectorate','trade') NOT NULL, status ENUM('proposed','active','cancelled') NOT NULL DEFAULT 'proposed',
+  terms TEXT NOT NULL, created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS nation_economic_strategy (
+  nation_id CHAR(36) PRIMARY KEY,
+  gear ENUM('balanced','agrarian','industrial','commercial','militarized') NOT NULL DEFAULT 'balanced',
+  political_capital DECIMAL(10,3) NOT NULL DEFAULT 100,
+  gear_changed_at TIMESTAMP(6) NULL,
+  disruption_until TIMESTAMP(6) NULL,
+  CONSTRAINT fk_strategy_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS province_economies (
+  city_id CHAR(36) PRIMARY KEY,
+  specialization ENUM('mixed','agriculture','extraction','industry','commerce','military') NOT NULL DEFAULT 'mixed',
+  development_level INT NOT NULL DEFAULT 1,
+  latitude DECIMAL(9,6) NOT NULL DEFAULT 0,
+  longitude DECIMAL(9,6) NOT NULL DEFAULT 0,
+  CONSTRAINT fk_province_economy_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS province_deposits (
+  city_id CHAR(36) NOT NULL,
+  resource ENUM('foodstuffs','timber','fibers','basic_metals','energy','strategic_minerals') NOT NULL,
+  richness DECIMAL(6,3) NOT NULL,
+  PRIMARY KEY(city_id,resource),
+  CONSTRAINT fk_deposits_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS nation_stockpiles (
+  nation_id CHAR(36) NOT NULL,
+  commodity VARCHAR(40) NOT NULL,
+  amount DECIMAL(20,3) NOT NULL DEFAULT 0,
+  PRIMARY KEY(nation_id,commodity),
+  CONSTRAINT fk_stockpiles_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS social_policy_selections (
+  nation_id CHAR(36) NOT NULL,
+  policy_key VARCHAR(50) NOT NULL,
+  activated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(nation_id,policy_key),
+  CONSTRAINT fk_social_policy_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS production_quotas (
+  nation_id CHAR(36) NOT NULL,
+  commodity VARCHAR(40) NOT NULL,
+  priority DECIMAL(5,2) NOT NULL DEFAULT 0,
+  PRIMARY KEY(nation_id,commodity),
+  CONSTRAINT fk_quotas_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS trade_shipments (
+  id CHAR(36) PRIMARY KEY,
+  seller_nation_id CHAR(36) NOT NULL,
+  buyer_nation_id CHAR(36) NOT NULL,
+  commodity VARCHAR(40) NOT NULL,
+  quantity DECIMAL(20,3) NOT NULL,
+  unit_price BIGINT NOT NULL,
+  distance_km DECIMAL(12,3) NOT NULL,
+  shipping_cost BIGINT NOT NULL,
+  status ENUM('preparing','in_transit','delivered','disrupted','cancelled') NOT NULL DEFAULT 'preparing',
+  departs_at TIMESTAMP(6) NULL,
+  arrives_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_shipments_arrival(status,arrives_at),
+  CONSTRAINT fk_shipments_seller FOREIGN KEY(seller_nation_id) REFERENCES nations(id),
+  CONSTRAINT fk_shipments_buyer FOREIGN KEY(buyer_nation_id) REFERENCES nations(id)
 ) ENGINE=InnoDB;

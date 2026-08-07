@@ -30,14 +30,16 @@ The feeder runs automatically after migrations and before the API starts. It cre
 - Yen-denominated currency displays
 - Extendable Guardian grants
 - Cities with improvement slots, escalating expansion, population capacity, and founding cooldowns
-- Realistic technology programs with daily and lifetime limits
 - Hourly cash, resource, and happiness-driven population turns
 - Income and population projections
 - Player-set market order book
 - Raid and war declaration foundations
+- Player-created Alliances with membership policies, granular leadership roles, applications, shared cash/resource banks, controlled withdrawals, auditable transactions, and automatic income taxes
 
 ## Economic model
 
 The economic engine is deterministic and resolved in 24 hourly turns per day. Each city has independently purchased Infrastructure and Land, one improvement slot per 50 Infrastructure, local population, commerce, power, pollution, disease, and crime. The national layer controls taxation (10–45%), doctrine, Technology, Education, Happiness, treasury, and resource stockpiles.
 
 Balance constants and improvement data live in `cmd/server/economy_model.go`. The Cities and Income tabs expose the same audited calculation used by the turn runner, including tax revenue, upkeep, effective population, power constraints, health and crime multipliers, production, and the target Happiness calculation.
+
+The current strategic layer is defined in `cmd/server/strategy.go`: cities are presented as Provinces, geography creates local deposit richness, national Gear and up to two Social Policies shape multipliers, Province specializations provide local identity, and production quotas convert primary resources into national commodities. Gear changes cost political capital, impose a 24-hour disruption, reduce Happiness, and have a seven-day cooldown. Secondary production consumes its required stockpile inputs during hourly turns.

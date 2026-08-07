@@ -44,7 +44,7 @@ func (t *transaction) Rollback(context.Context) error { return t.Tx.Rollback() }
 func (t *transaction) Commit(context.Context) error   { return t.Tx.Commit() }
 
 type app struct{ db *database }
-type user struct{ ID, Email string }
+type user struct{ ID, Email, ThemePreference string }
 
 func main() {
 	raw, err := sql.Open("mysql", env("DATABASE_URL", "diplomatia:diplomatia@tcp(localhost:3306)/diplomatia?parseTime=true&multiStatements=true"))
@@ -62,6 +62,7 @@ func main() {
 	mux.HandleFunc("POST /api/auth/login", a.login)
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
 	mux.HandleFunc("GET /api/me", a.auth(a.me))
+	mux.HandleFunc("PATCH /api/user/settings", a.auth(a.userSettings))
 	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
@@ -71,19 +72,30 @@ func main() {
 	mux.HandleFunc("POST /api/cities/invest", a.auth(a.investCity))
 	mux.HandleFunc("POST /api/cities/expand", a.auth(a.expandCity))
 	mux.HandleFunc("POST /api/cities/industry", a.auth(a.investIndustry))
-	mux.HandleFunc("GET /api/technology", a.auth(a.technology))
-	mux.HandleFunc("POST /api/technology/invest", a.auth(a.investTechnology))
 	mux.HandleFunc("GET /api/income", a.auth(a.income))
 	mux.HandleFunc("GET /api/economy", a.auth(a.economyDashboard))
 	mux.HandleFunc("POST /api/economy/development", a.auth(a.buyDevelopment))
 	mux.HandleFunc("POST /api/economy/improvements", a.auth(a.buildImprovement))
 	mux.HandleFunc("PATCH /api/economy/policy", a.auth(a.economicPolicy))
 	mux.HandleFunc("POST /api/economy/projects", a.auth(a.completeProject))
+	mux.HandleFunc("GET /api/strategy", a.auth(a.strategyDashboard))
+	mux.HandleFunc("PATCH /api/strategy/gear", a.auth(a.setGear))
+	mux.HandleFunc("PATCH /api/strategy/policies", a.auth(a.setPolicies))
+	mux.HandleFunc("PATCH /api/strategy/province", a.auth(a.setProvinceStrategy))
+	mux.HandleFunc("PATCH /api/strategy/quotas", a.auth(a.setQuotas))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
 	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
+	mux.HandleFunc("GET /api/alliances", a.auth(a.allianceDirectory))
+	mux.HandleFunc("POST /api/alliances", a.auth(a.createAlliance))
+	mux.HandleFunc("GET /api/alliances/{id}", a.auth(a.allianceDetail))
+	mux.HandleFunc("PATCH /api/alliances/{id}", a.auth(a.updateAlliance))
+	mux.HandleFunc("POST /api/alliances/{id}/apply", a.auth(a.applyAlliance))
+	mux.HandleFunc("GET /api/alliances/{id}/applications", a.auth(a.allianceApplications))
+	mux.HandleFunc("POST /api/alliances/{id}/applications/{applicationID}/accept", a.auth(a.acceptAllianceApplication))
+	mux.HandleFunc("POST /api/alliances/{id}/bank", a.auth(a.allianceBankTransfer))
 	addr := ":" + env("PORT", "8080")
 	go a.runHourlyTurns()
 	log.Printf("api listening on %s", addr)
@@ -138,6 +150,21 @@ func (a *app) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "session", MaxAge: -1, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	w.WriteHeader(204)
 }
+func (a *app) userSettings(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Theme string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Theme != "dark" && in.Theme != "light" {
+		problem(w, 400, "Theme must be dark or light.")
+		return
+	}
+	if _, e := a.db.ExecContext(r.Context(), `UPDATE users SET theme_preference=? WHERE id=?`, in.Theme, u.ID); e != nil {
+		problem(w, 500, "Settings could not be saved.")
+		return
+	}
+	write(w, 200, map[string]bool{"ok": true})
+}
 func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) {
 	token := random(32)
 	a.db.Exec(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,DATE_ADD(NOW(), INTERVAL 30 DAY))`, digest(token), userID)
@@ -146,12 +173,12 @@ func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) 
 
 func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	var n struct {
-		ID, Name, Motto, Currency, LeaderName, Government, Continent, UserType string
-		Treasury, Coal, Steel, Food, Population                                int64
-		Happiness, Education, Technology, QOL                                  int
-		GuardianUntil                                                          *time.Time
+		ID, Name, Motto, Currency, LeaderName, Government, Continent, UserType                              string
+		Treasury, Coal, Steel, Food, Iron, Oil, Bauxite, Aluminum, Gasoline, Munitions, Uranium, Population int64
+		Happiness, Education, Technology, QOL                                                               int
+		GuardianUntil                                                                                       *time.Time
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
@@ -186,6 +213,18 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	if err != nil {
 		problem(w, 400, "Could not create capital.")
 		return
+	}
+	tx.Exec(r.Context(), `INSERT INTO nation_economic_strategy(nation_id) VALUES(?)`, nid)
+	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id) VALUES(?)`, cid)
+	for _, resource := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
+		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,1)`, cid, resource)
+	}
+	for _, commodity := range strategicCommodities {
+		initial := float64(0)
+		if map[string]bool{"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true}[commodity] {
+			initial = 500
+		}
+		tx.Exec(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?)`, nid, commodity, initial)
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 DAY),'new_nation','system')`, gid, nid)
 	if err != nil {
@@ -303,7 +342,7 @@ func (a *app) auth(next handler) http.HandlerFunc {
 			return
 		}
 		var u user
-		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email)
+		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.theme_preference FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email, &u.ThemePreference)
 		if e != nil {
 			problem(w, 401, "Session expired.")
 			return
