@@ -21,3 +21,14 @@ func TestValidateFoundingProfile(t *testing.T) {
 		}
 	}
 }
+
+func TestNationUserType(t *testing.T) {
+	for _, name := range []string{"Japan", "JAPAN", " japan "} {
+		if got := nationUserType(name); got != "DEV" {
+			t.Errorf("%q got %s", name, got)
+		}
+	}
+	if got := nationUserType("Republic of Japanica"); got != "PLAYER" {
+		t.Errorf("unexpected DEV designation: %s", got)
+	}
+}

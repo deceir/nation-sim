@@ -141,11 +141,11 @@ func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) 
 func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	var n struct {
 		ID, Name, Motto, Currency, LeaderName, Government, Continent, UserType string
-		Treasury, Coal, Steel, Food, Population                      int64
-		Happiness, Education, Technology, QOL                        int
-		GuardianUntil                                                *time.Time
+		Treasury, Coal, Steel, Food, Population                                int64
+		Happiness, Education, Technology, QOL                                  int
+		GuardianUntil                                                          *time.Time
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent,&n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
@@ -171,8 +171,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	defer tx.Rollback(r.Context())
 	nid, cid, gid := uuid(), uuid(), uuid()
-	userType := "PLAYER"
-	if strings.EqualFold(p.NationName, "Japan") { userType = "DEV" }
+	userType := nationUserType(p.NationName)
 	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name,user_type) VALUES(?,?,?,?,?,?,'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, userType); err != nil {
 		problem(w, 409, "That nation or leader name is already taken, or this account already has a nation.")
 		return

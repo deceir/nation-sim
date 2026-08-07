@@ -11,6 +11,13 @@ var continents = map[string]bool{"Africa": true, "Asia": true, "Europe": true, "
 
 type foundingProfile struct{ LeaderName, NationName, Capital, Government, Continent string }
 
+func nationUserType(name string) string {
+	if strings.EqualFold(strings.TrimSpace(name), "Japan") {
+		return "DEV"
+	}
+	return "PLAYER"
+}
+
 func validateFoundingProfile(p foundingProfile) (foundingProfile, bool) {
 	p.LeaderName = strings.TrimSpace(p.LeaderName)
 	p.NationName = strings.TrimSpace(p.NationName)
@@ -35,20 +42,20 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	for rows.Next() {
 		var id, name, leader, government, continent, motto, userType string
 		var cityCount int
-		rows.Scan(&id, &name, &leader, &government, &continent, &motto,&userType, &cityCount)
-		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto,"userType":userType, "cityCount": cityCount})
+		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &cityCount)
+		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "cityCount": cityCount})
 	}
 	write(w, 200, out)
 }
 
 func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
-	var id, name, leader, government, continent, motto, capital,userType string
+	var id, name, leader, government, continent, motto, capital, userType string
 	var cityCount int
 	var created time.Time
-	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto,&userType, &created, &cityCount, &capital)
+	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &created, &cityCount, &capital)
 	if e != nil {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto,"userType":userType, "capital": capital, "cityCount": cityCount, "createdAt": created})
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created})
 }

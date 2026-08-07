@@ -69,7 +69,9 @@ func feedBot(ctx context.Context, db *sql.DB, bot botNation) (bool, error) {
 		return false, err
 	}
 	if existing > 0 {
-		if _, err := db.ExecContext(ctx, `UPDATE nations SET user_type='BOT' WHERE name=?`, bot.Name); err != nil { return false, err }
+		if _, err := db.ExecContext(ctx, `UPDATE nations SET user_type='BOT' WHERE name=?`, bot.Name); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	tx, err := db.BeginTx(ctx, nil)

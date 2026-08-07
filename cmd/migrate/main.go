@@ -37,7 +37,9 @@ func main() {
 			log.Fatal(err)
 		}
 	}
-	if err = ensureUniqueIndex(db, "nations", "uq_nations_leader_name", "leader_name"); err != nil { log.Fatal(err) }
+	if err = ensureUniqueIndex(db, "nations", "uq_nations_leader_name", "leader_name"); err != nil {
+		log.Fatal(err)
+	}
 	if _, err = db.Exec(`ALTER TABLE nations ALTER COLUMN currency_name SET DEFAULT 'Yen'`); err != nil {
 		log.Fatal(err)
 	}
@@ -58,8 +60,12 @@ func ensureColumn(db *sql.DB, table, column, definition string) error {
 
 func ensureUniqueIndex(db *sql.DB, table, index, column string) error {
 	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?`, table, index).Scan(&count); err != nil { return err }
-	if count > 0 { return nil }
+	if err := db.QueryRow(`SELECT count(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND INDEX_NAME=?`, table, index).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
 	_, err := db.Exec("ALTER TABLE `" + table + "` ADD UNIQUE INDEX `" + index + "` (`" + column + "`)")
 	return err
 }

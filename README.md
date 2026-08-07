@@ -26,6 +26,7 @@ Run `./scripts/feed-bots.ps1` to create five idempotent, uppercase bot nations. 
 
 - Secure account registration, login, cookie sessions, and resumable nation founding
 - Searchable, privacy-limited nation directory and editable cosmetic profiles
+- Server-controlled PLAYER, DEV, and BOT nation classifications
 - Yen-denominated currency displays
 - Extendable Guardian grants
 - Cities with improvement slots, escalating expansion, population capacity, and founding cooldowns
