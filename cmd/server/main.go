@@ -1,0 +1,392 @@
+package main
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type database struct{ *sql.DB }
+type transaction struct{ *sql.Tx }
+
+func (d *database) Exec(c context.Context, q string, a ...any) (sql.Result, error) {
+	return d.ExecContext(c, q, a...)
+}
+func (d *database) Query(c context.Context, q string, a ...any) (*sql.Rows, error) {
+	return d.QueryContext(c, q, a...)
+}
+func (d *database) QueryRow(c context.Context, q string, a ...any) *sql.Row {
+	return d.QueryRowContext(c, q, a...)
+}
+func (d *database) Begin(c context.Context) (*transaction, error) {
+	t, e := d.BeginTx(c, nil)
+	return &transaction{t}, e
+}
+func (t *transaction) Exec(c context.Context, q string, a ...any) (sql.Result, error) {
+	return t.ExecContext(c, q, a...)
+}
+func (t *transaction) QueryRow(c context.Context, q string, a ...any) *sql.Row {
+	return t.QueryRowContext(c, q, a...)
+}
+func (t *transaction) Rollback(context.Context) error { return t.Tx.Rollback() }
+func (t *transaction) Commit(context.Context) error   { return t.Tx.Commit() }
+
+type app struct{ db *database }
+type user struct{ ID, Email string }
+
+func main() {
+	raw, err := sql.Open("mysql", env("DATABASE_URL", "diplomatia:diplomatia@tcp(localhost:3306)/diplomatia?parseTime=true&multiStatements=true"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	db := &database{raw}
+	defer db.Close()
+	if err = db.PingContext(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+	a := &app{db: db}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/auth/register", a.register)
+	mux.HandleFunc("POST /api/auth/login", a.login)
+	mux.HandleFunc("POST /api/auth/logout", a.logout)
+	mux.HandleFunc("GET /api/me", a.auth(a.me))
+	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
+	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
+	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
+	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
+	mux.HandleFunc("GET /api/cities", a.auth(a.cities))
+	mux.HandleFunc("POST /api/cities", a.auth(a.createCity))
+	mux.HandleFunc("POST /api/cities/invest", a.auth(a.investCity))
+	mux.HandleFunc("POST /api/cities/expand", a.auth(a.expandCity))
+	mux.HandleFunc("POST /api/cities/industry", a.auth(a.investIndustry))
+	mux.HandleFunc("GET /api/technology", a.auth(a.technology))
+	mux.HandleFunc("POST /api/technology/invest", a.auth(a.investTechnology))
+	mux.HandleFunc("GET /api/income", a.auth(a.income))
+	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
+	mux.HandleFunc("GET /api/market", a.auth(a.market))
+	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
+	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
+	addr := ":" + env("PORT", "8080")
+	go a.runHourlyTurns()
+	log.Printf("api listening on %s", addr)
+	log.Fatal(http.ListenAndServe(addr, logging(cors(mux))))
+}
+
+func (a *app) register(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Email, Password, LeaderName, NationName, Capital, Government, Continent string }
+	if !decode(w, r, &in) {
+		return
+	}
+	email, err := normalizeEmail(in.Email)
+	if err != nil {
+		problem(w, 400, "Enter a valid email address, such as name@example.com.")
+		return
+	}
+	if err := validatePassword(in.Password); err != nil {
+		problem(w, 400, err.Error())
+		return
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	if err != nil {
+		problem(w, 500, "Unable to secure the password. Please try again.")
+		return
+	}
+	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.NationName, in.Capital, in.Government, in.Continent})
+	if !ok {
+		problem(w, 400, "Complete the leader, nation, capital, government, and continent fields.")
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		problem(w, 500, "Registration unavailable.")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	id, nid, cid, gid := uuid(), uuid(), uuid(), uuid()
+	if _, err = tx.Exec(r.Context(), `INSERT INTO users(id,email,password_hash) VALUES(?,?,?)`, id, email, string(hash)); err != nil {
+		problem(w, 409, "That email or nation name is already registered.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name) VALUES(?,?,?,?,?,?,'Yen')`, nid, id, p.NationName, p.LeaderName, p.Government, p.Continent); err != nil {
+		problem(w, 409, "That email or nation name is already registered.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, cid, nid, p.Capital); err != nil {
+		problem(w, 500, "Capital creation failed.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(),INTERVAL 30 DAY),'new_nation','system')`, gid, nid); err != nil {
+		problem(w, 500, "Guardian grant failed.")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		problem(w, 500, "Registration could not be completed.")
+		return
+	}
+	a.newSession(w, r, id)
+	write(w, 201, map[string]any{"needsNation": false, "nationID": nid})
+}
+func (a *app) login(w http.ResponseWriter, r *http.Request) {
+	var in struct{ Email, Password string }
+	if !decode(w, r, &in) {
+		return
+	}
+	email, emailErr := normalizeEmail(in.Email)
+	var id, hash string
+	if emailErr != nil || a.db.QueryRow(r.Context(), `SELECT id,password_hash FROM users WHERE email=?`, email).Scan(&id, &hash) != nil || bcrypt.CompareHashAndPassword([]byte(hash), []byte(in.Password)) != nil {
+		problem(w, 401, "Email or password is incorrect.")
+		return
+	}
+	a.newSession(w, r, id)
+	write(w, 200, map[string]bool{"ok": true})
+}
+func (a *app) logout(w http.ResponseWriter, r *http.Request) {
+	if c, e := r.Cookie("session"); e == nil {
+		a.db.Exec(r.Context(), `DELETE FROM sessions WHERE token_hash=?`, digest(c.Value))
+	}
+	http.SetCookie(w, &http.Cookie{Name: "session", MaxAge: -1, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	w.WriteHeader(204)
+}
+func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) {
+	token := random(32)
+	a.db.Exec(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,DATE_ADD(NOW(), INTERVAL 30 DAY))`, digest(token), userID)
+	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", HttpOnly: true, Secure: env("COOKIE_SECURE", "") == "true", SameSite: http.SameSiteLaxMode, MaxAge: 2592000})
+}
+
+func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
+	var n struct {
+		ID, Name, Motto, Currency, LeaderName, Government, Continent string
+		Treasury, Coal, Steel, Food, Population                      int64
+		Happiness, Education, Technology, QOL                        int
+		GuardianUntil                                                *time.Time
+	}
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.treasury,n.coal,n.steel,n.food,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()) FROM nations n WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil)
+	if err != nil {
+		write(w, 200, map[string]any{"user": u, "nation": nil})
+		return
+	}
+	write(w, 200, map[string]any{"user": u, "nation": n})
+}
+func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Name, Capital, LeaderName, Government, Continent string }
+	if !decode(w, r, &in) {
+		return
+	}
+	strings.TrimSpace(in.Name)
+	strings.TrimSpace(in.Capital)
+	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.Name, in.Capital, in.Government, in.Continent})
+	if !ok {
+		problem(w, 400, "Nation and capital names are required.")
+		return
+	}
+	tx, err := a.db.Begin(r.Context())
+	if err != nil {
+		problem(w, 500, "Unable to found nation.")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	nid, cid, gid := uuid(), uuid(), uuid()
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name) VALUES(?,?,?,?,?,?,'Yen')`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent); err != nil {
+		problem(w, 409, "Nation name unavailable or you already have a nation.")
+		return
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?);`, cid, nid, p.Capital)
+	if err != nil {
+		problem(w, 400, "Could not create capital.")
+		return
+	}
+	_, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 DAY),'new_nation','system')`, gid, nid)
+	if err != nil {
+		problem(w, 500, "Could not grant Guardian status.")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		problem(w, 500, "Could not found nation.")
+		return
+	}
+	write(w, 201, map[string]any{"id": nid, "guardianDays": 30})
+}
+func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Name, Motto, LeaderName, Government, Continent string }
+	if !decode(w, r, &in) {
+		return
+	}
+	in.Name = strings.TrimSpace(in.Name)
+	in.LeaderName = strings.TrimSpace(in.LeaderName)
+	in.Motto = strings.TrimSpace(in.Motto)
+	if len(in.Name) < 3 || len(in.Name) > 100 || len(in.LeaderName) < 2 || len(in.LeaderName) > 100 || len(in.Motto) > 120 || !governmentTypes[in.Government] || !continents[in.Continent] {
+		problem(w, 400, "Invalid nation profile.")
+		return
+	}
+	_, e := a.db.Exec(r.Context(), `UPDATE nations SET name=?,motto=?,leader_name=?,government_type=?,continent=?,currency_name='Yen' WHERE owner_id=?`, in.Name, in.Motto, in.LeaderName, in.Government, in.Continent, u.ID)
+	if e != nil {
+		problem(w, 400, "Could not save settings.")
+		return
+	}
+	write(w, 200, map[string]bool{"ok": true})
+}
+func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
+	rows, e := a.db.Query(r.Context(), `SELECT o.id,n.name,o.side,o.resource,o.remaining,o.unit_price,o.created_at FROM market_orders o JOIN nations n ON n.id=o.nation_id WHERE o.status='open' ORDER BY o.created_at DESC LIMIT 100`)
+	if e != nil {
+		problem(w, 500, "Market unavailable.")
+		return
+	}
+	defer rows.Close()
+	out := []map[string]any{}
+	for rows.Next() {
+		var id, name, side, res string
+		var qty, price int64
+		var at time.Time
+		rows.Scan(&id, &name, &side, &res, &qty, &price, &at)
+		out = append(out, map[string]any{"id": id, "nation": name, "side": side, "resource": res, "quantity": qty, "unitPrice": price, "createdAt": at})
+	}
+	write(w, 200, out)
+}
+func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct {
+		Side, Resource      string
+		Quantity, UnitPrice int64
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if (in.Side != "buy" && in.Side != "sell") || (in.Resource != "coal" && in.Resource != "steel" && in.Resource != "food") || in.Quantity < 1 || in.UnitPrice < 1 {
+		problem(w, 400, "Invalid order.")
+		return
+	}
+	var nid string
+	if a.db.QueryRow(r.Context(), `SELECT id FROM nations WHERE owner_id=?`, u.ID).Scan(&nid) != nil {
+		problem(w, 409, "Create a nation first.")
+		return
+	}
+	_, e := a.db.Exec(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price) VALUES(?,?,?,?,?,?,?)`, uuid(), nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice)
+	if e != nil {
+		problem(w, 500, "Could not place order.")
+		return
+	}
+	write(w, 201, map[string]bool{"ok": true})
+}
+func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Kind, DefenderID string }
+	if !decode(w, r, &in) {
+		return
+	}
+	if in.Kind != "raid" && in.Kind != "war" {
+		problem(w, 400, "Conflict must be raid or war.")
+		return
+	}
+	tx, _ := a.db.Begin(r.Context())
+	defer tx.Rollback(r.Context())
+	var attacker string
+	if tx.QueryRow(r.Context(), `SELECT id FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&attacker) != nil {
+		problem(w, 409, "Create a nation first.")
+		return
+	}
+	if attacker == in.DefenderID {
+		problem(w, 400, "You cannot attack yourself.")
+		return
+	}
+	var protected bool
+	tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM guardian_grants WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=now() AND expires_at>now())`, in.DefenderID).Scan(&protected)
+	if protected {
+		problem(w, 409, "That nation has Guardian status.")
+		return
+	}
+	res, _ := tx.Exec(r.Context(), `UPDATE guardian_grants SET revoked_at=now(),revoked_reason=CONCAT('initiated_', ?) WHERE nation_id=? AND revoked_at IS NULL AND expires_at>now()`, in.Kind, attacker)
+	_ = res
+	_, e := tx.Exec(r.Context(), `INSERT INTO conflicts(id,kind,attacker_id,defender_id) VALUES(?,?,?,?)`, uuid(), in.Kind, attacker, in.DefenderID)
+	if e != nil {
+		problem(w, 400, "Unable to declare conflict.")
+		return
+	}
+	tx.Commit(r.Context())
+	write(w, 201, map[string]any{"ok": true, "guardianRevoked": true})
+}
+
+type handler func(http.ResponseWriter, *http.Request, user)
+
+func (a *app) auth(next handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		c, e := r.Cookie("session")
+		if e != nil {
+			problem(w, 401, "Sign in required.")
+			return
+		}
+		var u user
+		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email)
+		if e != nil {
+			problem(w, 401, "Session expired.")
+			return
+		}
+		a.db.Exec(r.Context(), `UPDATE sessions SET last_action_at=NOW() WHERE token_hash=?`, digest(c.Value))
+		next(w, r, u)
+	}
+}
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(v); err != nil {
+		problem(w, 400, "Invalid request.")
+		return false
+	}
+	return true
+}
+func write(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
+func problem(w http.ResponseWriter, status int, msg string) {
+	write(w, status, map[string]string{"error": msg})
+}
+func random(n int) string { b := make([]byte, n); rand.Read(b); return hex.EncodeToString(b) }
+func uuid() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	b[6] = (b[6] & 15) | 64
+	b[8] = (b[8] & 63) | 128
+	s := hex.EncodeToString(b)
+	return s[:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:]
+}
+func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+func env(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}
+func cors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		o := r.Header.Get("Origin")
+		if o != "" {
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS")
+		}
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(204)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+func logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+	})
+}
+
+var _ = errors.New
