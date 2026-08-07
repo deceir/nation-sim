@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
+	"math"
 	"time"
 )
 
@@ -17,54 +19,71 @@ func (a *app) runHourlyTurns() {
 
 func (a *app) processHourlyTurn(turn time.Time) {
 	ctx := context.Background()
-	tx, err := a.db.Begin(ctx)
+	// Claiming the timestamp first makes turns idempotent across restarts.
+	if _, err := a.db.ExecContext(ctx, `INSERT INTO economy_turns(turn_at) VALUES(?)`, turn); err != nil {
+		return
+	}
+	rows, err := a.db.QueryContext(ctx, `SELECT owner_id FROM nations ORDER BY id`)
 	if err != nil {
 		return
 	}
-	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `INSERT INTO economy_turns(turn_at) VALUES(?)`, turn); err != nil {
-		return
-	}
-	rows, err := tx.QueryContext(ctx, `SELECT n.id,n.population,n.employment_rate,n.education,n.happiness,n.technology,(SELECT COALESCE(sum(population_capacity),0) FROM cities WHERE nation_id=n.id),COALESCE(sum(CASE i.resource WHEN 'food' THEN i.level*5 ELSE 0 END),0),COALESCE(sum(CASE i.resource WHEN 'coal' THEN i.level*2 ELSE 0 END),0),COALESCE(sum(CASE i.resource WHEN 'steel' THEN i.level ELSE 0 END),0) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN city_industries i ON i.city_id=c.id GROUP BY n.id,n.population,n.employment_rate,n.education,n.happiness,n.technology`)
-	if err != nil {
-		return
-	}
-	count := 0
-	type payout struct {
-		id                      string
-		cash, food, coal, steel int64
-		growth, capacity        int64
-	}
-	payouts := []payout{}
+	owners := []string{}
 	for rows.Next() {
 		var id string
-		var pop, populationCapacity, food, coal, steel int64
-		var employment, education, satisfaction, technology float64
-		if rows.Scan(&id, &pop, &employment, &education, &satisfaction, &technology, &populationCapacity, &food, &coal, &steel) != nil {
-			continue
+		if rows.Scan(&id) == nil {
+			owners = append(owners, id)
 		}
-		daily := float64(pop) * 0.02 * (employment / 100) * (0.5 + education/200) * (0.5 + satisfaction/200) * (1 + technology/500)
-		cash := int64(daily) / 24
-		growth := int64(float64(pop)*0.002*(satisfaction/100)) / 24
-		if remaining := populationCapacity - pop; remaining < growth {
-			growth = max(int64(0), remaining)
-		}
-		payouts = append(payouts, payout{id, cash, food, coal, steel, growth, populationCapacity})
 	}
 	rows.Close()
-	for _, p := range payouts {
-		if _, err = tx.Exec(ctx, `UPDATE nations SET treasury=treasury+?,food=food+?,coal=coal+?,steel=steel+?,population=LEAST(?,population+?) WHERE id=?`, p.cash, p.food, p.coal, p.steel, p.capacity, p.growth, p.id); err != nil {
-			return
+	processed := 0
+	for _, owner := range owners {
+		n, nid, _, e := a.loadEconomicNationContext(ctx, owner)
+		if e != nil {
+			continue
 		}
-		if _, err = tx.Exec(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'hourly_income',?,'Hourly economic turn')`, uuid(), p.id, p.cash); err != nil {
-			return
+		result := calculateEconomy(n)
+		cash := int64(math.Floor(result.NetDailyCash / balance.TurnsPerDay))
+		// Happiness uses inertia; education changes only gradually and can decay.
+		newHappy := clamp(n.Happiness+(result.HappinessTarget-n.Happiness)*.08/balance.TurnsPerDay, 0, 100)
+		newEducation := clamp(n.Education+result.EducationChange/balance.TurnsPerDay, 0, 100)
+		tx, e := a.db.BeginTx(ctx, nil)
+		if e != nil {
+			continue
 		}
-		count++
+		ok := true
+		for _, c := range result.Cities {
+			growthRate := balance.PopulationGrowthRate * (.45 + newHappy/100) * (.85 + newEducation/500) / balance.TurnsPerDay
+			growth := int64(math.Max(0, c.EffectivePopulation*growthRate))
+			_, e = tx.ExecContext(ctx, `UPDATE cities SET local_population=?,commerce_percent=?,power_capacity=?,power_usage=?,pollution=?,disease_rate=?,crime_rate=? WHERE id=?`, int64(c.EffectivePopulation)+growth, c.Commerce, c.PowerCapacity, c.PowerUsage, c.Pollution, c.Disease, c.Crime, c.ID)
+			if e != nil {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			tx.Rollback()
+			continue
+		}
+		prod := func(k string) int64 { return int64(math.Floor(result.Production[k] / balance.TurnsPerDay)) }
+		foodMade := prod("food")
+		foodNeed := int64(math.Ceil(result.Population * balance.FoodPerCitizen / balance.TurnsPerDay))
+		foodDelta := foodMade - foodNeed
+		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,food=GREATEST(0,food+?),coal=coal+?,iron=iron+?,oil=oil+?,bauxite=bauxite+?,steel=steel+?,aluminum=aluminum+?,gasoline=gasoline+? WHERE id=?`, cash, newHappy, newEducation, int64(result.Population), foodDelta, prod("coal"), prod("iron"), prod("oil"), prod("bauxite"), prod("steel"), prod("aluminum"), prod("gasoline"), nid)
+		if e != nil {
+			tx.Rollback()
+			continue
+		}
+		breakdown, _ := json.Marshal(result)
+		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay), int64(result.DailyUpkeep/balance.TurnsPerDay), 0, newHappy, newEducation, breakdown)
+		if e != nil {
+			tx.Rollback()
+			continue
+		}
+		tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'hourly_income',?,'Economic turn: taxes less infrastructure upkeep')`, uuid(), nid, cash)
+		if tx.Commit() == nil {
+			processed++
+		}
 	}
-	tx.Exec(ctx, `UPDATE economy_turns SET nations_processed=? WHERE turn_at=?`, count, turn)
-	if err = tx.Commit(ctx); err != nil {
-		log.Printf("hourly turn failed: %v", err)
-		return
-	}
-	log.Printf("hourly economic turn processed %d nations", count)
+	a.db.ExecContext(ctx, `UPDATE economy_turns SET nations_processed=? WHERE turn_at=?`, processed, turn)
+	log.Printf("hourly economic turn processed %d nations", processed)
 }

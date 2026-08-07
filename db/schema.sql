@@ -100,3 +100,36 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   CONSTRAINT fk_ledger_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   INDEX idx_ledger_nation_time (nation_id, created_at)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS city_improvements (
+  id CHAR(36) PRIMARY KEY,
+  city_id CHAR(36) NOT NULL,
+  building_type VARCHAR(50) NOT NULL,
+  quantity INT NOT NULL DEFAULT 1,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_city_building (city_id, building_type),
+  CONSTRAINT fk_city_improvements_city FOREIGN KEY (city_id) REFERENCES cities(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS national_projects (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  project_type VARCHAR(50) NOT NULL,
+  completed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_nation_project (nation_id, project_type),
+  CONSTRAINT fk_national_projects_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS economic_snapshots (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  turn_at DATETIME NOT NULL,
+  cash_income BIGINT NOT NULL,
+  upkeep BIGINT NOT NULL,
+  population_change BIGINT NOT NULL,
+  happiness DECIMAL(6,3) NOT NULL,
+  education DECIMAL(6,3) NOT NULL,
+  breakdown JSON NOT NULL,
+  UNIQUE KEY uq_economic_snapshot (nation_id, turn_at),
+  CONSTRAINT fk_snapshots_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

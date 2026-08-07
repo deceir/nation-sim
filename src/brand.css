@@ -1,0 +1,10 @@
+.brand b {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.brand b::after {
+  line-height: 1;
+}

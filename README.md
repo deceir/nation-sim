@@ -20,7 +20,7 @@ Nationless accounts resume at step two and never appear in the nation directory.
 
 ## Feed development nations
 
-Run `./scripts/feed-bots.ps1` to create five idempotent, uppercase bot nations. The feeder never creates or reserves Japan.
+The feeder runs automatically after migrations and before the API starts. It creates five missing uppercase bots based on real nations, repairs their `BOT` classification, and never creates or reserves Japan. Run `./scripts/feed-bots.ps1` only when you want a manual recheck.
 
 ## Current systems
 
@@ -35,3 +35,9 @@ Run `./scripts/feed-bots.ps1` to create five idempotent, uppercase bot nations. 
 - Income and population projections
 - Player-set market order book
 - Raid and war declaration foundations
+
+## Economic model
+
+The economic engine is deterministic and resolved in 24 hourly turns per day. Each city has independently purchased Infrastructure and Land, one improvement slot per 50 Infrastructure, local population, commerce, power, pollution, disease, and crime. The national layer controls taxation (10–45%), doctrine, Technology, Education, Happiness, treasury, and resource stockpiles.
+
+Balance constants and improvement data live in `cmd/server/economy_model.go`. The Cities and Income tabs expose the same audited calculation used by the turn runner, including tax revenue, upkeep, effective population, power constraints, health and crime multipliers, production, and the target Happiness calculation.

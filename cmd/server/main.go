@@ -74,7 +74,13 @@ func main() {
 	mux.HandleFunc("GET /api/technology", a.auth(a.technology))
 	mux.HandleFunc("POST /api/technology/invest", a.auth(a.investTechnology))
 	mux.HandleFunc("GET /api/income", a.auth(a.income))
+	mux.HandleFunc("GET /api/economy", a.auth(a.economyDashboard))
+	mux.HandleFunc("POST /api/economy/development", a.auth(a.buyDevelopment))
+	mux.HandleFunc("POST /api/economy/improvements", a.auth(a.buildImprovement))
+	mux.HandleFunc("PATCH /api/economy/policy", a.auth(a.economicPolicy))
+	mux.HandleFunc("POST /api/economy/projects", a.auth(a.completeProject))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
+	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
 	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
@@ -193,18 +199,16 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 201, map[string]any{"id": nid, "guardianDays": 30})
 }
 func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Name, Motto, LeaderName, Government, Continent string }
+	var in struct{ Motto, Government, Continent string }
 	if !decode(w, r, &in) {
 		return
 	}
-	in.Name = strings.TrimSpace(in.Name)
-	in.LeaderName = strings.TrimSpace(in.LeaderName)
 	in.Motto = strings.TrimSpace(in.Motto)
-	if len(in.Name) < 3 || len(in.Name) > 100 || len(in.LeaderName) < 2 || len(in.LeaderName) > 100 || len(in.Motto) > 120 || !governmentTypes[in.Government] || !continents[in.Continent] {
+	if len(in.Motto) > 120 || !governmentTypes[in.Government] || !continents[in.Continent] {
 		problem(w, 400, "Invalid nation profile.")
 		return
 	}
-	_, e := a.db.Exec(r.Context(), `UPDATE nations SET name=?,motto=?,leader_name=?,government_type=?,continent=?,currency_name='Yen' WHERE owner_id=?`, in.Name, in.Motto, in.LeaderName, in.Government, in.Continent, u.ID)
+	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,continent=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, in.Continent, u.ID)
 	if e != nil {
 		problem(w, 400, "Could not save settings.")
 		return

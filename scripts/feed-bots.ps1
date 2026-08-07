@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $ProjectRoot
 try {
-    docker compose --profile tools run --rm feeder
+    docker compose run --rm feeder
 } finally {
     Pop-Location
 }

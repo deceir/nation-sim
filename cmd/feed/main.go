@@ -19,11 +19,11 @@ type botNation struct {
 }
 
 var bots = []botNation{
-	{"asterian-federation", "THE ASTERIAN FEDERATION", "Elena Marcek", "NOVA ASTER", "Federal Republic", "Europe", "Many regions, one republic."},
-	{"kingdom-valoria", "KINGDOM OF VALORIA", "King Adrian IV", "CROWNPORT", "Constitutional Monarchy", "Europe", "Continuity, service, and law."},
-	{"republic-sundara", "REPUBLIC OF SUNDARA", "Maya Raman", "SURYA CITY", "Parliamentary Democracy", "Asia", "Prosperity through open institutions."},
-	{"union-karsovia", "UNION OF KARSOVIA", "Viktor Orlov", "KARSGRAD", "One-Party State", "Europe", "Industry sustains sovereignty."},
-	{"commonwealth-oriona", "COMMONWEALTH OF ORIONA", "Amara Okafor", "NEW HORIZON", "Presidential Republic", "Africa", "A future shared by every province."},
+	{"united-states", "UNITED STATES OF AMERICA", "Alex Morgan", "WASHINGTON, D.C.", "Federal Republic", "North America", "Out of many, one."},
+	{"china", "PEOPLE'S REPUBLIC OF CHINA", "Li Wei", "BEIJING", "One-Party State", "Asia", "Unity and national renewal."},
+	{"germany", "FEDERAL REPUBLIC OF GERMANY", "Anna Weber", "BERLIN", "Federal Republic", "Europe", "Unity, justice, and freedom."},
+	{"brazil", "FEDERATIVE REPUBLIC OF BRAZIL", "Marina Silva Costa", "BRASILIA", "Federal Republic", "South America", "Order and progress."},
+	{"nigeria", "FEDERAL REPUBLIC OF NIGERIA", "Chidi Okafor", "ABUJA", "Federal Republic", "Africa", "Unity and faith, peace and progress."},
 }
 
 func main() {
