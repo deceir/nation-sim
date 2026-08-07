@@ -9,4 +9,4 @@ WORKDIR /app
 COPY --from=build /api /migrate /feed ./
 COPY db ./db
 EXPOSE 8080
-CMD ["./api"]
+CMD ["sh", "-c", "./migrate && ./feed && exec ./api"]
