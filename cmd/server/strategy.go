@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -41,10 +43,25 @@ var socialPolicies = map[string]policySpec{
 var strategicCommodities = []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals", "textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"}
 var commodityRecipes = map[string]map[string]float64{"textiles": {"fibers": .8, "energy": .15}, "processed_foods": {"foodstuffs": .9, "energy": .1}, "construction_materials": {"timber": .45, "basic_metals": .45, "energy": .15}, "basic_goods": {"basic_metals": .5, "timber": .2, "energy": .2}, "consumer_goods": {"basic_goods": .55, "fibers": .2, "energy": .2}, "military_equipment": {"basic_metals": .7, "energy": .35, "strategic_minerals": .12}, "luxury_goods": {"consumer_goods": .5, "strategic_minerals": .08, "energy": .15}}
 
+func commodityName(key string) string {
+	parts := strings.Split(key, "_")
+	for i, part := range parts {
+		if part != "" {
+			parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 type provinceStrategy struct {
 	ID, Name, Specialization string
-	Infra, Development       float64
+	Infra, Development       float64 // Development is retained only for legacy test/data compatibility.
 	Deposits                 map[string]float64
+	Upgrades                 map[string]int
+	UpgradeQuotes            map[string]int64
+	InfrastructureQuotes     map[string]int64
+	UpgradeCap               int
+	Population               float64
 }
 type strategicInput struct {
 	Gear                  string
@@ -91,10 +108,14 @@ func calculateStrategy(in strategicInput) strategicResult {
 	knowledge := 1 + in.Education*.0025 + in.Technology*.004
 	for _, p := range in.Provinces {
 		out := map[string]float64{}
+		agriculture := provinceUpgradeEffect(p.Upgrades["agriculture"])
+		extraction := provinceUpgradeEffect(p.Upgrades["extraction"])
+		light := provinceUpgradeEffect(p.Upgrades["light_industry"])
+		heavy := provinceUpgradeEffect(p.Upgrades["heavy_industry"])
+		commerce := provinceUpgradeEffect(p.Upgrades["commerce"])
+		civil := provinceUpgradeEffect(p.Upgrades["civil"])
+		military := provinceUpgradeEffect(p.Upgrades["military_industry"])
 		specPrimary, specIndustry := 1.0, 1.0
-		if p.Specialization == "agriculture" {
-			specPrimary = 1.22
-		}
 		if p.Specialization == "extraction" {
 			specPrimary = 1.18
 		}
@@ -107,12 +128,26 @@ func calculateStrategy(in strategicInput) strategicResult {
 		if p.Specialization == "military" {
 			r.MilitaryMultiplier *= 1.025
 		}
+		r.IncomeMultiplier *= 1 + commerce*.006
+		r.PopulationMultiplier *= 1 + civil*.002
+		alignment := 1.0
+		if (p.Specialization == "agriculture" && in.Gear == "agrarian") || (p.Specialization == "industry" && in.Gear == "industrial") || (p.Specialization == "commerce" && in.Gear == "commercial") || (p.Specialization == "military" && in.Gear == "militarized") {
+			alignment = 1.08
+		}
 		for resource, richness := range p.Deposits {
-			v := p.Infra * .075 * richness * r.ExtractionMultiplier * specPrimary * (1 + p.Development*.025)
+			resourceSpec := specPrimary
+			if p.Specialization == "agriculture" && (resource == "foodstuffs" || resource == "fibers") {
+				resourceSpec *= 1.22
+			}
+			agricultureBoost := 1.0
+			if resource == "foodstuffs" || resource == "fibers" {
+				agricultureBoost += agriculture * .03
+			}
+			v := p.Infra * .075 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment
 			out[resource] += v
 			r.Production[resource] += v
 		}
-		capacity := p.Infra * .035 * specIndustry * r.IndustryMultiplier * knowledge * (1 + p.Development*.025)
+		capacity := p.Infra * .035 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 			quotaTotal += math.Max(0, in.Quotas[k])
@@ -126,8 +161,14 @@ func calculateStrategy(in strategicInput) strategicResult {
 				continue
 			}
 			modifier := 1.0
+			if k == "textiles" || k == "processed_foods" || k == "basic_goods" {
+				modifier *= 1 + light*.025
+			}
+			if k == "construction_materials" || k == "consumer_goods" || k == "luxury_goods" {
+				modifier *= 1 + heavy*.025
+			}
 			if k == "military_equipment" {
-				modifier = r.MilitaryMultiplier / r.IndustryMultiplier
+				modifier *= r.MilitaryMultiplier / r.IndustryMultiplier * (1 + military*.03)
 			}
 			v := capacity * share * modifier
 			out[k] += v
@@ -164,18 +205,29 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Quotas[k] = v
 	}
 	rows.Close()
-	rows, e = a.db.QueryContext(ctx, `SELECT c.id,c.name,p.specialization,c.infrastructure,p.development_level FROM cities c JOIN province_economies p ON p.city_id=c.id WHERE c.nation_id=?`, nid)
+	rows, e = a.db.QueryContext(ctx, `SELECT c.id,c.name,p.specialization,c.infrastructure,c.local_population FROM cities c JOIN province_economies p ON p.city_id=c.id WHERE c.nation_id=?`, nid)
 	if e != nil {
 		return in, e
 	}
 	for rows.Next() {
 		var p provinceStrategy
 		p.Deposits = map[string]float64{}
-		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Development)
+		p.Upgrades = map[string]int{}
+		p.UpgradeQuotes = map[string]int64{}
+		p.InfrastructureQuotes = map[string]int64{}
+		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Population)
 		in.Provinces = append(in.Provinces, p)
 	}
 	rows.Close()
 	for i := range in.Provinces {
+		in.Provinces[i].Upgrades = loadProvinceUpgrades(ctx, a.db, in.Provinces[i].ID)
+		in.Provinces[i].UpgradeCap = provinceUpgradeCap(in.Provinces[i].Infra)
+		for key, spec := range provinceUpgradeSpecs {
+			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, in.Provinces[i].Upgrades[key], in.Provinces[i].Infra)
+		}
+		for _, amount := range []int{10, 50, 100} {
+			in.Provinces[i].InfrastructureQuotes[fmt.Sprint(amount)] = int64(infraPurchaseCost(in.Provinces[i].Infra, float64(amount), int(in.Technology)))
+		}
 		ds, _ := a.db.QueryContext(ctx, `SELECT resource,richness FROM province_deposits WHERE city_id=?`, in.Provinces[i].ID)
 		for ds.Next() {
 			var k string
@@ -231,7 +283,26 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		stock[k] = v
 	}
 	rows.Close()
-	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
+	upgradeList := []map[string]any{}
+	keys = keys[:0]
+	for key := range provinceUpgradeSpecs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		spec := provinceUpgradeSpecs[key]
+		upgradeList = append(upgradeList, map[string]any{"key": key, "name": spec.Name, "description": spec.Description, "baseCost": spec.BaseCost})
+	}
+	cashCost, materialCost, strain := provinceFoundingCosts(len(in.Provinces), in.Gear, in.Policies)
+	var lastProvince time.Time
+	var nextProvinceAt any
+	if len(in.Provinces) > 1 && a.db.QueryRowContext(r.Context(), `SELECT MAX(created_at) FROM cities WHERE nation_id=?`, nid).Scan(&lastProvince) == nil {
+		if next := lastProvince.Add(7 * 24 * time.Hour); next.After(time.Now()) {
+			nextProvinceAt = next
+		}
+	}
+	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥200,000 × N^2.6 × Gear × Policy"}
+	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
 }
 
 func (a *app) setGear(w http.ResponseWriter, r *http.Request, u user) {
@@ -317,7 +388,6 @@ func (a *app) setPolicies(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) setProvinceStrategy(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct {
 		ProvinceID, Specialization string
-		DevelopmentInvestment      int64
 	}
 	if !decode(w, r, &in) {
 		return
@@ -327,28 +397,16 @@ func (a *app) setProvinceStrategy(w http.ResponseWriter, r *http.Request, u user
 		return
 	}
 	nid, _ := a.nationID(r.Context(), u.ID)
-	cost := int64(25000)
 	tx, _ := a.db.BeginTx(r.Context(), nil)
 	defer tx.Rollback()
-	var cash int64
-	var level int
-	if tx.QueryRowContext(r.Context(), `SELECT n.treasury,p.development_level FROM nations n JOIN cities c ON c.nation_id=n.id JOIN province_economies p ON p.city_id=c.id WHERE n.id=? AND c.id=? FOR UPDATE`, nid, in.ProvinceID).Scan(&cash, &level) != nil {
+	var exists int
+	if tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM cities WHERE nation_id=? AND id=?`, nid, in.ProvinceID).Scan(&exists) != nil || exists == 0 {
 		problem(w, 404, "Province not found.")
 		return
 	}
-	if in.DevelopmentInvestment > 0 {
-		cost = int64(25000 * level * level)
-		if cash < cost {
-			problem(w, 409, "Insufficient treasury.")
-			return
-		}
-		tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, cost, nid)
-		tx.ExecContext(r.Context(), `UPDATE province_economies SET development_level=development_level+1,specialization=? WHERE city_id=?`, in.Specialization, in.ProvinceID)
-	} else {
-		tx.ExecContext(r.Context(), `UPDATE province_economies SET specialization=? WHERE city_id=?`, in.Specialization, in.ProvinceID)
-	}
+	tx.ExecContext(r.Context(), `UPDATE province_economies SET specialization=? WHERE city_id=?`, in.Specialization, in.ProvinceID)
 	tx.Commit()
-	write(w, 200, map[string]any{"ok": true, "cost": cost})
+	write(w, 200, map[string]any{"ok": true})
 }
 func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct{ Quotas map[string]float64 }
@@ -382,7 +440,13 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult) error {
 	for _, commodity := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		hourly := result.Production[commodity] / 24
+		if hourly <= 0 {
+			continue
+		}
 		if _, e := tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, commodity, hourly); e != nil {
+			return e
+		}
+		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Resource production',?)`, uuid(), nid, fmt.Sprintf("You earned %.2f %s last turn.", hourly, commodityName(commodity))); e != nil {
 			return e
 		}
 	}
@@ -406,6 +470,9 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 			}
 		}
 		if _, e := tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, commodity, actual); e != nil {
+			return e
+		}
+		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Resource production',?)`, uuid(), nid, fmt.Sprintf("You earned %.2f %s last turn.", actual, commodityName(commodity))); e != nil {
 			return e
 		}
 	}

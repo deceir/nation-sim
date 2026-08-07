@@ -261,6 +261,15 @@ CREATE TABLE IF NOT EXISTS province_economies (
   CONSTRAINT fk_province_economy_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS province_upgrades (
+  city_id CHAR(36) NOT NULL,
+  upgrade_key ENUM('agriculture','extraction','light_industry','heavy_industry','commerce','civil','military_industry') NOT NULL,
+  level INT NOT NULL DEFAULT 0,
+  total_invested BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY(city_id,upgrade_key),
+  CONSTRAINT fk_province_upgrades_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS province_deposits (
   city_id CHAR(36) NOT NULL,
   resource ENUM('foodstuffs','timber','fibers','basic_metals','energy','strategic_minerals') NOT NULL,
@@ -309,4 +318,17 @@ CREATE TABLE IF NOT EXISTS trade_shipments (
   INDEX idx_shipments_arrival(status,arrives_at),
   CONSTRAINT fk_shipments_seller FOREIGN KEY(seller_nation_id) REFERENCES nations(id),
   CONSTRAINT fk_shipments_buyer FOREIGN KEY(buyer_nation_id) REFERENCES nations(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  category ENUM('economic','war','market','game') NOT NULL,
+  title VARCHAR(120) NOT NULL,
+  message VARCHAR(1000) NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  read_at TIMESTAMP(6) NULL,
+  INDEX idx_notifications_feed(nation_id,created_at),
+  INDEX idx_notifications_unread(nation_id,read_at),
+  CONSTRAINT fk_notifications_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -83,7 +84,10 @@ func main() {
 	mux.HandleFunc("PATCH /api/strategy/gear", a.auth(a.setGear))
 	mux.HandleFunc("PATCH /api/strategy/policies", a.auth(a.setPolicies))
 	mux.HandleFunc("PATCH /api/strategy/province", a.auth(a.setProvinceStrategy))
+	mux.HandleFunc("POST /api/strategy/province/upgrade", a.auth(a.buyProvinceUpgrade))
 	mux.HandleFunc("PATCH /api/strategy/quotas", a.auth(a.setQuotas))
+	mux.HandleFunc("GET /api/notifications", a.auth(a.notifications))
+	mux.HandleFunc("PATCH /api/notifications/read", a.auth(a.readNotifications))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
@@ -242,6 +246,10 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not grant Guardian status.")
 		return
 	}
+	if _, err = tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'game','Welcome to Diplomatia','Your nation has been founded. Your first 30 days of Guardian status are now active.')`, uuid(), nid); err != nil {
+		problem(w, 500, "Could not create welcome notification.")
+		return
+	}
 	if err = tx.Commit(r.Context()); err != nil {
 		problem(w, 500, "Could not found nation.")
 		return
@@ -299,11 +307,13 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Create a nation first.")
 		return
 	}
-	_, e := a.db.Exec(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price) VALUES(?,?,?,?,?,?,?)`, uuid(), nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice)
+	orderID := uuid()
+	_, e := a.db.Exec(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price) VALUES(?,?,?,?,?,?,?)`, orderID, nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice)
 	if e != nil {
 		problem(w, 500, "Could not place order.")
 		return
 	}
+	a.db.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Market order published',?)`, uuid(), nid, fmt.Sprintf("Your %s order for %d %s at ¥%d per unit is now open.", in.Side, in.Quantity, in.Resource, in.UnitPrice))
 	write(w, 201, map[string]bool{"ok": true})
 }
 func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
@@ -317,8 +327,8 @@ func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	tx, _ := a.db.Begin(r.Context())
 	defer tx.Rollback(r.Context())
-	var attacker string
-	if tx.QueryRow(r.Context(), `SELECT id FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&attacker) != nil {
+	var attacker, attackerName string
+	if tx.QueryRow(r.Context(), `SELECT id,name FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&attacker, &attackerName) != nil {
 		problem(w, 409, "Create a nation first.")
 		return
 	}
@@ -332,6 +342,11 @@ func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "That nation has Guardian status.")
 		return
 	}
+	var defenderName string
+	if tx.QueryRow(r.Context(), `SELECT name FROM nations WHERE id=?`, in.DefenderID).Scan(&defenderName) != nil {
+		problem(w, 404, "Defending nation not found.")
+		return
+	}
 	res, _ := tx.Exec(r.Context(), `UPDATE guardian_grants SET revoked_at=now(),revoked_reason=CONCAT('initiated_', ?) WHERE nation_id=? AND revoked_at IS NULL AND expires_at>now()`, in.Kind, attacker)
 	_ = res
 	_, e := tx.Exec(r.Context(), `INSERT INTO conflicts(id,kind,attacker_id,defender_id) VALUES(?,?,?,?)`, uuid(), in.Kind, attacker, in.DefenderID)
@@ -339,6 +354,8 @@ func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 400, "Unable to declare conflict.")
 		return
 	}
+	tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','Conflict declared',?)`, uuid(), attacker, fmt.Sprintf("You declared a %s against %s.", in.Kind, defenderName))
+	tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','Your nation is under attack',?)`, uuid(), in.DefenderID, fmt.Sprintf("%s declared a %s against your nation.", attackerName, in.Kind))
 	tx.Commit(r.Context())
 	write(w, 201, map[string]any{"ok": true, "guardianRevoked": true})
 }
