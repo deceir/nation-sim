@@ -58,6 +58,7 @@ type ModelCity struct {
 	ID, Name                                                     string
 	Infra, Land, Population, Commerce, Pollution, Disease, Crime float64
 	Buildings                                                    map[string]int
+	Upgrades                                                     map[string]int
 }
 
 type ModelNation struct {
@@ -164,14 +165,18 @@ func calculateEconomy(n ModelNation) NationResult {
 		for _, q := range c.Buildings {
 			r.Used += q
 		}
-		r.BasePopulation = c.Infra * balance.PopulationPerInfra
+		agriculture := provinceUpgradeEffect(c.Upgrades["agriculture"])
+		commerceUpgrade := provinceUpgradeEffect(c.Upgrades["commerce"])
+		civil := provinceUpgradeEffect(c.Upgrades["civil"])
+		r.BasePopulation = c.Infra * balance.PopulationPerInfra * (1 + agriculture*.006 + civil*.009)
 		density := r.BasePopulation / math.Max(1, c.Land*75)
 		r.DensityMultiplier = 1
 		if density > 1 {
 			r.DensityMultiplier = clamp(1-(density-1)*.08, .70, 1)
 		}
 		powerCapacity, powerUse, commerce, pollution := 0.0, 0.0, 0.0, c.Pollution
-		diseaseReduction, crimeReduction, localHappiness := 0.0, 0.0, 0.0
+		diseaseReduction, crimeReduction, localHappiness := 0.0, 0.0, civil*.55
+		educationBuildings += civil * .12
 		for key, q := range c.Buildings {
 			s, ok := buildings[key]
 			if !ok {
@@ -234,13 +239,13 @@ func calculateEconomy(n ModelNation) NationResult {
 		r.EffectivePopulation = math.Max(1000, r.BasePopulation*(1+eduBonus)*happyMult*(1-r.Disease)*(1-r.Crime)*r.DensityMultiplier)
 		r.CitizenIncome = balance.BaseCitizenIncome * (1 + (n.Happiness-50)*balance.HappinessIncomePerPoint) * (1 + n.Education/100*balance.EducationIncomeMax) * (1 + float64(n.Technology)*balance.TechnologyIncomePerLevel)
 		r.CitizenIncome = math.Max(5, r.CitizenIncome)
-		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome
+		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018)
 		upkeepModifier := 1.0
 		if n.Projects["civil_engineering_corps"] {
 			upkeepModifier = .96
 		}
 		r.Upkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier}
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
 		out.Population += r.EffectivePopulation

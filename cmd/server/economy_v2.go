@@ -74,12 +74,14 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 	for rows.Next() {
 		var c ModelCity
 		c.Buildings = map[string]int{}
+		c.Upgrades = map[string]int{}
 		if err = rows.Scan(&c.ID, &c.Name, &c.Infra, &c.Land, &c.Population, &c.Commerce, &c.Pollution, &c.Disease, &c.Crime); err != nil {
 			return n, id, cash, err
 		}
 		n.Cities = append(n.Cities, c)
 	}
 	for i := range n.Cities {
+		n.Cities[i].Upgrades = loadProvinceUpgrades(ctx, a.db, n.Cities[i].ID)
 		bs, e := a.db.QueryContext(ctx, `SELECT building_type,quantity FROM city_improvements WHERE city_id=?`, n.Cities[i].ID)
 		if e != nil {
 			return n, id, cash, e

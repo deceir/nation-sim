@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -42,16 +43,16 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	if len(in.Name) < 2 {
-		problem(w, 400, "Enter a city name.")
+		problem(w, 400, "Enter a Province name.")
 		return
 	}
 	tx, _ := a.db.Begin(r.Context())
 	defer tx.Rollback(r.Context())
-	var nid string
+	var nid, gear string
 	var cash int64
 	var count int
 	var lastCreated sql.NullTime
-	if tx.QueryRow(r.Context(), `SELECT n.id,n.treasury,(SELECT count(*) FROM cities WHERE nation_id=n.id),(SELECT max(created_at) FROM cities WHERE nation_id=n.id) FROM nations n WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &count, &lastCreated) != nil {
+	if tx.QueryRow(r.Context(), `SELECT n.id,n.treasury,s.gear,(SELECT count(*) FROM cities WHERE nation_id=n.id),(SELECT max(created_at) FROM cities WHERE nation_id=n.id) FROM nations n JOIN nation_economic_strategy s ON s.nation_id=n.id WHERE n.owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &gear, &count, &lastCreated) != nil {
 		return
 	}
 	if count < 1 {
@@ -59,21 +60,36 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	if count > 1 && lastCreated.Valid && time.Now().Before(lastCreated.Time.Add(7*24*time.Hour)) {
-		problem(w, 429, "A new city may be founded seven days after the previous city.")
+		problem(w, 429, "A new Province may be founded seven days after the previous Province.")
 		return
 	}
-	cost := int64(50000)
-	for i := 1; i < count; i++ {
-		cost *= 2
+	policies := map[string]bool{}
+	policyRows, _ := tx.QueryContext(r.Context(), `SELECT policy_key FROM social_policy_selections WHERE nation_id=?`, nid)
+	if policyRows != nil {
+		for policyRows.Next() {
+			var key string
+			if policyRows.Scan(&key) == nil {
+				policies[key] = true
+			}
+		}
+		policyRows.Close()
 	}
+	cost, constructionCost, happinessStrain := provinceFoundingCosts(count, gear, policies)
 	if cash < cost {
-		problem(w, 409, "Insufficient treasury to found this city.")
+		problem(w, 409, "Insufficient treasury to found this Province.")
 		return
 	}
-	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, cost, nid)
+	var constructionAvailable float64
+	tx.QueryRow(r.Context(), `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity='construction_materials' FOR UPDATE`, nid).Scan(&constructionAvailable)
+	if constructionAvailable+0.0001 < constructionCost {
+		problem(w, 409, "Insufficient Construction Materials to found this Province.")
+		return
+	}
+	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-?,happiness=GREATEST(0,happiness-?) WHERE id=?`, cost, happinessStrain, nid)
+	tx.Exec(r.Context(), `UPDATE nation_stockpiles SET amount=GREATEST(0,amount-?) WHERE nation_id=? AND commodity='construction_materials'`, constructionCost, nid)
 	provinceID := uuid()
 	if _, e := tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, provinceID, nid, in.Name); e != nil {
-		problem(w, 409, "That city name is unavailable.")
+		problem(w, 409, "That Province name is unavailable.")
 		return
 	}
 	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id) VALUES(?)`, provinceID)
@@ -81,9 +97,13 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 		richness := .8 + float64(len(in.Name+resource)%8)/10
 		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,?)`, provinceID, resource, richness)
 	}
-	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'city_founding',?,?)`, uuid(), nid, -cost, "Founded "+in.Name)
-	tx.Commit(r.Context())
-	write(w, 201, map[string]any{"ok": true, "cost": cost, "nextCityAt": time.Now().Add(7 * 24 * time.Hour)})
+	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'province_founding',?,?)`, uuid(), nid, -cost, "Founded Province "+in.Name)
+	tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'game','Province founded',?)`, uuid(), nid, "You founded "+in.Name+" and accepted the associated administrative strain.")
+	if e := tx.Commit(r.Context()); e != nil {
+		problem(w, 500, "Could not complete Province founding.")
+		return
+	}
+	write(w, 201, map[string]any{"ok": true, "cost": cost, "constructionMaterials": math.Round(constructionCost*100) / 100, "happinessStrain": happinessStrain, "nextProvinceAt": time.Now().Add(7 * 24 * time.Hour)})
 }
 
 func (a *app) investCity(w http.ResponseWriter, r *http.Request, u user) {
