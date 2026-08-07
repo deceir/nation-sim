@@ -6,7 +6,7 @@ const resources=['cash','foodstuffs','timber','fibers','basic_metals','energy','
 export default function AllianceScreen({mode='directory'}:{mode?:'directory'|'mine'}){
   const[data,setData]=useState<any>(),[detail,setDetail]=useState<any>(),[error,setError]=useState('');
   const open=async(id:string)=>setDetail(await call('/alliances/'+id));
-  const load=async()=>{try{const d=await call('/alliances');setData(d);if(mode==='mine'&&d.membership)await open(d.membership.allianceID)}catch(e){setError((e as Error).message)}};
+  const load=async()=>{try{const d=await call('/alliances');setData(d);const linked=new URLSearchParams(window.location.search).get('alliance');if(linked&&mode==='directory')await open(linked);else if(mode==='mine'&&d.membership)await open(d.membership.allianceID)}catch(e){setError((e as Error).message)}};
   useEffect(()=>{void load()},[]);
   const action=async(path:string,body:object,method='POST')=>{try{setError('');await call(path,{method,body:JSON.stringify(body)});await load()}catch(e){setError((e as Error).message)}};
   if(!data)return <section className="panel wide">Loading Alliances…</section>;
