@@ -30,11 +30,14 @@ func (a *app) notifications(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	var unread int
-	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM notifications WHERE nation_id=? AND read_at IS NULL`, nid).Scan(&unread)
 	if r.URL.Query().Get("summary") == "1" {
+		// Routine economic-turn reports remain in the log but do not create
+		// attention debt in the global navigation badge.
+		a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM notifications WHERE nation_id=? AND read_at IS NULL AND category<>'economic'`, nid).Scan(&unread)
 		write(w, http.StatusOK, map[string]any{"unread": unread})
 		return
 	}
+	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM notifications WHERE nation_id=? AND read_at IS NULL`, nid).Scan(&unread)
 	rows, err := a.db.QueryContext(r.Context(), `SELECT id,category,title,message,created_at,read_at FROM notifications WHERE nation_id=? AND (?='' OR category=?) ORDER BY created_at DESC LIMIT 200`, nid, category, category)
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "Notifications unavailable.")
