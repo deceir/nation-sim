@@ -102,6 +102,17 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   INDEX idx_ledger_nation_time (nation_id, created_at)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS daily_login_rewards (
+  nation_id CHAR(36) NOT NULL,
+  reward_date DATE NOT NULL,
+  streak INT NOT NULL,
+  amount BIGINT NOT NULL DEFAULT 25000,
+  awarded_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (nation_id, reward_date),
+  CONSTRAINT fk_daily_login_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  INDEX idx_daily_login_history (nation_id, reward_date)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS city_improvements (
   id CHAR(36) PRIMARY KEY,
   city_id CHAR(36) NOT NULL,
