@@ -251,10 +251,10 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 }
 
 func (a *app) worldStatus(w http.ResponseWriter, r *http.Request, u user) {
-	var active int
-	a.db.QueryRow(r.Context(), `SELECT count(DISTINCT user_id) FROM sessions WHERE last_action_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE)`).Scan(&active)
+	var active, active24Hours int
+	a.db.QueryRow(r.Context(), `SELECT COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) THEN user_id END),COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR) THEN user_id END) FROM sessions`).Scan(&active, &active24Hours)
 	now := time.Now().UTC()
 	epoch := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	game := epoch.Add(now.Sub(epoch) * 4)
-	write(w, 200, map[string]any{"realTime": now, "gameTime": game, "gameSpeed": 4, "activePlayers": active})
+	write(w, 200, map[string]any{"realTime": now, "gameTime": game, "gameSpeed": 4, "activePlayers": active, "activePlayers24Hours": active24Hours})
 }

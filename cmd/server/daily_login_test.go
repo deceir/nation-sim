@@ -14,3 +14,12 @@ func TestNextLoginStreak(t *testing.T) {
 		t.Fatalf("missed day should reset streak: got %d", got)
 	}
 }
+
+func TestLoginRewardScalesAndCaps(t *testing.T) {
+	cases := map[int]int64{1: 25000, 2: 30000, 5: 45000, 6: 50000, 30: 50000}
+	for streak, expected := range cases {
+		if got := loginRewardForStreak(streak); got != expected {
+			t.Fatalf("streak %d: expected %d, got %d", streak, expected, got)
+		}
+	}
+}
