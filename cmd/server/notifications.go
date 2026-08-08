@@ -20,7 +20,7 @@ type notificationItem struct {
 
 func (a *app) notifications(w http.ResponseWriter, r *http.Request, u user) {
 	nid, err := a.nationID(r.Context(), u.ID)
-	if err != nil {
+	if err != nil {git a
 		problem(w, http.StatusNotFound, "Nation not found.")
 		return
 	}

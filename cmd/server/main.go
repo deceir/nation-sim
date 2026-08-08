@@ -88,6 +88,7 @@ func main() {
 	mux.HandleFunc("PATCH /api/strategy/quotas", a.auth(a.setQuotas))
 	mux.HandleFunc("GET /api/notifications", a.auth(a.notifications))
 	mux.HandleFunc("PATCH /api/notifications/read", a.auth(a.readNotifications))
+	mux.HandleFunc("POST /api/dev/notifications", a.auth(a.broadcastGameNotification))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
