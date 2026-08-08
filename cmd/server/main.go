@@ -376,6 +376,7 @@ func (a *app) auth(next handler) http.HandlerFunc {
 			return
 		}
 		a.db.Exec(r.Context(), `UPDATE sessions SET last_action_at=NOW() WHERE token_hash=?`, digest(c.Value))
+		a.awardDailyLogin(r.Context(), u.ID)
 		next(w, r, u)
 	}
 }
