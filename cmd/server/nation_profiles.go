@@ -58,5 +58,19 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "allianceID": allianceID, "allianceName": allianceName})
+	gear := "balanced"
+	a.db.QueryRowContext(r.Context(), `SELECT gear FROM nation_economic_strategy WHERE nation_id=?`, id).Scan(&gear)
+	provinceSetup := []map[string]any{}
+	rows, rowsErr := a.db.QueryContext(r.Context(), `SELECT c.name,c.infrastructure,p.specialization FROM cities c JOIN province_economies p ON p.city_id=c.id WHERE c.nation_id=? ORDER BY c.created_at`, id)
+	if rowsErr == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var provinceName, specialization string
+			var infrastructure float64
+			if rows.Scan(&provinceName, &infrastructure, &specialization) == nil {
+				provinceSetup = append(provinceSetup, map[string]any{"name": provinceName, "infrastructure": infrastructure, "specialization": specialization})
+			}
+		}
+	}
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "allianceID": allianceID, "allianceName": allianceName})
 }
