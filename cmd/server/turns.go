@@ -62,6 +62,12 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		if e != nil {
 			continue
 		}
+		militaryCashUpkeep, _, e := militaryHourlyUpkeep(ctx, tx, nid)
+		if e != nil {
+			tx.Rollback()
+			continue
+		}
+		netCash -= militaryCashUpkeep
 		ok := true
 		for _, c := range result.Cities {
 			growthRate := balance.PopulationGrowthRate * (.45 + newHappy/100) * (.85 + newEducation/500) / balance.TurnsPerDay * strategyResult.PopulationMultiplier
@@ -100,7 +106,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `UPDATE nations SET technology=LEAST(100,technology+FLOOR(technology_progress+?)),technology_progress=MOD(technology_progress+?,1) WHERE id=?`, gain, gain, nid)
 		}
 		breakdown, _ := json.Marshal(result)
-		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay), int64(result.DailyUpkeep/balance.TurnsPerDay), 0, newHappy, newEducation, breakdown)
+		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay), int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
 		if e != nil {
 			tx.Rollback()
 			continue

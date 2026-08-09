@@ -32,6 +32,8 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	if allianceID != "" {
 		alliance = map[string]any{"name": allianceName, "taxRate": allianceRate, "resourceRate": resourceRate, "projectedDailyTax": int64(math.Max(0, result.NetDailyCash) * allianceRate / 100)}
 	}
+	militaryCashUpkeep, militaryEnergyUpkeep := militaryUpkeepProjection(r.Context(), a.db, nid)
+	result.NetDailyCash -= militaryCashUpkeep
 	types := make([]map[string]any, 0, len(buildings))
 	keys := make([]string, 0, len(buildings))
 	for k := range buildings {
@@ -55,7 +57,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var totalInfra float64
 	a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, nid).Scan(&totalInfra)
 	slots := int(totalInfra / 300)
-	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
+	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "military": map[string]any{"dailyCashUpkeep": militaryCashUpkeep, "dailyEnergyUpkeep": militaryEnergyUpkeep}, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
 }
 
 func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (ModelNation, string, int64, error) {

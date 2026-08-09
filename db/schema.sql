@@ -129,6 +129,28 @@ CREATE TABLE IF NOT EXISTS conflicts (
   CONSTRAINT fk_conflicts_attacker FOREIGN KEY (attacker_id) REFERENCES nations(id),
   CONSTRAINT fk_conflicts_defender FOREIGN KEY (defender_id) REFERENCES nations(id)
 ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS military_inventory (
+  nation_id CHAR(36) NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','drones') NOT NULL,
+  quantity BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (nation_id,unit_type),
+  CONSTRAINT fk_military_inventory_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CHECK (quantity >= 0)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS military_production_daily (
+  nation_id CHAR(36) NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','drones') NOT NULL,
+  production_date DATE NOT NULL,
+  quantity BIGINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (nation_id,unit_type,production_date),
+  CONSTRAINT fk_military_production_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS military_upkeep_state (
+  nation_id CHAR(36) PRIMARY KEY,
+  cash_fraction DECIMAL(20,6) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_military_upkeep_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS ledger_entries (
   id CHAR(36) PRIMARY KEY,
   nation_id CHAR(36) NOT NULL,

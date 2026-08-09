@@ -18,7 +18,10 @@ var tradeCommodities = map[string]bool{
 	"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true,
 	"strategic_minerals": true, "textiles": true, "processed_foods": true, "construction_materials": true,
 	"basic_goods": true, "consumer_goods": true, "military_equipment": true, "luxury_goods": true,
+	"tanks": true, "ships": true, "drones": true,
 }
+
+var marketCommodities = append(append([]string{}, strategicCommodities...), "tanks", "ships", "drones")
 
 // The six specified regions use the design table verbatim. Oceania is an extension because it is a playable Diplomatia continent.
 var tradeDistances = map[string]map[string]float64{
@@ -126,10 +129,10 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 		// A shipment migration or timestamp issue must not hide the independent
 		// public order book. Surface the warning while keeping offers usable.
 		shipments = []map[string]any{}
-		write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities, "warning": "Shipment tracking is temporarily unavailable."})
+		write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": marketCommodities, "warning": "Shipment tracking is temporarily unavailable."})
 		return
 	}
-	write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities})
+	write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": marketCommodities})
 }
 
 func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
@@ -145,6 +148,12 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 	if (in.Side != "buy" && in.Side != "sell") || !tradeCommodities[in.Resource] || in.Quantity <= 0 || in.Quantity > 1e9 || in.UnitPrice < 1 || in.UnitPrice > 1e12 {
 		problem(w, 400, "Invalid trade offer.")
 		return
+	}
+	if isMilitaryEquipment(in.Resource) {
+		if _, ok := militaryTradeQuantity(in.Quantity); !ok {
+			problem(w, 400, "Tanks, Ships, and Drones must be traded in whole units.")
+			return
+		}
 	}
 	if in.Quantity > float64(math.MaxInt64)/float64(in.UnitPrice) {
 		problem(w, 400, "The total trade value is too large.")
@@ -192,10 +201,17 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 	value := tradeValue(in.Quantity, in.UnitPrice)
 	escrowCash, escrowGoods := int64(0), float64(0)
 	if in.Side == "sell" {
-		result, e := tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=? AND amount>=?`, in.Quantity, nid, in.Resource, in.Quantity)
-		if e != nil || affected(result) != 1 {
-			problem(w, 409, "Not enough of that commodity to escrow this offer.")
-			return
+		if isMilitaryEquipment(in.Resource) {
+			if e := removeMilitaryInventory(r.Context(), tx, nid, in.Resource, in.Quantity); e != nil {
+				problem(w, 409, "Not enough of that military equipment to escrow this offer.")
+				return
+			}
+		} else {
+			result, e := tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=? AND amount>=?`, in.Quantity, nid, in.Resource, in.Quantity)
+			if e != nil || affected(result) != 1 {
+				problem(w, 409, "Not enough of that commodity to escrow this offer.")
+				return
+			}
 		}
 		escrowGoods = in.Quantity
 	} else {
@@ -277,19 +293,34 @@ func (a *app) acceptMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 		fee = int64(math.Ceil(float64(fee) * .85))
 	}
 	if side == "sell" {
+		if err = ensureMilitaryPurchaseCapacity(r.Context(), tx, buyer.ID, resource, quantity); err != nil {
+			problem(w, 409, err.Error()+".")
+			return
+		}
 		result, e := tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?`, value+fee, buyer.ID, value+fee)
 		if e != nil || affected(result) != 1 {
 			problem(w, 409, "Not enough treasury for the goods and shipping fee.")
 			return
 		}
 	} else {
-		result, e := tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=? AND amount>=?`, quantity, seller.ID, resource, quantity)
-		if e != nil || affected(result) != 1 {
-			problem(w, 409, "Not enough goods to fulfill this buy offer.")
+		if err = ensureMilitaryPurchaseCapacity(r.Context(), tx, buyer.ID, resource, quantity); err != nil {
+			problem(w, 409, err.Error()+".")
 			return
 		}
-		result, e = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?`, fee, buyer.ID, fee)
-		if e != nil || affected(result) != 1 || escrowCash < value {
+		if isMilitaryEquipment(resource) {
+			if err = removeMilitaryInventory(r.Context(), tx, seller.ID, resource, quantity); err != nil {
+				problem(w, 409, "Not enough military equipment to fulfill this buy offer.")
+				return
+			}
+		} else {
+			result, e := tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=? AND amount>=?`, quantity, seller.ID, resource, quantity)
+			if e != nil || affected(result) != 1 {
+				problem(w, 409, "Not enough goods to fulfill this buy offer.")
+				return
+			}
+		}
+		feeResult, feeErr := tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?`, fee, buyer.ID, fee)
+		if feeErr != nil || affected(feeResult) != 1 || escrowCash < value {
 			problem(w, 409, "The buyer cannot cover the shipping fee.")
 			return
 		}
@@ -336,7 +367,14 @@ func (a *app) cancelMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 		tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury+? WHERE id=?`, cash, id)
 	}
 	if goods > 0 {
-		tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, id, resource, goods)
+		if isMilitaryEquipment(resource) {
+			if err = addMilitaryInventory(r.Context(), tx, id, resource, goods); err != nil {
+				problem(w, 500, "Could not return military escrow.")
+				return
+			}
+		} else {
+			tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, id, resource, goods)
+		}
 	}
 	tx.ExecContext(r.Context(), `UPDATE market_orders SET status='cancelled',escrow_cash=0,escrow_goods=0 WHERE id=?`, r.PathValue("id"))
 	if tx.Commit() != nil {
@@ -365,7 +403,14 @@ func (a *app) rejectMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 		tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury+? WHERE id=?`, cash, makerID)
 	}
 	if goods > 0 {
-		tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, makerID, resource, goods)
+		if isMilitaryEquipment(resource) {
+			if err = addMilitaryInventory(r.Context(), tx, makerID, resource, goods); err != nil {
+				problem(w, 500, "Could not return military escrow.")
+				return
+			}
+		} else {
+			tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, makerID, resource, goods)
+		}
 	}
 	tx.ExecContext(r.Context(), `UPDATE market_orders SET status='rejected',escrow_cash=0,escrow_goods=0 WHERE id=?`, r.PathValue("id"))
 	tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Direct trade declined','Your direct trade offer was declined and its escrow was returned.')`, uuid(), makerID)
@@ -497,7 +542,12 @@ func (a *app) processTradeShipments(ctx context.Context, turn time.Time) {
 			tx.Commit()
 			continue
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, buyer, resource, quantity); err != nil {
+		if isMilitaryEquipment(resource) {
+			err = addMilitaryInventory(ctx, tx, buyer, resource, quantity)
+		} else {
+			_, err = tx.ExecContext(ctx, `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, buyer, resource, quantity)
+		}
+		if err != nil {
 			tx.Rollback()
 			continue
 		}

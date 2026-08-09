@@ -3,6 +3,7 @@ import'./alliance-modern.css';
 import'./gear-confirm.css';
 import'./choice-details.css';
 import NotificationsScreen from'./NotificationsScreen';
+import MilitaryCommandScreen from'./MilitaryScreen';
 import NationalProjectsScreen from'./NationalProjectsScreen';
 import'./notifications.css';
 import'./province-development.css';
@@ -64,5 +65,5 @@ function Technology({_reload}:{_reload?:()=>void;reload?:()=>void}){return null}
 function Income(){return <EconomyScreen/>}
 function Factor({label,value}:{label:string;value:number}){return <div className="factor"><span>{label}</span><b>× {value.toFixed(3)}</b></div>}
 function WorldFooter(){const[s,setS]=useState<any>(),[,setTick]=useState(0);useEffect(()=>{void api('/world/status').then(setS);const i=setInterval(()=>setTick(x=>x+1),1000),j=setInterval(()=>api('/world/status').then(setS),60000);return()=>{clearInterval(i);clearInterval(j)}},[]);if(!s)return null;const elapsed=Date.now()-new Date(s.realTime).getTime(),real=new Date(new Date(s.realTime).getTime()+elapsed),game=new Date(new Date(s.gameTime).getTime()+elapsed*s.gameSpeed);return <footer><span><Clock size={15}/> Real {real.toLocaleString()}</span><span><Clock size={15}/> Game {game.toLocaleString()} · {s.gameSpeed}×</span><span className="legal-links"><a href="/terms.html" target="_blank">Terms</a><a href="/privacy.html" target="_blank">Privacy</a></span><div className="online"><span><Users size={15}/><i/> {s.activePlayers} active in the last 5 minutes</span><span className="daily-active"><Users size={15}/>{s.activePlayers24Hours} active in the last 24 hours</span></div></footer>}
-function Military({protected:p}:{protected:boolean}){return <section className="panel wide danger"><Swords/><span className="eyebrow">MILITARY COMMAND</span><h2>{p?'Guardian status is active':'Your nation stands exposed'}</h2><p>{p?'Declaring a raid or war permanently revokes your active Guardian grant. Other protected nations cannot be targeted.':'Raids seize resources with light infrastructure damage. Wars destroy infrastructure and offer little direct profit.'}</p><button className="war">{p?'Choose a target and waive protection':'Select a target'}</button></section>}
+function Military(_props:{protected:boolean}){return <MilitaryCommandScreen/>}
 function Empty({title,text}:{title:string;text:string}){return <section className="panel wide"><span className="eyebrow">COMING NEXT</span><h2>{title}</h2><p>{text}</p></section>}createRoot(document.getElementById('root')!).render(<><LegalModalHost/><App/></>);
