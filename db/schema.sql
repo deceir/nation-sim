@@ -162,6 +162,56 @@ CREATE TABLE IF NOT EXISTS ledger_entries (
   INDEX idx_ledger_nation_time (nation_id, created_at)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS venture_accounts (
+  nation_id CHAR(36) PRIMARY KEY,
+  personal_capital BIGINT NOT NULL DEFAULT 0,
+  transfer_used_today BIGINT NOT NULL DEFAULT 0,
+  transfer_date DATE NULL,
+  board_refresh_at TIMESTAMP(6) NULL,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_venture_account_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS venture_opportunities (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  template_key VARCHAR(80) NOT NULL,
+  title VARCHAR(140) NOT NULL,
+  description VARCHAR(600) NOT NULL,
+  min_investment BIGINT NOT NULL,
+  max_investment BIGINT NOT NULL,
+  duration_hours INT NOT NULL,
+  risk ENUM('low','medium','high') NOT NULL,
+  min_return_bps INT NOT NULL,
+  max_return_bps INT NOT NULL,
+  expires_at TIMESTAMP(6) NOT NULL,
+  accepted_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_venture_opportunity_board (nation_id,accepted_at,expires_at),
+  CONSTRAINT fk_venture_opportunity_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS personal_ventures (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  opportunity_id CHAR(36) NULL,
+  title VARCHAR(140) NOT NULL,
+  description VARCHAR(600) NOT NULL,
+  risk ENUM('low','medium','high') NOT NULL,
+  amount_invested BIGINT NOT NULL,
+  outcome_bps INT NULL,
+  payout BIGINT NULL,
+  status ENUM('active','claimable','collected','cancelled') NOT NULL DEFAULT 'active',
+  matures_at TIMESTAMP(6) NOT NULL,
+  resolved_at TIMESTAMP(6) NULL,
+  collected_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_personal_ventures_nation (nation_id,status,created_at),
+  INDEX idx_personal_ventures_maturity (status,matures_at),
+  CONSTRAINT fk_personal_venture_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_personal_venture_opportunity FOREIGN KEY (opportunity_id) REFERENCES venture_opportunities(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS daily_login_rewards (
   nation_id CHAR(36) NOT NULL,
   reward_date DATE NOT NULL,
