@@ -99,18 +99,27 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 			problem(w, 500, "A market offer could not be read. Run the latest database migration and try again.")
 			return
 		}
+		channel = strings.ToLower(strings.TrimSpace(channel))
+		status = strings.ToLower(strings.TrimSpace(status))
+		// Orders created before channels were introduced were all public orders.
+		if channel == "" && status == "open" {
+			channel = "public"
+		}
 		value := tradeValue(quantity, price)
 		counterpartContinent := me.Continent
 		if channel == "private" && makerID == me.ID {
 			counterpartContinent = targetContinent
 		}
 		distance, turns, fee, risk := shipmentTerms(continent, counterpartContinent, quantity, value)
-		offers = append(offers, map[string]any{"id": id, "makerID": makerID, "nation": nation, "continent": continent, "side": side, "resource": resource, "quantity": quantity, "unitPrice": price, "channel": channel, "targetNation": target, "status": status, "distanceModifier": distance, "estimatedTurns": turns, "estimatedFee": fee, "riskPercent": risk, "isMine": makerID == me.ID})
+		offers = append(offers, map[string]any{"id": id, "makerID": makerID, "nation": nation, "continent": continent, "side": side, "resource": resource, "quantity": quantity, "unitPrice": price, "channel": channel, "targetNation": target, "status": status, "distanceModifier": distance, "estimatedTurns": turns, "estimatedFee": fee, "riskPercent": risk, "isMine": strings.TrimSpace(makerID) == strings.TrimSpace(me.ID)})
 	}
 	rows.Close()
 	shipments, err := a.shipmentsForNation(r.Context(), me.ID)
 	if err != nil {
-		problem(w, 500, "Shipments unavailable.")
+		// A shipment migration or timestamp issue must not hide the independent
+		// public order book. Surface the warning while keeping offers usable.
+		shipments = []map[string]any{}
+		write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities, "warning": "Shipment tracking is temporarily unavailable."})
 		return
 	}
 	write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities})
