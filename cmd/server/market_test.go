@@ -30,3 +30,12 @@ func TestShipmentTerms(t *testing.T) {
 		t.Fatalf("expected 8 bulk turns, got %d", bulkTurns)
 	}
 }
+
+func TestMarketNotificationQuantityRoundsUpToTenth(t *testing.T) {
+	cases := map[float64]string{1: "1.0", 1.01: "1.1", 1.10: "1.1", 9.999: "10.0"}
+	for input, expected := range cases {
+		if actual := marketNotificationQuantity(input); actual != expected {
+			t.Fatalf("quantity %v displayed as %s; expected %s", input, actual, expected)
+		}
+	}
+}

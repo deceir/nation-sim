@@ -79,6 +79,12 @@ func tradeValue(quantity float64, unitPrice int64) int64 {
 	return int64(math.Ceil(quantity * float64(unitPrice)))
 }
 
+// Notification copy is intentionally less granular than settlement math.
+// Always round upward so the displayed tenth never understates the shipment.
+func marketNotificationQuantity(quantity float64) string {
+	return fmt.Sprintf("%.1f", math.Ceil(quantity*10-0.000000001)/10)
+}
+
 func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 	me, err := scanTradeNation(a.db.QueryRowContext(r.Context(), `SELECT id,name,continent,location_lat,location_lng FROM nations WHERE owner_id=?`, u.ID))
 	if err != nil {
@@ -218,9 +224,9 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	if in.Channel == "private" {
-		tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Direct trade offered',?)`, uuid(), in.TargetNationID, fmt.Sprintf("%s sent you a direct %s offer for %.3f %s.", nationName, in.Side, in.Quantity, commodityName(in.Resource)))
+		tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Direct trade offered',?)`, uuid(), in.TargetNationID, fmt.Sprintf("%s sent you a direct %s offer for %s %s.", nationName, in.Side, marketNotificationQuantity(in.Quantity), commodityName(in.Resource)))
 	} else {
-		tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Market offer published',?)`, uuid(), nid, fmt.Sprintf("Your public %s offer for %.3f %s is now open.", in.Side, in.Quantity, commodityName(in.Resource)))
+		tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Market offer published',?)`, uuid(), nid, fmt.Sprintf("Your public %s offer for %s %s is now open.", in.Side, marketNotificationQuantity(in.Quantity), commodityName(in.Resource)))
 	}
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not publish offer.")
@@ -265,6 +271,11 @@ func (a *app) acceptMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 		seller, buyer = taker, maker
 	}
 	distance, turns, fee, risk := shipmentTerms(seller.Continent, buyer.Continent, quantity, value)
+	var optimized int
+	tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=? AND project_type='logistical_optimization'`, buyer.ID).Scan(&optimized)
+	if optimized > 0 {
+		fee = int64(math.Ceil(float64(fee) * .85))
+	}
 	if side == "sell" {
 		result, e := tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=? AND treasury>=?`, value+fee, buyer.ID, value+fee)
 		if e != nil || affected(result) != 1 {
@@ -294,7 +305,7 @@ func (a *app) acceptMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 		problem(w, 500, "Could not close offer.")
 		return
 	}
-	message := fmt.Sprintf("%.3f %s is now in transit from %s to %s. Estimated delivery: %d turns.", quantity, commodityName(resource), seller.Name, buyer.Name, turns)
+	message := fmt.Sprintf("%s %s is now in transit from %s to %s. Estimated delivery: %d turns.", marketNotificationQuantity(quantity), commodityName(resource), seller.Name, buyer.Name, turns)
 	for _, id := range []string{seller.ID, buyer.ID} {
 		tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Shipment dispatched',?)`, uuid(), id, message)
 	}
@@ -475,7 +486,7 @@ func (a *app) processTradeShipments(ctx context.Context, turn time.Time) {
 		if delays == 0 && shipmentDelayRoll(id, turn) < risk {
 			tx.ExecContext(ctx, `UPDATE trade_shipments SET status='delayed',delay_count=1,estimated_arrival_at=DATE_ADD(estimated_arrival_at,INTERVAL 1 HOUR) WHERE id=?`, id)
 			for _, nid := range []string{seller, buyer} {
-				tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Shipment delayed',?)`, uuid(), nid, fmt.Sprintf("A %.3f %s shipment was delayed by one turn.", quantity, commodityName(resource)))
+				tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Shipment delayed',?)`, uuid(), nid, fmt.Sprintf("A %s %s shipment was delayed by one turn.", marketNotificationQuantity(quantity), commodityName(resource)))
 			}
 			tx.Commit()
 			continue
@@ -497,7 +508,7 @@ func (a *app) processTradeShipments(ctx context.Context, turn time.Time) {
 		tx.ExecContext(ctx, `UPDATE trade_shipments SET turns_remaining=0,status='delivered',delivered_at=NOW() WHERE id=?`, id)
 		tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'trade_sale',?,?)`, uuid(), seller, value, fmt.Sprintf("Escrow released for %.3f %s shipment", quantity, commodityName(resource)))
 		for _, nid := range []string{seller, buyer} {
-			tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Shipment delivered',?)`, uuid(), nid, fmt.Sprintf("The %.3f %s shipment arrived and escrow was released.", quantity, commodityName(resource)))
+			tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Shipment delivered',?)`, uuid(), nid, fmt.Sprintf("The %s %s shipment arrived and escrow was released.", marketNotificationQuantity(quantity), commodityName(resource)))
 		}
 		tx.Commit()
 	}

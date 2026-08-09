@@ -70,6 +70,7 @@ type strategicInput struct {
 	Education, Technology float64
 	Provinces             []provinceStrategy
 	Quotas                map[string]float64
+	LongTermProjects      map[string]bool
 }
 type strategicResult struct {
 	Production           map[string]float64            `json:"production"`
@@ -176,11 +177,40 @@ func calculateStrategy(in strategicInput) strategicResult {
 		}
 		r.ProvinceProduction[p.ID] = out
 	}
+	efficiency := 1.0
+	if in.LongTermProjects["technological_research_council"] {
+		efficiency *= 1.06
+	}
+	if in.LongTermProjects["logistical_optimization"] {
+		efficiency *= 1.05
+	}
+	for id := range in.LongTermProjects {
+		p, ok := longTermProjects[id]
+		if !ok || p.Target == "" {
+			continue
+		}
+		multiplier := 1 + p.ProductionBoost
+		r.Production[p.Target] *= multiplier
+		for province := range r.ProvinceProduction {
+			r.ProvinceProduction[province][p.Target] *= multiplier
+		}
+	}
+	for resource := range r.Production {
+		r.Production[resource] *= efficiency
+	}
+	for province := range r.ProvinceProduction {
+		for resource := range r.ProvinceProduction[province] {
+			r.ProvinceProduction[province][resource] *= efficiency
+		}
+	}
+	if in.LongTermProjects["population_development"] {
+		r.PopulationMultiplier *= 1.08
+	}
 	return r
 }
 
 func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, error) {
-	in := strategicInput{Policies: map[string]bool{}, Quotas: map[string]float64{}}
+	in := strategicInput{Policies: map[string]bool{}, Quotas: map[string]float64{}, LongTermProjects: map[string]bool{}}
 	if e := a.db.QueryRowContext(ctx, `SELECT s.gear,(s.disruption_until IS NOT NULL AND s.disruption_until>NOW()),n.education,n.technology FROM nation_economic_strategy s JOIN nations n ON n.id=s.nation_id WHERE s.nation_id=?`, nid).Scan(&in.Gear, &in.Disrupted, &in.Education, &in.Technology); e != nil {
 		return in, e
 	}
@@ -188,6 +218,7 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 	if e != nil {
 		return in, e
 	}
+	in.LongTermProjects = loadLongTermProjectSet(ctx, a.db, nid)
 	for rows.Next() {
 		var k string
 		rows.Scan(&k)
@@ -224,9 +255,15 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Provinces[i].UpgradeCap = provinceUpgradeCap(in.Provinces[i].Infra)
 		for key, spec := range provinceUpgradeSpecs {
 			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, in.Provinces[i].Upgrades[key], in.Provinces[i].Infra)
+			if in.LongTermProjects["infrastructure_bank"] {
+				in.Provinces[i].UpgradeQuotes[key] = int64(math.Ceil(float64(in.Provinces[i].UpgradeQuotes[key]) * .90))
+			}
 		}
 		for _, amount := range []int{10, 50, 100} {
 			in.Provinces[i].InfrastructureQuotes[fmt.Sprint(amount)] = int64(infraPurchaseCost(in.Provinces[i].Infra, float64(amount), int(in.Technology)))
+			if in.LongTermProjects["infrastructure_bank"] {
+				in.Provinces[i].InfrastructureQuotes[fmt.Sprint(amount)] = int64(math.Ceil(float64(in.Provinces[i].InfrastructureQuotes[fmt.Sprint(amount)]) * .88))
+			}
 		}
 		ds, _ := a.db.QueryContext(ctx, `SELECT resource,richness FROM province_deposits WHERE city_id=?`, in.Provinces[i].ID)
 		for ds.Next() {

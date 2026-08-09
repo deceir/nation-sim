@@ -62,6 +62,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (ModelNation, string, int64, error) {
 	var n ModelNation
 	n.Projects = map[string]bool{}
+	n.LongTermProjects = map[string]bool{}
 	var id string
 	var cash int64
 	err := a.db.QueryRowContext(ctx, `SELECT id,tax_rate,happiness,education,technology,doctrine,treasury FROM nations WHERE owner_id=?`, owner).Scan(&id, &n.TaxRate, &n.Happiness, &n.Education, &n.Technology, &n.Doctrine, &cash)
@@ -106,6 +107,7 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 		n.Projects[k] = true
 	}
 	ps.Close()
+	n.LongTermProjects = loadLongTermProjectSet(ctx, a.db, id)
 	return n, id, cash, nil
 }
 
@@ -139,6 +141,11 @@ func (a *app) buyDevelopment(w http.ResponseWriter, r *http.Request, u user) {
 	switch in.Kind {
 	case "infrastructure":
 		cost = infraPurchaseCost(infra, in.Amount, tech)
+		var longTermBank int
+		tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=? AND project_type='infrastructure_bank'`, nid).Scan(&longTermBank)
+		if longTermBank > 0 {
+			cost *= .88
+		}
 		var has int
 		tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_projects WHERE nation_id=? AND project_type='civil_engineering_corps'`, nid).Scan(&has)
 		if has > 0 {

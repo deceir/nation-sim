@@ -66,6 +66,7 @@ type ModelNation struct {
 	Technology                    int
 	Doctrine                      string
 	Projects                      map[string]bool
+	LongTermProjects              map[string]bool
 	Cities                        []ModelCity
 }
 
@@ -215,6 +216,9 @@ func calculateEconomy(n ModelNation) NationResult {
 			}
 		}
 		r.Commerce = math.Min(commerceCap, commerce) * r.PowerMultiplier
+		if n.LongTermProjects["commerce_facilitation"] {
+			r.Commerce = math.Min(commerceCap*1.08, r.Commerce*1.10)
+		}
 		r.Pollution = math.Max(0, pollution)
 		healthReduction := 0.0
 		if n.Projects["public_health_sanitation"] {
@@ -222,6 +226,12 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		r.Disease = clamp(.012+r.Pollution*.0007-n.Education*.00008-diseaseReduction-healthReduction, 0, .30)
 		r.Crime = clamp(.04-n.Education*.0003+(50-n.Happiness)*.0004-crimeReduction, 0, .30)
+		if n.LongTermProjects["public_health_program"] {
+			r.Disease *= .75
+		}
+		if n.LongTermProjects["internal_security_reform"] {
+			r.Crime *= .75
+		}
 		for key, q := range c.Buildings {
 			s := buildings[key]
 			if s.Category != "extraction" && s.Category != "manufacturing" {
@@ -241,9 +251,18 @@ func calculateEconomy(n ModelNation) NationResult {
 		happyMult := clamp(1+(n.Happiness-50)*.008, .55, 1.45)
 		eduBonus := n.Education / 100 * .22
 		r.EffectivePopulation = math.Max(1000, r.BasePopulation*(1+eduBonus)*happyMult*(1-r.Disease)*(1-r.Crime)*r.DensityMultiplier)
+		if n.LongTermProjects["population_development"] {
+			r.EffectivePopulation *= 1.03
+		}
 		r.CitizenIncome = balance.BaseCitizenIncome * (1 + (n.Happiness-50)*balance.HappinessIncomePerPoint) * (1 + n.Education/100*balance.EducationIncomeMax) * (1 + float64(n.Technology)*balance.TechnologyIncomePerLevel)
 		r.CitizenIncome = math.Max(5, r.CitizenIncome)
+		if n.LongTermProjects["national_education_act"] {
+			r.CitizenIncome *= 1.04
+		}
 		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018)
+		if n.LongTermProjects["tax_modernization"] {
+			r.TaxRevenue *= 1.08
+		}
 		upkeepModifier := 1.0
 		if n.Projects["civil_engineering_corps"] {
 			upkeepModifier = .96
@@ -276,8 +295,17 @@ func calculateEconomy(n ModelNation) NationResult {
 		educationModifier = 1.15
 	}
 	out.EducationChange = educationBuildings*.035*educationModifier - n.Education*.0015
+	if n.LongTermProjects["national_education_act"] {
+		out.EducationChange += .15
+	}
 	if n.Projects["public_education_initiative"] {
 		out.HappinessTarget = clamp(out.HappinessTarget+1, 0, 100)
+	}
+	if n.LongTermProjects["civil_service_reform"] {
+		out.HappinessTarget = clamp(out.HappinessTarget+8, 0, 100)
+	}
+	if n.LongTermProjects["public_health_program"] {
+		out.HappinessTarget = clamp(out.HappinessTarget+4, 0, 100)
 	}
 	out.NetDailyCash = out.DailyTax - out.DailyUpkeep
 	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen

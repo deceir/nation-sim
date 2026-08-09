@@ -29,6 +29,7 @@ func main() {
 		{"nations", "location_lat", "DECIMAL(9,6) NULL"},
 		{"nations", "location_lng", "DECIMAL(9,6) NULL"},
 		{"nations", "user_type", "ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER'"},
+		{"nations", "technology_progress", "DECIMAL(8,4) NOT NULL DEFAULT 0"},
 		{"nations", "employment_rate", "DECIMAL(5,2) NOT NULL DEFAULT 72.00"},
 		{"nations", "tax_rate", "DECIMAL(5,2) NOT NULL DEFAULT 25.00"},
 		{"nations", "doctrine", "VARCHAR(30) NOT NULL DEFAULT 'Balanced'"},

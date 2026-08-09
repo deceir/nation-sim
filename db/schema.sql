@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS nations (
   happiness INT NOT NULL DEFAULT 65 CHECK (happiness BETWEEN 0 AND 100),
   education INT NOT NULL DEFAULT 40 CHECK (education BETWEEN 0 AND 100),
   technology INT NOT NULL DEFAULT 20 CHECK (technology BETWEEN 0 AND 100),
+  technology_progress DECIMAL(8,4) NOT NULL DEFAULT 0,
   quality_of_life INT NOT NULL DEFAULT 45 CHECK (quality_of_life BETWEEN 0 AND 100),
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 	UNIQUE KEY uq_nations_leader_name (leader_name),
@@ -166,6 +167,30 @@ CREATE TABLE IF NOT EXISTS national_projects (
   completed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   UNIQUE KEY uq_nation_project (nation_id, project_type),
   CONSTRAINT fk_national_projects_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS national_long_term_projects (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  project_type VARCHAR(80) NOT NULL,
+  completed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_long_term_project (nation_id,project_type),
+  CONSTRAINT fk_long_term_project_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS national_project_construction (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  project_type VARCHAR(80) NOT NULL,
+  turns_total INT NOT NULL,
+  turns_remaining INT NOT NULL,
+  cash_locked BIGINT NOT NULL,
+  commodities_locked JSON NOT NULL,
+  status ENUM('building','complete') NOT NULL DEFAULT 'building',
+  started_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  completed_at TIMESTAMP(6) NULL,
+  INDEX idx_project_construction_turn(status,turns_remaining),
+  CONSTRAINT fk_project_construction_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS economic_snapshots (

@@ -95,6 +95,10 @@ func (a *app) processHourlyTurn(turn time.Time) {
 				continue
 			}
 		}
+		if n.LongTermProjects["technological_research_council"] {
+			gain := .12 / balance.TurnsPerDay
+			tx.ExecContext(ctx, `UPDATE nations SET technology=LEAST(100,technology+FLOOR(technology_progress+?)),technology_progress=MOD(technology_progress+?,1) WHERE id=?`, gain, gain, nid)
+		}
 		breakdown, _ := json.Marshal(result)
 		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay), int64(result.DailyUpkeep/balance.TurnsPerDay), 0, newHappy, newEducation, breakdown)
 		if e != nil {
@@ -108,5 +112,6 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	}
 	a.db.ExecContext(ctx, `UPDATE economy_turns SET nations_processed=? WHERE turn_at=?`, processed, turn)
 	a.processTradeShipments(ctx, turn)
+	a.processLongTermProjects(ctx)
 	log.Printf("hourly economic turn processed %d nations", processed)
 }

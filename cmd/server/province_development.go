@@ -137,6 +137,11 @@ func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user)
 		return
 	}
 	cost := provinceUpgradeCost(spec, level, infra)
+	var hasInfrastructureBank int
+	tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=? AND project_type='infrastructure_bank'`, nid).Scan(&hasInfrastructureBank)
+	if hasInfrastructureBank > 0 {
+		cost = int64(math.Ceil(float64(cost) * .90))
+	}
 	if cash < cost {
 		problem(w, http.StatusConflict, "Insufficient treasury for this Province upgrade.")
 		return
