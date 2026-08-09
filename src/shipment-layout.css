@@ -28,6 +28,20 @@
 .maritime-route .sea-leg {
   stroke: #d6b66f;
   stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.maritime-route.routing svg {
+  opacity: .78;
+}
+
+.maritime-route.routing .route-live i {
+  animation: route-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes route-pulse {
+  to { opacity: .3; transform: scale(.7); }
 }
 
 .maritime-route .land-leg {
