@@ -68,6 +68,7 @@ func main() {
 	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
+	mux.HandleFunc("GET /api/nations/{id}/trades", a.auth(a.nationTradeHistory))
 	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
 	mux.HandleFunc("POST /api/nation/location", a.auth(a.resetNationLocation))
 	mux.HandleFunc("GET /api/cities", a.auth(a.cities))

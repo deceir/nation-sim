@@ -85,7 +85,7 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	offers := []map[string]any{}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT o.id,o.nation_id,n.name,n.continent,o.side,o.resource,o.remaining,o.unit_price,o.channel,COALESCE(t.name,''),COALESCE(t.continent,''),o.status,o.created_at FROM market_orders o JOIN nations n ON n.id=o.nation_id LEFT JOIN nations t ON t.id=o.target_nation_id WHERE (o.channel='public' AND o.status='open') OR (o.channel='private' AND (o.nation_id=? OR o.target_nation_id=?) AND o.status='pending') ORDER BY o.created_at DESC LIMIT 150`, me.ID, me.ID)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT o.id,o.nation_id,n.name,n.continent,o.side,o.resource,o.remaining,o.unit_price,o.channel,COALESCE(t.name,''),COALESCE(t.continent,''),o.status,o.created_at FROM market_orders o JOIN nations n ON n.id=o.nation_id LEFT JOIN nations t ON t.id=o.target_nation_id WHERE o.status='open' OR (o.status='pending' AND (o.nation_id=? OR o.target_nation_id=?)) ORDER BY o.created_at DESC`, me.ID, me.ID)
 	if err != nil {
 		problem(w, 500, "Market unavailable.")
 		return
@@ -95,8 +95,10 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 		var quantity float64
 		var price int64
 		var created time.Time
-		if rows.Scan(&id, &makerID, &nation, &continent, &side, &resource, &quantity, &price, &channel, &target, &targetContinent, &status, &created) != nil {
-			continue
+		if err = rows.Scan(&id, &makerID, &nation, &continent, &side, &resource, &quantity, &price, &channel, &target, &targetContinent, &status, &created); err != nil {
+			rows.Close()
+			problem(w, 500, "A market offer could not be read. Run the latest database migration and try again.")
+			return
 		}
 		value := tradeValue(quantity, price)
 		counterpartContinent := me.Continent
@@ -389,6 +391,35 @@ func (a *app) shipmentDetail(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	problem(w, 404, "Shipment not found.")
+}
+
+func (a *app) nationTradeHistory(w http.ResponseWriter, r *http.Request, _ user) {
+	nationID := r.PathValue("id")
+	var nationName string
+	if a.db.QueryRowContext(r.Context(), `SELECT name FROM nations WHERE id=?`, nationID).Scan(&nationName) != nil {
+		problem(w, 404, "Nation not found.")
+		return
+	}
+	rows, err := a.db.QueryContext(r.Context(), `SELECT s.id,s.resource,s.quantity,s.unit_price,s.goods_value,s.shipping_fee,s.status,s.departed_at,s.estimated_arrival_at,s.delivered_at,CASE WHEN s.seller_nation_id=? THEN 'sale' ELSE 'purchase' END,CASE WHEN s.seller_nation_id=? THEN buyer.name ELSE seller.name END FROM trade_shipments s JOIN nations seller ON seller.id=s.seller_nation_id JOIN nations buyer ON buyer.id=s.buyer_nation_id WHERE s.seller_nation_id=? OR s.buyer_nation_id=? ORDER BY s.departed_at DESC LIMIT 200`, nationID, nationID, nationID, nationID)
+	if err != nil {
+		problem(w, 500, "Trade history unavailable.")
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id, resource, status, direction, partner string
+		var quantity float64
+		var unitPrice, goodsValue, shippingFee int64
+		var departed, estimated time.Time
+		var delivered *time.Time
+		if err = rows.Scan(&id, &resource, &quantity, &unitPrice, &goodsValue, &shippingFee, &status, &departed, &estimated, &delivered, &direction, &partner); err != nil {
+			problem(w, 500, "Trade history could not be read.")
+			return
+		}
+		items = append(items, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": unitPrice, "goodsValue": goodsValue, "shippingFee": shippingFee, "status": status, "departedAt": departed, "estimatedArrivalAt": estimated, "deliveredAt": delivered, "direction": direction, "partner": partner})
+	}
+	write(w, 200, map[string]any{"nationID": nationID, "nationName": nationName, "items": items})
 }
 
 func shipmentDelayRoll(id string, turn time.Time) float64 {
