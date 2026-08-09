@@ -90,15 +90,19 @@ type CityResult struct {
 }
 
 type NationResult struct {
-	Cities          []CityResult       `json:"cities"`
-	DailyTax        float64            `json:"dailyTax"`
-	DailyUpkeep     float64            `json:"dailyUpkeep"`
-	NetDailyCash    float64            `json:"netDailyCash"`
-	Population      float64            `json:"population"`
-	HappinessTarget float64            `json:"happinessTarget"`
-	EducationChange float64            `json:"educationChange"`
-	Production      map[string]float64 `json:"production"`
-	Contributors    map[string]float64 `json:"contributors"`
+	Cities                []CityResult       `json:"cities"`
+	DailyTax              float64            `json:"dailyTax"`
+	DailyUpkeep           float64            `json:"dailyUpkeep"`
+	NetDailyCash          float64            `json:"netDailyCash"`
+	Population            float64            `json:"population"`
+	HappinessTarget       float64            `json:"happinessTarget"`
+	EducationChange       float64            `json:"educationChange"`
+	Production            map[string]float64 `json:"production"`
+	Contributors          map[string]float64 `json:"contributors"`
+	DailyFoodConsumption  float64            `json:"dailyFoodConsumption"`
+	HourlyFoodConsumption float64            `json:"hourlyFoodConsumption"`
+	DailyFoodProduction   float64            `json:"dailyFoodProduction"`
+	NetDailyFood          float64            `json:"netDailyFood"`
 }
 
 func infraUnitCost(current float64, tech int) float64 {
@@ -276,6 +280,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		out.HappinessTarget = clamp(out.HappinessTarget+1, 0, 100)
 	}
 	out.NetDailyCash = out.DailyTax - out.DailyUpkeep
+	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen
+	out.HourlyFoodConsumption = out.DailyFoodConsumption / balance.TurnsPerDay
 	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget}
 	return out
 }

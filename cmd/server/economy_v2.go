@@ -24,6 +24,8 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 			result.Cities[i].TaxRevenue *= strategic.IncomeMultiplier
 		}
 		result.Contributors["economicGearIncome"] = strategic.IncomeMultiplier
+		result.DailyFoodProduction = strategic.Production["foodstuffs"]
+		result.NetDailyFood = result.DailyFoodProduction - result.DailyFoodConsumption
 	}
 	alliance := map[string]any{"name": "", "taxRate": float64(0), "projectedDailyTax": int64(0)}
 	var allianceName string

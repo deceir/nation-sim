@@ -1,0 +1,8 @@
+.food-upkeep-summary { display:grid; grid-template-columns:repeat(3,1fr); margin:18px 0; border:1px solid var(--line); }
+.food-upkeep-summary > div { padding:14px; border-right:1px solid var(--line); }
+.food-upkeep-summary > div:last-child { border-right:0; }
+.food-upkeep-summary span,.food-upkeep-summary b { display:block; }
+.food-upkeep-summary span { color:var(--muted); font-size:9px; letter-spacing:.08em; text-transform:uppercase; }
+.food-upkeep-summary b { margin-top:6px; }
+.food-upkeep-summary b.negative { color:#db8b70; }
+@media (max-width:700px) { .food-upkeep-summary { grid-template-columns:1fr; } .food-upkeep-summary > div { border-right:0; border-bottom:1px solid var(--line); } }

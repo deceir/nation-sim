@@ -437,7 +437,7 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]bool{"ok": true})
 }
 
-func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult) error {
+func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult, foodNeed float64) error {
 	produced := []string{}
 	for _, commodity := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		hourly := result.Production[commodity] / 24
@@ -448,6 +448,18 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 			return e
 		}
 		produced = append(produced, fmt.Sprintf("%.2f %s", hourly, commodityName(commodity)))
+	}
+	// Population has first claim on food before industry converts primary inputs.
+	if _, e := tx.ExecContext(ctx, `INSERT IGNORE INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,'foodstuffs',0)`, nid); e != nil {
+		return e
+	}
+	var foodAvailable float64
+	if e := tx.QueryRowContext(ctx, `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity='foodstuffs' FOR UPDATE`, nid).Scan(&foodAvailable); e != nil {
+		return e
+	}
+	foodConsumed := math.Min(foodNeed, foodAvailable)
+	if _, e := tx.ExecContext(ctx, `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity='foodstuffs'`, foodConsumed, nid); e != nil {
+		return e
 	}
 	for _, commodity := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 		wanted := result.Production[commodity] / 24
@@ -473,8 +485,14 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 		}
 		produced = append(produced, fmt.Sprintf("%.2f %s", actual, commodityName(commodity)))
 	}
-	if len(produced) > 0 {
-		message := "Last turn you produced: " + strings.Join(produced, ", ") + "."
+	if len(produced) > 0 || foodNeed > 0 {
+		message := fmt.Sprintf("Population upkeep consumed %.2f Foodstuffs.", foodConsumed)
+		if len(produced) > 0 {
+			message = "Last turn you produced: " + strings.Join(produced, ", ") + ". " + message
+		}
+		if foodConsumed+0.0001 < foodNeed {
+			message += fmt.Sprintf(" Food shortage: %.2f Foodstuffs unmet.", foodNeed-foodConsumed)
+		}
 		if _, e := tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Turn production summary',?)`, uuid(), nid, message); e != nil {
 			return e
 		}

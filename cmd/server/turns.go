@@ -77,10 +77,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			continue
 		}
 		prod := func(k string) int64 { return int64(math.Floor(result.Production[k] / balance.TurnsPerDay)) }
-		foodMade := prod("food")
-		foodNeed := int64(math.Ceil(result.Population * balance.FoodPerCitizen / balance.TurnsPerDay))
-		foodDelta := foodMade - foodNeed
-		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,food=GREATEST(0,food+?),coal=coal+?,iron=iron+?,oil=oil+?,bauxite=bauxite+?,steel=steel+?,aluminum=aluminum+?,gasoline=gasoline+? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), foodDelta, prod("coal"), prod("iron"), prod("oil"), prod("bauxite"), prod("steel"), prod("aluminum"), prod("gasoline"), nid)
+		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,coal=coal+?,iron=iron+?,oil=oil+?,bauxite=bauxite+?,steel=steel+?,aluminum=aluminum+?,gasoline=gasoline+? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), prod("coal"), prod("iron"), prod("oil"), prod("bauxite"), prod("steel"), prod("aluminum"), prod("gasoline"), nid)
 		if e != nil {
 			tx.Rollback()
 			continue
@@ -93,7 +90,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo) VALUES(?,?,?,'tax','cash',?,?)`, uuid(), allianceID, nid, allianceTax, "Hourly Alliance tax from "+allianceName)
 		}
 		if strategyErr == nil {
-			if e = applyStrategicTurn(ctx, tx, nid, strategy, strategyResult); e != nil {
+			if e = applyStrategicTurn(ctx, tx, nid, strategy, strategyResult, result.HourlyFoodConsumption); e != nil {
 				tx.Rollback()
 				continue
 			}
