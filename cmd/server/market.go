@@ -105,16 +105,16 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	offers := []map[string]any{}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT o.id,o.nation_id,n.name,n.continent,o.side,o.resource,o.remaining,o.unit_price,o.channel,COALESCE(t.name,''),COALESCE(t.continent,''),o.status FROM market_orders o JOIN nations n ON n.id=o.nation_id LEFT JOIN nations t ON t.id=o.target_nation_id WHERE o.status='open' OR (o.status='pending' AND (o.nation_id=? OR o.target_nation_id=?)) ORDER BY o.created_at DESC`, me.ID, me.ID)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT o.id,o.nation_id,n.name,n.continent,o.side,o.resource,o.remaining,o.unit_price,o.channel,COALESCE(t.name,''),COALESCE(t.continent,''),o.status,COALESCE(a.id,''),COALESCE(a.name,'') FROM market_orders o JOIN nations n ON n.id=o.nation_id LEFT JOIN nations t ON t.id=o.target_nation_id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE o.status='open' OR (o.status='pending' AND (o.nation_id=? OR o.target_nation_id=?)) ORDER BY o.created_at DESC`, me.ID, me.ID)
 	if err != nil {
 		problem(w, 500, "Market unavailable.")
 		return
 	}
 	for rows.Next() {
-		var id, makerID, nation, continent, side, resource, channel, target, targetContinent, status string
+		var id, makerID, nation, continent, side, resource, channel, target, targetContinent, status, allianceID, allianceName string
 		var quantity float64
 		var price int64
-		if err = rows.Scan(&id, &makerID, &nation, &continent, &side, &resource, &quantity, &price, &channel, &target, &targetContinent, &status); err != nil {
+		if err = rows.Scan(&id, &makerID, &nation, &continent, &side, &resource, &quantity, &price, &channel, &target, &targetContinent, &status, &allianceID, &allianceName); err != nil {
 			rows.Close()
 			problem(w, 500, "A market offer could not be read. Run the latest database migration and try again.")
 			return
@@ -131,7 +131,7 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 			counterpartContinent = targetContinent
 		}
 		distance, turns, fee, risk := shipmentTerms(continent, counterpartContinent, quantity, value)
-		offers = append(offers, map[string]any{"id": id, "makerID": makerID, "nation": nation, "continent": continent, "side": side, "resource": resource, "quantity": quantity, "unitPrice": price, "channel": channel, "targetNation": target, "status": status, "distanceModifier": distance, "estimatedTurns": turns, "estimatedFee": fee, "riskPercent": risk, "isMine": strings.TrimSpace(makerID) == strings.TrimSpace(me.ID)})
+		offers = append(offers, map[string]any{"id": id, "makerID": makerID, "nation": nation, "continent": continent, "allianceID": allianceID, "allianceName": allianceName, "side": side, "resource": resource, "quantity": quantity, "unitPrice": price, "channel": channel, "targetNation": target, "status": status, "distanceModifier": distance, "estimatedTurns": turns, "estimatedFee": fee, "riskPercent": risk, "isMine": strings.TrimSpace(makerID) == strings.TrimSpace(me.ID)})
 	}
 	rows.Close()
 	shipments, err := a.shipmentsForNation(r.Context(), me.ID)
