@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -143,8 +144,9 @@ func (a *app) crises(w http.ResponseWriter, r *http.Request, u user) {
 		write(w, 200, map[string]any{"total": total, "unresolved": unresolved})
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT crisis.id,template.id,template.title,template.briefing,response.responded_at,response.effect_summary,COALESCE(option.label,'') FROM daily_crises crisis JOIN crisis_templates template ON template.id=crisis.template_id LEFT JOIN nation_crisis_responses response ON response.daily_crisis_id=crisis.id AND response.nation_id=? LEFT JOIN crisis_options option ON option.id=response.option_id WHERE crisis.server_date=CURRENT_DATE() ORDER BY crisis.slot_number`, nid)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT crisis.id,template.id,template.title,template.briefing,response.responded_at,response.effect_summary,COALESCE(choice.label,'') FROM daily_crises crisis JOIN crisis_templates template ON template.id=crisis.template_id LEFT JOIN nation_crisis_responses response ON response.daily_crisis_id=crisis.id AND response.nation_id=? LEFT JOIN crisis_options choice ON choice.id=response.option_id WHERE crisis.server_date=CURRENT_DATE() ORDER BY crisis.slot_number`, nid)
 	if err != nil {
+		log.Printf("load detailed Daily Crises: %v", err)
 		problem(w, 500, "Daily Crises are unavailable.")
 		return
 	}
@@ -226,7 +228,7 @@ func (a *app) respondToCrisis(w http.ResponseWriter, r *http.Request, u user) {
 	defer tx.Rollback()
 	var effectType, target, effectText string
 	var value float64
-	err = tx.QueryRowContext(r.Context(), `SELECT option.effect_type,option.effect_target,option.effect_value,option.effect_text FROM daily_crises crisis JOIN crisis_options option ON option.template_id=crisis.template_id WHERE crisis.id=? AND crisis.server_date=CURRENT_DATE() AND option.id=? FOR UPDATE`, r.PathValue("id"), strings.TrimSpace(in.OptionID)).Scan(&effectType, &target, &value, &effectText)
+	err = tx.QueryRowContext(r.Context(), `SELECT choice.effect_type,choice.effect_target,choice.effect_value,choice.effect_text FROM daily_crises crisis JOIN crisis_options choice ON choice.template_id=crisis.template_id WHERE crisis.id=? AND crisis.server_date=CURRENT_DATE() AND choice.id=? FOR UPDATE`, r.PathValue("id"), strings.TrimSpace(in.OptionID)).Scan(&effectType, &target, &value, &effectText)
 	if err != nil {
 		problem(w, 400, "That Crisis or response is no longer available.")
 		return
