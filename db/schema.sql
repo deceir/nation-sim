@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS conflicts (
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS military_inventory (
   nation_id CHAR(36) NOT NULL,
-  unit_type ENUM('soldiers','tanks','ships','drones') NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
   quantity BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (nation_id,unit_type),
   CONSTRAINT fk_military_inventory_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS military_inventory (
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS military_production_daily (
   nation_id CHAR(36) NOT NULL,
-  unit_type ENUM('soldiers','tanks','ships','drones') NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
   production_date DATE NOT NULL,
   quantity BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (nation_id,unit_type,production_date),

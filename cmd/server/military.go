@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"sort"
 	"time"
 )
 
@@ -27,6 +26,7 @@ var militaryUnits = map[string]militaryUnitSpec{
 	"soldiers": {Name: "Soldiers", Cash: 1500, Resources: map[string]float64{}, DailyCash: .4, PopulationCoefficient: .10, ProvinceCoefficient: 1000, BaseCapacity: 5000},
 	"tanks":    {Name: "Tanks", Project: "armored_vehicle_program", Cash: 120000, Resources: map[string]float64{"basic_metals": 8, "construction_materials": 3, "energy": 2}, DailyCash: 350, DailyEnergy: .1, PopulationCoefficient: .005, ProvinceCoefficient: 50, BaseCapacity: 50, Tradable: true},
 	"ships":    {Name: "Ships", Project: "naval_shipyard", Cash: 450000, Resources: map[string]float64{"basic_metals": 20, "construction_materials": 12, "energy": 8, "timber": 5}, DailyCash: 1200, DailyEnergy: .4, PopulationCoefficient: .0015, ProvinceCoefficient: 20, BaseCapacity: 10, Tradable: true},
+	"jets":     {Name: "Fighter Jets", Project: "aviation_industry", Cash: 350000, Resources: map[string]float64{"basic_metals": 12, "construction_materials": 8, "energy": 6, "strategic_minerals": 4}, DailyCash: 800, DailyEnergy: .3, PopulationCoefficient: .002, ProvinceCoefficient: 25, BaseCapacity: 15, Tradable: true},
 	"drones":   {Name: "Drones", Project: "advanced_ordnance", Cash: 85000, Resources: map[string]float64{"basic_metals": 4, "strategic_minerals": 3, "energy": 2, "basic_goods": 1}, DailyCash: 2500, DailyEnergy: .15, PopulationCoefficient: .006, ProvinceCoefficient: 40, BaseCapacity: 30, Tradable: true},
 }
 
@@ -91,12 +91,7 @@ func ensureMilitaryPurchaseCapacity(ctx context.Context, tx *sql.Tx, nationID, u
 }
 
 func militaryUnitKeys() []string {
-	keys := make([]string, 0, len(militaryUnits))
-	for key := range militaryUnits {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
+	return []string{"soldiers", "tanks", "ships", "jets", "drones"}
 }
 
 func militaryCapacityForNation(ctx context.Context, q interface {
@@ -111,7 +106,7 @@ func militaryCapacityForNation(ctx context.Context, q interface {
 func militaryUpkeepProjection(ctx context.Context, q interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, nationID string) (float64, float64) {
-	rows, err := q.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
+	rows, err := q.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
 	if err != nil {
 		return 0, 0
 	}
@@ -179,9 +174,16 @@ func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	if spec.Project != "" {
 		var completed int
-		tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=? AND project_type=?`, nid, spec.Project).Scan(&completed)
+		if err = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM national_long_term_projects WHERE nation_id=? AND project_type=?)`, nid, spec.Project).Scan(&completed); err != nil {
+			problem(w, 500, "Could not verify the required National Project.")
+			return
+		}
 		if completed == 0 {
-			problem(w, 409, spec.Name+" require the corresponding National Project for domestic production.")
+			projectName := spec.Project
+			if project, exists := longTermProjects[spec.Project]; exists {
+				projectName = project.Name
+			}
+			problem(w, 409, spec.Name+" require the "+projectName+" National Project for domestic production.")
 			return
 		}
 	}
@@ -267,7 +269,7 @@ func (a *app) decommissionMilitary(w http.ResponseWriter, r *http.Request, u use
 }
 
 func militaryHourlyUpkeep(ctx context.Context, tx *sql.Tx, nationID string) (int64, float64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
+	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
 	if err != nil {
 		return 0, 0, err
 	}

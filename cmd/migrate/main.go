@@ -112,6 +112,8 @@ func main() {
 		log.Fatal(err)
 	}
 	for _, q := range []string{
+		`ALTER TABLE military_inventory MODIFY unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL`,
+		`ALTER TABLE military_production_daily MODIFY unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL`,
 		`ALTER TABLE market_orders MODIFY resource VARCHAR(40) NOT NULL`,
 		`ALTER TABLE market_orders MODIFY quantity DECIMAL(20,3) NOT NULL`,
 		`ALTER TABLE market_orders MODIFY remaining DECIMAL(20,3) NOT NULL`,

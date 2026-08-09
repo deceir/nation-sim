@@ -18,10 +18,10 @@ var tradeCommodities = map[string]bool{
 	"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true,
 	"strategic_minerals": true, "textiles": true, "processed_foods": true, "construction_materials": true,
 	"basic_goods": true, "consumer_goods": true, "military_equipment": true, "luxury_goods": true,
-	"tanks": true, "ships": true, "drones": true,
+	"tanks": true, "ships": true, "jets": true, "drones": true,
 }
 
-var marketCommodities = append(append([]string{}, strategicCommodities...), "tanks", "ships", "drones")
+var marketCommodities = append(append([]string{}, strategicCommodities...), "tanks", "ships", "jets", "drones")
 
 // The six specified regions use the design table verbatim. Oceania is an extension because it is a playable Diplomatia continent.
 var tradeDistances = map[string]map[string]float64{
@@ -151,7 +151,7 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	if isMilitaryEquipment(in.Resource) {
 		if _, ok := militaryTradeQuantity(in.Quantity); !ok {
-			problem(w, 400, "Tanks, Ships, and Drones must be traded in whole units.")
+			problem(w, 400, "Tanks, Ships, Fighter Jets, and Drones must be traded in whole units.")
 			return
 		}
 	}

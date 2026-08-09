@@ -4,7 +4,7 @@ import './military-system.css';
 
 const yen=(value:number)=>`¥${Number(value||0).toLocaleString(undefined,{maximumFractionDigits:1})}`;
 const names:Record<string,string>={basic_metals:'Basic Metals',construction_materials:'Construction Materials',energy:'Energy',timber:'Timber',strategic_minerals:'Strategic Minerals',basic_goods:'Basic Goods'};
-const projects:Record<string,string>={armored_vehicle_program:'Armored Vehicle Program',naval_shipyard:'Naval Shipyard Authority',advanced_ordnance:'Advanced Munitions & Ordnance Act'};
+const projects:Record<string,string>={armored_vehicle_program:'Armored Vehicle Program',naval_shipyard:'Naval Shipyard Authority',aviation_industry:'Aviation Industry Act',advanced_ordnance:'Advanced Munitions & Ordnance Act'};
 const api=async(path:string,options?:RequestInit)=>{const response=await fetch('/api'+path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),text=await response.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{throw Error(`Invalid military response (${response.status}).`)}if(!response.ok)throw Error(data.error||'Military action failed.');return data};
 
 export default function MilitaryScreen(){
