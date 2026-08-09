@@ -1,0 +1,23 @@
+.footer-clocks{
+  display:grid;
+  grid-template-columns:auto auto;
+  align-items:center;
+  column-gap:28px;
+  row-gap:4px;
+}
+
+.footer-copyright{
+  grid-column:1/-1;
+  color:var(--muted);
+  font-size:9px;
+  letter-spacing:.04em;
+}
+
+@media(max-width:850px){
+  .footer-clocks{
+    grid-template-columns:1fr;
+    gap:5px;
+  }
+
+  .footer-copyright{grid-column:1}
+}
