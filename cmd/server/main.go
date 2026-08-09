@@ -74,6 +74,7 @@ func main() {
 	mux.HandleFunc("PATCH /api/user/settings", a.auth(a.userSettings))
 	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
+	mux.HandleFunc("GET /api/leaderboards", a.auth(a.leaderboards))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
 	mux.HandleFunc("GET /api/nations/{id}/trades", a.auth(a.nationTradeHistory))
 	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
@@ -229,12 +230,14 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		GuardianUntil                                                                                                  *time.Time
 		CreatedAt                                                                                                      time.Time
 		LocationLat, LocationLng                                                                                       *float64
+		Military                                                                                                       []militaryOverviewItem
 	}
 	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced'),n.location_lat,n.location_lng FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear, &n.LocationLat, &n.LocationLng)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
 	}
+	n.Military = loadMilitaryOverview(r.Context(), a.db, n.ID)
 	write(w, 200, map[string]any{"user": u, "nation": n})
 }
 func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {

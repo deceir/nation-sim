@@ -30,7 +30,10 @@ func (a *app) alliancePermission(ctx context.Context, userID, allianceID string)
 }
 
 func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.tax_rate,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id),(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id),(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) FROM alliances a ORDER BY (SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) DESC,a.name LIMIT 100`)
+	search := strings.TrimSpace(r.URL.Query().Get("search"))
+	search = strings.ReplaceAll(strings.ReplaceAll(search, "\\", "\\\\"), "%", "\\%")
+	search = strings.ReplaceAll(search, "_", "\\_")
+	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.tax_rate,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) members,(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id) population,(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) provinces FROM alliances a WHERE (?='' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') ORDER BY population DESC,a.name ASC LIMIT 100`, search, search)
 	if e != nil {
 		problem(w, 500, "Alliances unavailable.")
 		return

@@ -20,6 +20,12 @@ type militaryUnitSpec struct {
 	Tradable               bool
 }
 
+type militaryOverviewItem struct {
+	Key      string `json:"key"`
+	Name     string `json:"name"`
+	Quantity int64  `json:"quantity"`
+}
+
 // Military balance is data-driven here so costs and coefficients can be tuned
 // without changing acquisition, upkeep, capacity, or decommission logic.
 var militaryUnits = map[string]militaryUnitSpec{
@@ -94,6 +100,28 @@ func militaryUnitKeys() []string {
 	return []string{"soldiers", "tanks", "ships", "jets", "drones"}
 }
 
+func loadMilitaryOverview(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, nationID string) []militaryOverviewItem {
+	quantities := map[string]int64{}
+	rows, err := q.QueryContext(ctx, `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var key string
+			var quantity int64
+			if rows.Scan(&key, &quantity) == nil {
+				quantities[key] = quantity
+			}
+		}
+	}
+	items := make([]militaryOverviewItem, 0, len(militaryUnits))
+	for _, key := range militaryUnitKeys() {
+		items = append(items, militaryOverviewItem{Key: key, Name: militaryUnits[key].Name, Quantity: quantities[key]})
+	}
+	return items
+}
+
 func militaryCapacityForNation(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nationID string, spec militaryUnitSpec) (int64, error) {
@@ -106,7 +134,7 @@ func militaryCapacityForNation(ctx context.Context, q interface {
 func militaryUpkeepProjection(ctx context.Context, q interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, nationID string) (float64, float64) {
-	rows, err := q.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
+	rows, err := q.QueryContext(ctx, `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
 	if err != nil {
 		return 0, 0
 	}
@@ -269,7 +297,7 @@ func (a *app) decommissionMilitary(w http.ResponseWriter, r *http.Request, u use
 }
 
 func militaryHourlyUpkeep(ctx context.Context, tx *sql.Tx, nationID string) (int64, float64, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(quantity) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
+	rows, err := tx.QueryContext(ctx, `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (SELECT unit_type,quantity FROM military_inventory WHERE nation_id=? UNION ALL SELECT resource,escrow_goods FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) military_holdings GROUP BY unit_type`, nationID, nationID)
 	if err != nil {
 		return 0, 0, err
 	}

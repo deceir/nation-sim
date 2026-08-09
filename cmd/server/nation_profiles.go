@@ -75,5 +75,6 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
+	military := loadMilitaryOverview(r.Context(), a.db, id)
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "military": military, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
 }
