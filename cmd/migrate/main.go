@@ -135,6 +135,8 @@ func main() {
 		`ALTER TABLE trade_shipments MODIFY status ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'`,
 		`ALTER TABLE alliance_treaties MODIFY treaty_type VARCHAR(16) NOT NULL`,
 		`ALTER TABLE alliance_treaties MODIFY status ENUM('proposed','active','rejected','cancelled','expired') NOT NULL DEFAULT 'proposed'`,
+		`ALTER TABLE alliance_bank_transactions MODIFY amount DECIMAL(20,3) NOT NULL`,
+		`ALTER TABLE alliance_bank_transactions MODIFY kind ENUM('deposit','withdrawal','grant','tax','loan','repayment','balance_adjustment') NOT NULL`,
 	} {
 		if _, err = db.Exec(q); err != nil {
 			log.Fatal(err)
@@ -154,6 +156,7 @@ func main() {
 		`INSERT IGNORE INTO province_deposits(city_id,resource,richness) SELECT c.id,r.resource,CASE r.resource WHEN 'foodstuffs' THEN 1.15 WHEN 'timber' THEN IF(n.continent IN('South America','North America'),1.35,.85) WHEN 'fibers' THEN IF(n.continent IN('Asia','Africa'),1.3,.8) WHEN 'basic_metals' THEN IF(n.continent IN('Africa','South America'),1.3,.9) WHEN 'energy' THEN IF(n.continent IN('Asia','North America'),1.25,.85) ELSE IF(n.continent IN('Africa','Oceania'),1.25,.75) END FROM cities c JOIN nations n ON n.id=c.nation_id CROSS JOIN (SELECT 'foodstuffs' resource UNION ALL SELECT 'timber' UNION ALL SELECT 'fibers' UNION ALL SELECT 'basic_metals' UNION ALL SELECT 'energy' UNION ALL SELECT 'strategic_minerals') r`,
 		`INSERT IGNORE INTO nation_stockpiles(nation_id,commodity,amount) SELECT n.id,r.commodity,CASE WHEN r.commodity IN('foodstuffs','timber','fibers','basic_metals','energy') THEN 500 ELSE 0 END FROM nations n CROSS JOIN (SELECT 'foodstuffs' commodity UNION ALL SELECT 'timber' UNION ALL SELECT 'fibers' UNION ALL SELECT 'basic_metals' UNION ALL SELECT 'energy' UNION ALL SELECT 'strategic_minerals' UNION ALL SELECT 'textiles' UNION ALL SELECT 'processed_foods' UNION ALL SELECT 'construction_materials' UNION ALL SELECT 'basic_goods' UNION ALL SELECT 'consumer_goods' UNION ALL SELECT 'military_equipment' UNION ALL SELECT 'luxury_goods') r`,
 		`UPDATE nation_stockpiles SET amount=GREATEST(amount,CASE commodity WHEN 'construction_materials' THEN 75 WHEN 'processed_foods' THEN 100 WHEN 'basic_goods' THEN 75 ELSE amount END)`,
+		`INSERT IGNORE INTO alliance_member_balances(alliance_id,nation_id,resource,amount) SELECT m.alliance_id,m.nation_id,t.resource,GREATEST(0,SUM(CASE WHEN t.kind='deposit' AND t.actor_nation_id=m.nation_id THEN t.amount WHEN t.kind='withdrawal' AND t.recipient_nation_id=m.nation_id THEN -t.amount ELSE 0 END)) FROM alliance_members m JOIN alliance_bank_transactions t ON t.alliance_id=m.alliance_id AND ((t.kind='deposit' AND t.actor_nation_id=m.nation_id) OR (t.kind='withdrawal' AND t.recipient_nation_id=m.nation_id)) GROUP BY m.alliance_id,m.nation_id,t.resource`,
 		`INSERT INTO production_quotas(nation_id,commodity,priority) SELECT n.id,q.commodity,q.priority FROM nations n CROSS JOIN (SELECT 'processed_foods' commodity,35 priority UNION ALL SELECT 'construction_materials',45 UNION ALL SELECT 'basic_goods',20) q WHERE NOT EXISTS(SELECT 1 FROM production_quotas x WHERE x.nation_id=n.id)`,
 	}
 	for _, q := range bootstrap {

@@ -124,6 +124,7 @@ func main() {
 	mux.HandleFunc("POST /api/alliances/{id}/applications/{applicationID}/reject", a.auth(a.rejectAllianceApplication))
 	mux.HandleFunc("POST /api/alliances/{id}/announcements", a.auth(a.postAllianceAnnouncement))
 	mux.HandleFunc("POST /api/alliances/{id}/bank", a.auth(a.allianceBankTransfer))
+	mux.HandleFunc("POST /api/alliances/{id}/member-balances/adjust", a.auth(a.adjustAllianceMemberBalance))
 	mux.HandleFunc("POST /api/alliances/{id}/roles", a.auth(a.createAllianceRole))
 	mux.HandleFunc("PATCH /api/alliances/{id}/roles/{roleID}", a.auth(a.updateAllianceRole))
 	mux.HandleFunc("DELETE /api/alliances/{id}/roles/{roleID}", a.auth(a.deleteAllianceRole))

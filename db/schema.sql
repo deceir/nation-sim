@@ -330,8 +330,8 @@ CREATE TABLE IF NOT EXISTS alliance_bank (
 
 CREATE TABLE IF NOT EXISTS alliance_bank_transactions (
   id CHAR(36) PRIMARY KEY, alliance_id CHAR(36) NOT NULL, actor_nation_id CHAR(36) NULL,
-  recipient_nation_id CHAR(36) NULL, kind ENUM('deposit','withdrawal','grant','tax','loan','repayment') NOT NULL,
-  resource VARCHAR(30) NOT NULL, amount BIGINT NOT NULL, memo VARCHAR(255) NOT NULL DEFAULT '',
+  recipient_nation_id CHAR(36) NULL, kind ENUM('deposit','withdrawal','grant','tax','loan','repayment','balance_adjustment') NOT NULL,
+  resource VARCHAR(30) NOT NULL, amount DECIMAL(20,3) NOT NULL, memo VARCHAR(255) NOT NULL DEFAULT '',
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   INDEX idx_alliance_bank_log(alliance_id,created_at),
   CONSTRAINT fk_bank_log_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
@@ -372,6 +372,17 @@ CREATE TABLE IF NOT EXISTS alliance_treaties (
   CONSTRAINT fk_treaty_proposer_alliance FOREIGN KEY(proposed_by_alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
   CONSTRAINT fk_treaty_proposer_nation FOREIGN KEY(proposed_by_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   CONSTRAINT fk_treaty_resolver FOREIGN KEY(resolved_by_nation_id) REFERENCES nations(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_member_balances (
+  alliance_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  resource VARCHAR(40) NOT NULL,
+  amount DECIMAL(20,3) NOT NULL DEFAULT 0,
+  PRIMARY KEY(alliance_id,nation_id,resource),
+  INDEX idx_alliance_member_balances_nation(alliance_id,nation_id),
+  CONSTRAINT fk_member_balances_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_member_balances_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS nation_economic_strategy (
