@@ -33,14 +33,6 @@ func main() {
 		{"nations", "employment_rate", "DECIMAL(5,2) NOT NULL DEFAULT 72.00"},
 		{"nations", "tax_rate", "DECIMAL(5,2) NOT NULL DEFAULT 25.00"},
 		{"nations", "doctrine", "VARCHAR(30) NOT NULL DEFAULT 'Balanced'"},
-		{"nations", "oil", "BIGINT NOT NULL DEFAULT 250"},
-		{"nations", "iron", "BIGINT NOT NULL DEFAULT 500"},
-		{"nations", "bauxite", "BIGINT NOT NULL DEFAULT 250"},
-		{"nations", "lead_resource", "BIGINT NOT NULL DEFAULT 100"},
-		{"nations", "uranium", "BIGINT NOT NULL DEFAULT 0"},
-		{"nations", "aluminum", "BIGINT NOT NULL DEFAULT 0"},
-		{"nations", "gasoline", "BIGINT NOT NULL DEFAULT 0"},
-		{"nations", "munitions", "BIGINT NOT NULL DEFAULT 0"},
 		{"cities", "total_invested", "BIGINT NOT NULL DEFAULT 0"},
 		{"cities", "improvement_slots", "INT NOT NULL DEFAULT 2"},
 		{"cities", "population_capacity", "BIGINT NOT NULL DEFAULT 100000"},
@@ -103,6 +95,40 @@ func main() {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
 			log.Fatal(err)
 		}
+	}
+	legacyNationColumns := []string{"coal", "steel", "food", "iron", "oil", "bauxite", "aluminum", "gasoline", "munitions", "uranium", "lead_resource"}
+	for _, column := range legacyNationColumns {
+		if err = dropColumnIfExists(db, "nations", column); err != nil {
+			log.Fatal(err)
+		}
+	}
+	for _, column := range []string{"food", "coal", "iron", "oil", "bauxite", "steel", "aluminum", "gasoline", "munitions", "uranium"} {
+		if err = dropColumnIfExists(db, "alliance_bank", column); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if _, err = db.Exec(`DROP TABLE IF EXISTS city_industries`); err != nil {
+		log.Fatal(err)
+	}
+	// Old industry investments must be removed as well as their stockpiles;
+	// otherwise invisible upgrades would continue consuming province slots.
+	if _, err = db.Exec(`UPDATE cities c JOIN (
+		SELECT city_id, SUM(amount) AS amount
+		FROM city_investments
+		WHERE program LIKE 'industry\\_%'
+		GROUP BY city_id
+	) legacy ON legacy.city_id=c.id
+	SET c.total_invested=GREATEST(0, c.total_invested-legacy.amount)`); err != nil {
+		log.Fatal(err)
+	}
+	if _, err = db.Exec(`DELETE FROM city_investments WHERE program LIKE 'industry\\_%'`); err != nil {
+		log.Fatal(err)
+	}
+	if _, err = db.Exec(`DELETE FROM city_improvements WHERE building_type IN (
+		'coal_plant','farm','coal_mine','iron_mine','oil_well','bauxite_mine',
+		'steel_mill','aluminum_refinery','oil_refinery'
+	)`); err != nil {
+		log.Fatal(err)
 	}
 	if err = ensureUniqueIndex(db, "nations", "uq_nations_leader_name", "leader_name"); err != nil {
 		log.Fatal(err)
@@ -191,7 +217,6 @@ func applyYenRedenomination(db *sql.DB) error {
 		`UPDATE nations SET treasury=treasury*100`,
 		`UPDATE cities SET total_invested=total_invested*100`,
 		`UPDATE city_investments SET amount=amount*100`,
-		`UPDATE city_industries SET total_invested=total_invested*100`,
 		`UPDATE market_orders SET unit_price=unit_price*100,escrow_cash=escrow_cash*100`,
 		`UPDATE trade_shipments SET unit_price=unit_price*100,goods_value=goods_value*100,shipping_fee=shipping_fee*100`,
 		`UPDATE ledger_entries SET amount=amount*100`,
@@ -221,6 +246,18 @@ func ensureColumn(db *sql.DB, table, column, definition string) error {
 		return nil
 	}
 	_, err := db.Exec("ALTER TABLE `" + table + "` ADD COLUMN `" + column + "` " + definition)
+	return err
+}
+
+func dropColumnIfExists(db *sql.DB, table, column string) error {
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?`, table, column).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return nil
+	}
+	_, err := db.Exec("ALTER TABLE `" + table + "` DROP COLUMN `" + column + "`")
 	return err
 }
 

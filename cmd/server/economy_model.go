@@ -15,45 +15,37 @@ const yenScale int64 = 100
 var balance = EconomyConfig{24, 90, 50, 2800, .001, .018, .0012, .55, .0025, 32}
 
 type BuildingSpec struct {
-	Name, Category, InputResource, OutputResource          string
-	Cost, Power, Pollution, Output, Commerce               float64
+	Name, Category                                         string
+	Cost, Power, Pollution, Commerce                       float64
 	Education, Happiness, CrimeReduction, DiseaseReduction float64
 	MinTech                                                int
 }
 
 var buildings = map[string]BuildingSpec{
-	"coal_plant":        {Name: "Coal power plant", Category: "power", InputResource: "coal", Cost: 18000, Power: -120, Pollution: 8},
-	"renewable_plant":   {Name: "Renewable power park", Category: "power", Cost: 42000, Power: -90, Pollution: .5, MinTech: 8},
-	"farm":              {Name: "Industrial farm", Category: "extraction", OutputResource: "food", Cost: 8000, Output: 180, Power: 2, Pollution: 1},
-	"coal_mine":         {Name: "Coal mine", Category: "extraction", OutputResource: "coal", Cost: 11000, Output: 55, Power: 3, Pollution: 4},
-	"iron_mine":         {Name: "Iron mine", Category: "extraction", OutputResource: "iron", Cost: 13000, Output: 45, Power: 3, Pollution: 4},
-	"oil_well":          {Name: "Oil well", Category: "extraction", OutputResource: "oil", Cost: 18000, Output: 35, Power: 4, Pollution: 5},
-	"bauxite_mine":      {Name: "Bauxite mine", Category: "extraction", OutputResource: "bauxite", Cost: 15000, Output: 40, Power: 3, Pollution: 4},
-	"steel_mill":        {Name: "Steel mill", Category: "manufacturing", InputResource: "iron+coal", OutputResource: "steel", Cost: 30000, Output: 24, Power: 18, Pollution: 7, MinTech: 3},
-	"aluminum_refinery": {Name: "Aluminum refinery", Category: "manufacturing", InputResource: "bauxite", OutputResource: "aluminum", Cost: 34000, Output: 22, Power: 20, Pollution: 6, MinTech: 5},
-	"oil_refinery":      {Name: "Oil refinery", Category: "manufacturing", InputResource: "oil", OutputResource: "gasoline", Cost: 36000, Output: 25, Power: 16, Pollution: 7, MinTech: 5},
-	"bank":              {Name: "Commercial bank", Category: "commerce", Cost: 22000, Power: 5, Commerce: 8},
-	"shopping_mall":     {Name: "Shopping mall", Category: "commerce", Cost: 28000, Power: 8, Commerce: 11, Pollution: 1},
-	"hospital":          {Name: "Hospital", Category: "civil", Cost: 26000, Power: 8, Happiness: 1.5, DiseaseReduction: .012},
-	"police_station":    {Name: "Police station", Category: "civil", Cost: 17000, Power: 4, CrimeReduction: .012},
-	"school":            {Name: "School system", Category: "civil", Cost: 16000, Power: 3, Education: .7, Happiness: .4},
-	"university":        {Name: "University", Category: "civil", Cost: 38000, Power: 9, Education: 1.6, MinTech: 4},
-	"recycling_center":  {Name: "Recycling center", Category: "civil", Cost: 21000, Power: 5, Pollution: -5, Happiness: .5},
-	"park":              {Name: "Public park", Category: "civil", Cost: 12000, Happiness: 1.1, Pollution: -1},
+	"renewable_plant":  {Name: "Renewable power park", Category: "power", Cost: 42000, Power: -90, Pollution: .5, MinTech: 8},
+	"bank":             {Name: "Commercial bank", Category: "commerce", Cost: 22000, Power: 5, Commerce: 8},
+	"shopping_mall":    {Name: "Shopping mall", Category: "commerce", Cost: 28000, Power: 8, Commerce: 11, Pollution: 1},
+	"hospital":         {Name: "Hospital", Category: "civil", Cost: 26000, Power: 8, Happiness: 1.5, DiseaseReduction: .012},
+	"police_station":   {Name: "Police station", Category: "civil", Cost: 17000, Power: 4, CrimeReduction: .012},
+	"school":           {Name: "School system", Category: "civil", Cost: 16000, Power: 3, Education: .7, Happiness: .4},
+	"university":       {Name: "University", Category: "civil", Cost: 38000, Power: 9, Education: 1.6, MinTech: 4},
+	"recycling_center": {Name: "Recycling center", Category: "civil", Cost: 21000, Power: 5, Pollution: -5, Happiness: .5},
+	"park":             {Name: "Public park", Category: "civil", Cost: 12000, Happiness: 1.1, Pollution: -1},
 }
 
 type ProjectSpec struct {
-	Name, Theme, Description                string
-	Cash, Iron, Steel, Aluminum, Coal, Food int64
+	Name, Theme, Description string
+	Cash                     int64
+	Costs                    map[string]float64
 }
 
 var beginnerProjects = map[string]ProjectSpec{
-	"civil_engineering_corps":     {"Civil Engineering Corps", "Infrastructure growth", "Infrastructure costs −6% and upkeep −4%.", 150000, 400, 150, 0, 0, 0},
-	"public_education_initiative": {"Public Education Initiative", "Education", "Education +5 immediately, stronger passive Education, and Happiness support.", 120000, 0, 100, 0, 0, 0},
-	"commerce_foundation":         {"Commerce Foundation", "Commerce", "Commerce cap rises to 110% and every city gains 3 Commerce.", 140000, 0, 150, 50, 0, 0},
-	"resource_survey":             {"Resource Survey & Extraction Boost", "Extraction", "Farm, mine, and well output increases by 12%.", 100000, 250, 50, 0, 0, 0},
-	"basic_power_grid":            {"Basic Power Grid", "Power", "Power capacity rises by 10% and power improvements cost less.", 130000, 0, 100, 0, 300, 0},
-	"public_health_sanitation":    {"Public Health & Sanitation", "Stability", "Lower disease and pollution pressure with better Happiness recovery.", 115000, 0, 80, 0, 0, 500},
+	"civil_engineering_corps":     {"Civil Engineering Corps", "Infrastructure growth", "Infrastructure costs −6% and upkeep −4%.", 150000, map[string]float64{"basic_metals": 100, "construction_materials": 120}},
+	"public_education_initiative": {"Public Education Initiative", "Education", "Education +5 immediately, stronger passive Education, and Happiness support.", 120000, map[string]float64{"construction_materials": 75, "basic_goods": 75}},
+	"commerce_foundation":         {"Commerce Foundation", "Commerce", "Commerce cap rises to 110% and every Province gains 3 Commerce.", 140000, map[string]float64{"construction_materials": 100, "consumer_goods": 50}},
+	"resource_survey":             {"Resource Survey & Extraction Boost", "Extraction", "Primary deposit output increases by 12%.", 100000, map[string]float64{"basic_metals": 120, "construction_materials": 50}},
+	"basic_power_grid":            {"Basic Power Grid", "Power", "Power capacity rises by 10% and power improvements cost less.", 130000, map[string]float64{"construction_materials": 100, "energy": 150}},
+	"public_health_sanitation":    {"Public Health & Sanitation", "Stability", "Lower disease and pollution pressure with better Happiness recovery.", 115000, map[string]float64{"construction_materials": 75, "processed_foods": 100}},
 }
 
 func init() {
@@ -162,14 +154,14 @@ func clamp(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 func calculateEconomy(n ModelNation) NationResult {
 	out := NationResult{Production: map[string]float64{}, Contributors: map[string]float64{}}
 	weightedLocal, totalBase, educationBuildings := 0.0, 0.0, 0.0
-	doctrineProduction, doctrineIncome, doctrineHappiness, commerceCap := 1.0, 1.0, 0.0, 100.0
+	doctrineIncome, doctrineHappiness, commerceCap := 1.0, 0.0, 100.0
 	switch n.Doctrine {
 	case "Capitalist":
 		doctrineIncome, commerceCap, doctrineHappiness = 1.06, 115, -2
 	case "Planned":
-		doctrineProduction, doctrineIncome = 1.08, .97
+		doctrineIncome = .97
 	case "Green":
-		doctrineProduction, doctrineHappiness = .97, 3
+		doctrineHappiness = 3
 	}
 	if n.Projects["commerce_foundation"] {
 		commerceCap = math.Max(commerceCap, 110)
@@ -244,22 +236,6 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		if n.LongTermProjects["internal_security_reform"] {
 			r.Crime *= .75
-		}
-		for key, q := range c.Buildings {
-			s := buildings[key]
-			if s.Category != "extraction" && s.Category != "manufacturing" {
-				continue
-			}
-			spec := 1.0
-			if s.Category == "manufacturing" {
-				spec = 1 + math.Min(.5, float64(max(0, q-1))*.11)
-			}
-			extractionBoost := 1.0
-			if s.Category == "extraction" && n.Projects["resource_survey"] {
-				extractionBoost = 1.12
-			}
-			eff := (1 + float64(n.Technology)*.012) * (1 + n.Education*.004) * r.PowerMultiplier * spec * doctrineProduction * extractionBoost
-			r.Production[s.OutputResource] += s.Output * float64(q) * eff
 		}
 		happyMult := clamp(1+(n.Happiness-50)*.008, .55, 1.45)
 		eduBonus := n.Education / 100 * .22

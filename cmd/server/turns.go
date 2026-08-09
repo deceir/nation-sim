@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"math"
 	"time"
@@ -74,6 +75,12 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			continue
 		}
 		netCash -= militaryCashUpkeep
+		luxuryIncome, luxuryConsumed, e := settleLuxuryConsumption(ctx, tx, nid, result.Population, len(result.Cities), turn)
+		if e != nil {
+			tx.Rollback()
+			continue
+		}
+		netCash += luxuryIncome
 		ok := true
 		for _, c := range result.Cities {
 			growthRate := balance.PopulationGrowthRate * (.45 + newHappy/100) * (.85 + newEducation/500) / balance.TurnsPerDay * strategyResult.PopulationMultiplier
@@ -88,8 +95,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.Rollback()
 			continue
 		}
-		prod := func(k string) int64 { return int64(math.Floor(result.Production[k] / balance.TurnsPerDay)) }
-		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,coal=coal+?,iron=iron+?,oil=oil+?,bauxite=bauxite+?,steel=steel+?,aluminum=aluminum+?,gasoline=gasoline+? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), prod("coal"), prod("iron"), prod("oil"), prod("bauxite"), prod("steel"), prod("aluminum"), prod("gasoline"), nid)
+		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), nid)
 		if e != nil {
 			tx.Rollback()
 			continue
@@ -112,12 +118,15 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `UPDATE nations SET technology=LEAST(100,technology+FLOOR(technology_progress+?)),technology_progress=MOD(technology_progress+?,1) WHERE id=?`, gain, gain, nid)
 		}
 		breakdown, _ := json.Marshal(result)
-		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay), int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
+		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay)+luxuryIncome, int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
 		if e != nil {
 			tx.Rollback()
 			continue
 		}
 		tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'hourly_income',?,'Economic turn after upkeep and Alliance tax')`, uuid(), nid, netCash)
+		if luxuryIncome > 0 {
+			tx.ExecContext(ctx, `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'luxury_consumption',?,?)`, uuid(), nid, luxuryIncome, fmt.Sprintf("Consumed %.3f Luxury Goods", luxuryConsumed))
+		}
 		if tx.Commit() == nil {
 			processed++
 		}

@@ -38,3 +38,13 @@ func TestPolicySynergyCompoundsWithGear(t *testing.T) {
 		t.Fatal("land grants should reinforce agrarian growth")
 	}
 }
+
+func TestResourceSurveyBoostsCurrentPrimaryResources(t *testing.T) {
+	in := sampleStrategy()
+	without := calculateStrategy(in)
+	in.Projects = map[string]bool{"resource_survey": true}
+	with := calculateStrategy(in)
+	if with.Production["foodstuffs"] <= without.Production["foodstuffs"] {
+		t.Fatal("resource survey should boost current primary resource production")
+	}
+}

@@ -55,13 +55,30 @@ func TestFighterJetConfigurationAndDisplayOrder(t *testing.T) {
 	if jet.Name != "Fighter Jets" || jet.DailyCash != 800 || jet.DailyEnergy != .3 {
 		t.Fatalf("unexpected fighter jet upkeep configuration: %#v", jet)
 	}
-	wantResources := map[string]float64{"basic_metals": 12, "construction_materials": 8, "energy": 6, "strategic_minerals": 4}
+	wantResources := map[string]float64{"basic_metals": 6, "construction_materials": 8, "energy": 6, "strategic_minerals": 4, "military_equipment": 12}
 	if !reflect.DeepEqual(jet.Resources, wantResources) {
 		t.Fatalf("fighter jet resource costs=%v, want %v", jet.Resources, wantResources)
 	}
 	wantOrder := []string{"soldiers", "tanks", "ships", "jets", "drones"}
 	if got := militaryUnitKeys(); !reflect.DeepEqual(got, wantOrder) {
 		t.Fatalf("military display order=%v, want %v", got, wantOrder)
+	}
+}
+
+func TestMilitaryEquipmentConstructionProfiles(t *testing.T) {
+	for _, unit := range []string{"tanks", "ships", "jets", "drones"} {
+		if militaryUnits[unit].Resources["military_equipment"] <= 0 {
+			t.Fatalf("%s construction should consume Military Equipment", unit)
+		}
+	}
+	if militaryUnits["tanks"].Resources["basic_metals"] <= militaryUnits["jets"].Resources["basic_metals"] {
+		t.Fatal("tanks should be more Basic Metals-intensive than Fighter Jets")
+	}
+	if militaryUnits["tanks"].Resources["military_equipment"] >= militaryUnits["jets"].Resources["military_equipment"] {
+		t.Fatal("Fighter Jets should be more Military Equipment-intensive than tanks")
+	}
+	if militaryUnits["drones"].Resources["military_equipment"] < 8 || militaryUnits["drones"].Resources["strategic_minerals"] < 7 {
+		t.Fatal("drones should be expensive in both Military Equipment and Strategic Minerals")
 	}
 }
 

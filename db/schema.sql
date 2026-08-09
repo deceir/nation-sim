@@ -26,9 +26,6 @@ CREATE TABLE IF NOT EXISTS nations (
   motto VARCHAR(120) NOT NULL DEFAULT '',
   currency_name VARCHAR(30) NOT NULL DEFAULT 'Yen',
   treasury BIGINT NOT NULL DEFAULT 10000000,
-  coal BIGINT NOT NULL DEFAULT 500,
-  steel BIGINT NOT NULL DEFAULT 250,
-  food BIGINT NOT NULL DEFAULT 1000,
   population BIGINT NOT NULL DEFAULT 100000,
   employment_rate DECIMAL(5,2) NOT NULL DEFAULT 72.00,
   happiness INT NOT NULL DEFAULT 65 CHECK (happiness BETWEEN 0 AND 100),
@@ -54,7 +51,6 @@ CREATE TABLE IF NOT EXISTS cities (
   CONSTRAINT fk_cities_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS city_investments (id CHAR(36) PRIMARY KEY,city_id CHAR(36) NOT NULL,nation_id CHAR(36) NOT NULL,program VARCHAR(40) NOT NULL,amount BIGINT NOT NULL,created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),CONSTRAINT fk_city_investment_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE,CONSTRAINT fk_city_investment_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,INDEX idx_city_investments_daily(nation_id,created_at)) ENGINE=InnoDB;
-CREATE TABLE IF NOT EXISTS city_industries (id CHAR(36) PRIMARY KEY,city_id CHAR(36) NOT NULL,resource ENUM('coal','steel','food') NOT NULL,level INT NOT NULL DEFAULT 1,total_invested BIGINT NOT NULL,UNIQUE KEY uq_city_industry(city_id,resource),CONSTRAINT fk_industries_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE) ENGINE=InnoDB;
 DROP TABLE IF EXISTS technology_investments;
 CREATE TABLE IF NOT EXISTS economy_turns (turn_at DATETIME PRIMARY KEY,processed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),nations_processed INT NOT NULL DEFAULT 0) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS balance_migrations (migration_key VARCHAR(80) PRIMARY KEY,applied_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
@@ -371,10 +367,7 @@ CREATE TABLE IF NOT EXISTS alliance_applications (
 
 CREATE TABLE IF NOT EXISTS alliance_bank (
   alliance_id CHAR(36) PRIMARY KEY,
-  cash BIGINT NOT NULL DEFAULT 0, food BIGINT NOT NULL DEFAULT 0, coal BIGINT NOT NULL DEFAULT 0,
-  iron BIGINT NOT NULL DEFAULT 0, oil BIGINT NOT NULL DEFAULT 0, bauxite BIGINT NOT NULL DEFAULT 0,
-  steel BIGINT NOT NULL DEFAULT 0, aluminum BIGINT NOT NULL DEFAULT 0, gasoline BIGINT NOT NULL DEFAULT 0,
-  munitions BIGINT NOT NULL DEFAULT 0, uranium BIGINT NOT NULL DEFAULT 0,
+  cash BIGINT NOT NULL DEFAULT 0,
   CONSTRAINT fk_alliance_bank_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
@@ -489,6 +482,27 @@ CREATE TABLE IF NOT EXISTS nation_stockpiles (
   amount DECIMAL(20,3) NOT NULL DEFAULT 0,
   PRIMARY KEY(nation_id,commodity),
   CONSTRAINT fk_stockpiles_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS luxury_consumption_settings (
+  nation_id CHAR(36) PRIMARY KEY,
+  daily_rate DECIMAL(20,3) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_luxury_consumption_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CHECK(daily_rate >= 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS luxury_consumption_history (
+  nation_id CHAR(36) NOT NULL,
+  server_date DATE NOT NULL,
+  requested_rate DECIMAL(20,3) NOT NULL,
+  actual_consumed DECIMAL(20,3) NOT NULL,
+  size_efficiency DECIMAL(8,4) NOT NULL,
+  income_earned BIGINT NOT NULL,
+  settled_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(nation_id,server_date),
+  CONSTRAINT fk_luxury_history_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  INDEX idx_luxury_history_date(server_date)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS social_policy_selections (

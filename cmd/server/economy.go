@@ -9,7 +9,7 @@ import (
 )
 
 func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.Query(r.Context(), `SELECT c.id,c.name,c.level,c.total_invested,c.improvement_slots,c.population_capacity,(SELECT count(*) FROM city_investments ci WHERE ci.city_id=c.id),COALESCE(GROUP_CONCAT(CONCAT(i.resource,':',i.level)), '') FROM cities c JOIN nations n ON n.id=c.nation_id LEFT JOIN city_industries i ON i.city_id=c.id WHERE n.owner_id=? GROUP BY c.id,c.name,c.level,c.total_invested,c.improvement_slots,c.population_capacity ORDER BY c.created_at`, u.ID)
+	rows, e := a.db.Query(r.Context(), `SELECT c.id,c.name,c.level,c.total_invested,c.improvement_slots,c.population_capacity,(SELECT count(*) FROM city_investments ci WHERE ci.city_id=c.id) FROM cities c JOIN nations n ON n.id=c.nation_id WHERE n.owner_id=? ORDER BY c.created_at`, u.ID)
 	if e != nil {
 		problem(w, 500, "Cities unavailable.")
 		return
@@ -17,12 +17,12 @@ func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, name, industries string
+		var id, name string
 		var level, slots, used int
 		var invested, populationCapacity int64
-		rows.Scan(&id, &name, &level, &invested, &slots, &populationCapacity, &used, &industries)
+		rows.Scan(&id, &name, &level, &invested, &slots, &populationCapacity, &used)
 		expandCost := (int64(20000) * yenScale) << max(0, slots-2)
-		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity": populationCapacity, "nextExpansionCost": expandCost, "industries": industries})
+		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity": populationCapacity, "nextExpansionCost": expandCost})
 	}
 	var cityCount int
 	var last sql.NullTime
@@ -182,46 +182,6 @@ func (a *app) expandCity(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]any{"ok": true, "cost": cost, "slots": slots + 1, "level": level + 1})
 }
 
-func (a *app) investIndustry(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ CityID, Resource string }
-	if !decode(w, r, &in) {
-		return
-	}
-	required := map[string]int{"food": 2, "coal": 3, "steel": 5}[in.Resource]
-	if required == 0 {
-		problem(w, 400, "Unknown industry.")
-		return
-	}
-	tx, _ := a.db.Begin(r.Context())
-	defer tx.Rollback(r.Context())
-	var nid string
-	var cash int64
-	var cityLevel, current, slots, used int
-	if tx.QueryRow(r.Context(), `SELECT n.id,n.treasury,c.level,COALESCE((SELECT level FROM city_industries WHERE city_id=c.id AND resource=?),0),c.improvement_slots,(SELECT count(*) FROM city_investments WHERE city_id=c.id) FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, in.Resource, u.ID, in.CityID).Scan(&nid, &cash, &cityLevel, &current, &slots, &used) != nil {
-		problem(w, 404, "City not found.")
-		return
-	}
-	if cityLevel < required {
-		problem(w, 409, "Develop this city further before establishing that industry.")
-		return
-	}
-	if used >= slots {
-		problem(w, 409, "This city has no open improvement slots.")
-		return
-	}
-	cost := int64(20000*yenScale) * int64((current+1)*(current+1))
-	if cash < cost {
-		problem(w, 409, "Insufficient treasury.")
-		return
-	}
-	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, cost, nid)
-	tx.Exec(r.Context(), `INSERT INTO city_industries(id,city_id,resource,level,total_invested) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE level=level+1,total_invested=total_invested+VALUES(total_invested)`, uuid(), in.CityID, in.Resource, 1, cost)
-	tx.Exec(r.Context(), `INSERT INTO city_investments(id,city_id,nation_id,program,amount) VALUES(?,?,?,?,?)`, uuid(), in.CityID, nid, "industry_"+in.Resource, cost)
-	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'industry',?,?)`, uuid(), nid, -cost, "Expanded "+in.Resource+" production")
-	tx.Commit(r.Context())
-	write(w, 200, map[string]any{"ok": true, "cost": cost})
-}
-
 func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	var pop, treasury int64
 	var employment, education, satisfaction, technology float64
@@ -229,8 +189,6 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	if a.db.QueryRow(r.Context(), `SELECT id,population,treasury,employment_rate,education,happiness,technology FROM nations WHERE owner_id=?`, u.ID).Scan(&nid, &pop, &treasury, &employment, &education, &satisfaction, &technology) != nil {
 		return
 	}
-	var food, coal, steel int64
-	a.db.QueryRow(r.Context(), `SELECT COALESCE(sum(CASE resource WHEN 'food' THEN level*5 ELSE 0 END),0),COALESCE(sum(CASE resource WHEN 'coal' THEN level*2 ELSE 0 END),0),COALESCE(sum(CASE resource WHEN 'steel' THEN level ELSE 0 END),0) FROM city_industries i JOIN cities c ON c.id=i.city_id WHERE c.nation_id=?`, nid).Scan(&food, &coal, &steel)
 	baseDaily := float64(pop) * 0.02
 	employmentFactor := employment / 100
 	educationFactor := 0.5 + education/200
@@ -247,7 +205,7 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	now := time.Now().UTC()
 	next := now.Truncate(time.Hour).Add(time.Hour)
-	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "hourlyResources": map[string]int64{"food": food, "coal": coal, "steel": steel}, "dailyResources": map[string]int64{"food": food * 24, "coal": coal * 24, "steel": steel * 24}, "population": pop, "populationCapacity": populationCapacity, "hourlyPopulationGrowth": hourlyPopulationGrowth, "dailyPopulationGrowth": hourlyPopulationGrowth * 24, "treasury": treasury, "nextTurnAt": next})
+	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "population": pop, "populationCapacity": populationCapacity, "hourlyPopulationGrowth": hourlyPopulationGrowth, "dailyPopulationGrowth": hourlyPopulationGrowth * 24, "treasury": treasury, "nextTurnAt": next})
 }
 
 func (a *app) worldStatus(w http.ResponseWriter, r *http.Request, u user) {

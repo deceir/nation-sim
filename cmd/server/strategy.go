@@ -86,6 +86,7 @@ type strategicInput struct {
 	Education, Technology float64
 	Provinces             []provinceStrategy
 	Quotas                map[string]float64
+	Projects              map[string]bool
 	LongTermProjects      map[string]bool
 }
 type strategicResult struct {
@@ -106,6 +107,9 @@ func calculateStrategy(in strategicInput) strategicResult {
 		g = gears["balanced"]
 	}
 	r := strategicResult{Production: map[string]float64{}, ProvinceProduction: map[string]map[string]float64{}, IncomeMultiplier: g.Commerce, PopulationMultiplier: g.Population, HappinessMultiplier: g.Happiness, ExtractionMultiplier: g.Extraction, IndustryMultiplier: g.Industry, CommerceMultiplier: g.Commerce, MilitaryMultiplier: g.Military}
+	if in.Projects["resource_survey"] {
+		r.ExtractionMultiplier *= 1.12
+	}
 	if in.Disrupted {
 		r.IncomeMultiplier *= .75
 		r.ExtractionMultiplier *= .75
@@ -226,7 +230,7 @@ func calculateStrategy(in strategicInput) strategicResult {
 }
 
 func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, error) {
-	in := strategicInput{Policies: map[string]bool{}, Quotas: map[string]float64{}, LongTermProjects: map[string]bool{}}
+	in := strategicInput{Policies: map[string]bool{}, Quotas: map[string]float64{}, Projects: map[string]bool{}, LongTermProjects: map[string]bool{}}
 	if e := a.db.QueryRowContext(ctx, `SELECT s.gear,(s.disruption_until IS NOT NULL AND s.disruption_until>NOW()),n.education,n.technology FROM nation_economic_strategy s JOIN nations n ON n.id=s.nation_id WHERE s.nation_id=?`, nid).Scan(&in.Gear, &in.Disrupted, &in.Education, &in.Technology); e != nil {
 		return in, e
 	}
@@ -235,6 +239,18 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		return in, e
 	}
 	in.LongTermProjects = loadLongTermProjectSet(ctx, a.db, nid)
+	projectRows, projectErr := a.db.QueryContext(ctx, `SELECT project_type FROM national_projects WHERE nation_id=?`, nid)
+	if projectErr != nil {
+		rows.Close()
+		return in, projectErr
+	}
+	for projectRows.Next() {
+		var key string
+		if projectRows.Scan(&key) == nil {
+			in.Projects[key] = true
+		}
+	}
+	projectRows.Close()
 	for rows.Next() {
 		var k string
 		rows.Scan(&k)

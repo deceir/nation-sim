@@ -39,6 +39,8 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	militaryCashUpkeep, militaryEnergyUpkeep := militaryUpkeepProjection(r.Context(), a.db, nid)
 	result.NetDailyCash -= militaryCashUpkeep
+	luxury := a.luxuryConsumptionDashboard(r.Context(), nid, result.Population, len(result.Cities))
+	result.NetDailyCash += float64(luxury.ProjectedIncome)
 	types := make([]map[string]any, 0, len(buildings))
 	keys := make([]string, 0, len(buildings))
 	for k := range buildings {
@@ -47,7 +49,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		s := buildings[k]
-		types = append(types, map[string]any{"key": k, "name": s.Name, "category": s.Category, "cost": int64(s.Cost), "power": s.Power, "pollution": s.Pollution, "outputResource": s.OutputResource, "output": s.Output, "commerce": s.Commerce, "minTech": s.MinTech})
+		types = append(types, map[string]any{"key": k, "name": s.Name, "category": s.Category, "cost": int64(s.Cost), "power": s.Power, "pollution": s.Pollution, "commerce": s.Commerce, "minTech": s.MinTech})
 	}
 	projectKeys := make([]string, 0, len(beginnerProjects))
 	for k := range beginnerProjects {
@@ -57,12 +59,12 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	projects := []map[string]any{}
 	for _, k := range projectKeys {
 		p := beginnerProjects[k]
-		projects = append(projects, map[string]any{"key": k, "name": p.Name, "theme": p.Theme, "description": p.Description, "cash": p.Cash, "iron": p.Iron, "steel": p.Steel, "aluminum": p.Aluminum, "coal": p.Coal, "food": p.Food, "completed": n.Projects[k]})
+		projects = append(projects, map[string]any{"key": k, "name": p.Name, "theme": p.Theme, "description": p.Description, "cash": p.Cash, "costs": p.Costs, "completed": n.Projects[k]})
 	}
 	var totalInfra float64
 	a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, nid).Scan(&totalInfra)
 	slots := int(totalInfra / 300)
-	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "military": map[string]any{"dailyCashUpkeep": militaryCashUpkeep, "dailyEnergyUpkeep": militaryEnergyUpkeep}, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
+	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "military": map[string]any{"dailyCashUpkeep": militaryCashUpkeep, "dailyEnergyUpkeep": militaryEnergyUpkeep}, "luxuryConsumption": luxury, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
 }
 
 func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (ModelNation, string, int64, error) {
@@ -251,10 +253,10 @@ func (a *app) completeProject(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	defer tx.Rollback()
 	var nid string
-	var cash, iron, steel, aluminum, coal, food int64
+	var cash int64
 	var infra float64
 	var completed int
-	e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,n.iron,n.steel,n.aluminum,n.coal,n.food,(SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=n.id),(SELECT COUNT(*) FROM national_projects WHERE nation_id=n.id) FROM nations n WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &iron, &steel, &aluminum, &coal, &food, &infra, &completed)
+	e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,(SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=n.id),(SELECT COUNT(*) FROM national_projects WHERE nation_id=n.id) FROM nations n WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &infra, &completed)
 	if e != nil {
 		return
 	}
@@ -262,18 +264,31 @@ func (a *app) completeProject(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Increase total national Infrastructure to unlock another project slot.")
 		return
 	}
-	if cash < p.Cash || iron < p.Iron || steel < p.Steel || aluminum < p.Aluminum || coal < p.Coal || food < p.Food {
-		problem(w, 409, "Your nation does not yet have the required cash and resources.")
+	if cash < p.Cash {
+		problem(w, 409, "Your nation does not yet have the required Treasury.")
 		return
+	}
+	for commodity, cost := range p.Costs {
+		var available float64
+		tx.QueryRowContext(r.Context(), `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity=? FOR UPDATE`, nid, commodity).Scan(&available)
+		if available+.0001 < cost {
+			problem(w, 409, "Insufficient "+commodityName(commodity)+".")
+			return
+		}
 	}
 	_, e = tx.ExecContext(r.Context(), `INSERT INTO national_projects(id,nation_id,project_type) VALUES(?,?,?)`, uuid(), nid, in.Project)
 	if e != nil {
 		problem(w, 409, "This National Project is already complete.")
 		return
 	}
-	_, e = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-?,iron=iron-?,steel=steel-?,aluminum=aluminum-?,coal=coal-?,food=food-?,education=LEAST(100,education+?) WHERE id=?`, p.Cash, p.Iron, p.Steel, p.Aluminum, p.Coal, p.Food, map[bool]int{true: 5}[in.Project == "public_education_initiative"], nid)
+	_, e = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-?,education=LEAST(100,education+?) WHERE id=?`, p.Cash, map[bool]int{true: 5}[in.Project == "public_education_initiative"], nid)
 	if e != nil {
 		return
+	}
+	for commodity, cost := range p.Costs {
+		if _, e = tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=?`, cost, nid, commodity); e != nil {
+			return
+		}
 	}
 	tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'national_project',?,?)`, uuid(), nid, -p.Cash, "Completed "+p.Name)
 	if tx.Commit() != nil {

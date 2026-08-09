@@ -30,10 +30,10 @@ type militaryOverviewItem struct {
 // without changing acquisition, upkeep, capacity, or decommission logic.
 var militaryUnits = map[string]militaryUnitSpec{
 	"soldiers": {Name: "Soldiers", Cash: 1500, Resources: map[string]float64{}, DailyCash: .4, PopulationCoefficient: .10, ProvinceCoefficient: 1000, BaseCapacity: 5000},
-	"tanks":    {Name: "Tanks", Project: "armored_vehicle_program", Cash: 120000, Resources: map[string]float64{"basic_metals": 8, "construction_materials": 3, "energy": 2}, DailyCash: 350, DailyEnergy: .1, PopulationCoefficient: .005, ProvinceCoefficient: 50, BaseCapacity: 50, Tradable: true},
-	"ships":    {Name: "Ships", Project: "naval_shipyard", Cash: 450000, Resources: map[string]float64{"basic_metals": 20, "construction_materials": 12, "energy": 8, "timber": 5}, DailyCash: 1200, DailyEnergy: .4, PopulationCoefficient: .0015, ProvinceCoefficient: 20, BaseCapacity: 10, Tradable: true},
-	"jets":     {Name: "Fighter Jets", Project: "aviation_industry", Cash: 350000, Resources: map[string]float64{"basic_metals": 12, "construction_materials": 8, "energy": 6, "strategic_minerals": 4}, DailyCash: 800, DailyEnergy: .3, PopulationCoefficient: .002, ProvinceCoefficient: 25, BaseCapacity: 15, Tradable: true},
-	"drones":   {Name: "Drones", Project: "advanced_ordnance", Cash: 85000, Resources: map[string]float64{"basic_metals": 4, "strategic_minerals": 3, "energy": 2, "basic_goods": 1}, DailyCash: 2500, DailyEnergy: .15, PopulationCoefficient: .006, ProvinceCoefficient: 40, BaseCapacity: 30, Tradable: true},
+	"tanks":    {Name: "Tanks", Project: "armored_vehicle_program", Cash: 120000, Resources: map[string]float64{"basic_metals": 14, "construction_materials": 3, "energy": 2, "military_equipment": 2}, DailyCash: 350, DailyEnergy: .1, PopulationCoefficient: .005, ProvinceCoefficient: 50, BaseCapacity: 50, Tradable: true},
+	"ships":    {Name: "Ships", Project: "naval_shipyard", Cash: 450000, Resources: map[string]float64{"basic_metals": 20, "construction_materials": 12, "energy": 8, "timber": 5, "military_equipment": 10}, DailyCash: 1200, DailyEnergy: .4, PopulationCoefficient: .0015, ProvinceCoefficient: 20, BaseCapacity: 10, Tradable: true},
+	"jets":     {Name: "Fighter Jets", Project: "aviation_industry", Cash: 350000, Resources: map[string]float64{"basic_metals": 6, "construction_materials": 8, "energy": 6, "strategic_minerals": 4, "military_equipment": 12}, DailyCash: 800, DailyEnergy: .3, PopulationCoefficient: .002, ProvinceCoefficient: 25, BaseCapacity: 15, Tradable: true},
+	"drones":   {Name: "Drones", Project: "advanced_ordnance", Cash: 85000, Resources: map[string]float64{"basic_metals": 4, "strategic_minerals": 7, "energy": 2, "basic_goods": 1, "military_equipment": 8}, DailyCash: 2500, DailyEnergy: .15, PopulationCoefficient: .006, ProvinceCoefficient: 40, BaseCapacity: 30, Tradable: true},
 }
 
 func militaryCapacity(spec militaryUnitSpec, population int64, provinces int) int64 {
