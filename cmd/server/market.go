@@ -14,8 +14,8 @@ import (
 
 const (
 	tradeRegionalTurns     = 3.0
-	tradeDistanceTurnScale = 6.0
-	tradeDistanceTurnPower = 1.35
+	tradeDistanceTurnScale = 30.0
+	tradeDistanceTurnPower = 3.0
 	tradeRegionalFeeRate   = .0075
 	tradeDistanceFeeScale  = .03
 	tradeDistanceFeePower  = 1.30

@@ -26,12 +26,20 @@ func TestShipmentTerms(t *testing.T) {
 		t.Fatalf("same-continent terms incorrect: %v %v %v %v", distance, turns, fee, risk)
 	}
 	_, distantTurns, distantFee, _ := shipmentTerms("Asia", "South America", 100, 100000)
-	if distantTurns != 9 || distantFee < 3300 || distantFee > 3400 {
-		t.Fatalf("expected a 9-turn distant route near a 3.4%% fee, got %d turns and %d", distantTurns, distantFee)
+	if distantTurns != 25 || distantFee < 3300 || distantFee > 3400 {
+		t.Fatalf("expected a 25-turn distant route near a 3.4%% fee, got %d turns and %d", distantTurns, distantFee)
 	}
 	_, bulkTurns, _, _ := shipmentTerms("Asia", "South America", 20000, 100000)
-	if bulkTurns != 11 {
-		t.Fatalf("expected 11 bulk turns, got %d", bulkTurns)
+	if bulkTurns != 33 {
+		t.Fatalf("expected 33 bulk turns, got %d", bulkTurns)
+	}
+	_, maximumTurns, _, _ := shipmentTerms("North America", "Antarctica", 100, 100000)
+	if maximumTurns != 29 {
+		t.Fatalf("expected the maximum normal route to take 29 hourly turns, got %d", maximumTurns)
+	}
+	_, nearbyTurns, _, _ := shipmentTerms("Africa", "Europe", 100, 100000)
+	if nearbyTurns != 4 {
+		t.Fatalf("expected a nearby intercontinental route to remain practical at 4 turns, got %d", nearbyTurns)
 	}
 }
 
