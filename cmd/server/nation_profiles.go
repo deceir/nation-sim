@@ -32,7 +32,7 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	q := strings.TrimSpace(r.URL.Query().Get("search"))
 	q = strings.ReplaceAll(strings.ReplaceAll(q, "\\", "\\\\"), "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
-	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,a.id,a.name ORDER BY n.name LIMIT 100`, q, q, q, q)
+	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,a.id,a.name ORDER BY n.population DESC,n.name LIMIT 100`, q, q, q, q)
 	if e != nil {
 		problem(w, 500, "Nation directory unavailable.")
 		return
@@ -42,8 +42,9 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	for rows.Next() {
 		var id, name, leader, government, continent, motto, userType, allianceID, allianceName string
 		var cityCount int
-		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &cityCount, &allianceID, &allianceName)
-		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "cityCount": cityCount, "allianceID": allianceID, "allianceName": allianceName})
+		var population int64
+		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &cityCount, &allianceID, &allianceName)
+		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "cityCount": cityCount, "allianceID": allianceID, "allianceName": allianceName})
 	}
 	write(w, 200, out)
 }
@@ -51,9 +52,11 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 	var id, name, leader, government, continent, motto, capital, userType, allianceID, allianceName string
 	var cityCount int
+	var population int64
 	var created time.Time
 	var lastActive, guardianUntil *time.Time
-	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.created_at,n.owner_id,a.id,a.name`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive, &guardianUntil)
+	var locationLat, locationLng *float64
+	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()),n.location_lat,n.location_lng FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,n.owner_id,n.location_lat,n.location_lng,a.id,a.name`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive, &guardianUntil, &locationLat, &locationLng)
 	if e != nil {
 		problem(w, 404, "Nation not found.")
 		return
@@ -72,5 +75,5 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "allianceID": allianceID, "allianceName": allianceName})
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
 }

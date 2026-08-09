@@ -77,7 +77,7 @@ func provinceFoundingCosts(count int, gear string, policies map[string]bool) (in
 }
 
 func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ ProvinceID, Upgrade string }
+	var in struct{ ProvinceID, Upgrade, Action string }
 	if !decode(w, r, &in) {
 		return
 	}
@@ -103,6 +103,28 @@ func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user)
 	err = tx.QueryRowContext(r.Context(), `SELECT level FROM province_upgrades WHERE city_id=? AND upgrade_key=? FOR UPDATE`, in.ProvinceID, in.Upgrade).Scan(&level)
 	if err != nil && err != sql.ErrNoRows {
 		problem(w, http.StatusInternalServerError, "Province upgrades unavailable.")
+		return
+	}
+	if in.Action == "downgrade" {
+		if level <= 0 {
+			problem(w, http.StatusConflict, "This Province upgrade is already at level 0.")
+			return
+		}
+		if _, err = tx.ExecContext(r.Context(), `UPDATE province_upgrades SET level=level-1 WHERE city_id=? AND upgrade_key=? AND level>0`, in.ProvinceID, in.Upgrade); err != nil {
+			problem(w, http.StatusInternalServerError, "Could not downgrade Province upgrade.")
+			return
+		}
+		// total_invested intentionally remains unchanged: downgrades never refund prior spending.
+		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'province_downgrade',0,?)`, uuid(), nid, "Downgraded "+spec.Name+" with no refund")
+		if err = tx.Commit(); err != nil {
+			problem(w, http.StatusInternalServerError, "Could not complete Province downgrade.")
+			return
+		}
+		write(w, http.StatusOK, map[string]any{"ok": true, "cost": 0, "refund": 0, "level": level - 1})
+		return
+	}
+	if in.Action != "" && in.Action != "upgrade" {
+		problem(w, http.StatusBadRequest, "Unknown Province upgrade action.")
 		return
 	}
 	cap := provinceUpgradeCap(infra)

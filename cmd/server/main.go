@@ -69,6 +69,7 @@ func main() {
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
 	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
+	mux.HandleFunc("POST /api/nation/location", a.auth(a.resetNationLocation))
 	mux.HandleFunc("GET /api/cities", a.auth(a.cities))
 	mux.HandleFunc("POST /api/cities", a.auth(a.createCity))
 	mux.HandleFunc("POST /api/cities/invest", a.auth(a.investCity))
@@ -88,10 +89,15 @@ func main() {
 	mux.HandleFunc("PATCH /api/strategy/quotas", a.auth(a.setQuotas))
 	mux.HandleFunc("GET /api/notifications", a.auth(a.notifications))
 	mux.HandleFunc("PATCH /api/notifications/read", a.auth(a.readNotifications))
+	mux.HandleFunc("POST /api/dev/notifications", a.auth(a.broadcastGameNotification))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
-	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
+	mux.HandleFunc("GET /api/world/stats", a.worldStats)
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
 	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/accept", a.auth(a.acceptMarketOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/cancel", a.auth(a.cancelMarketOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/reject", a.auth(a.rejectMarketOrder))
+	mux.HandleFunc("GET /api/market/shipments/{id}", a.auth(a.shipmentDetail))
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
 	mux.HandleFunc("GET /api/alliances", a.auth(a.allianceDirectory))
 	mux.HandleFunc("POST /api/alliances", a.auth(a.createAlliance))
@@ -195,8 +201,9 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		EmploymentRate, TaxRate                                                                                        float64
 		GuardianUntil                                                                                                  *time.Time
 		CreatedAt                                                                                                      time.Time
+		LocationLat, LocationLng                                                                                       *float64
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced') FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear)
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced'),n.location_lat,n.location_lng FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear, &n.LocationLat, &n.LocationLng)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
@@ -204,13 +211,21 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]any{"user": u, "nation": n})
 }
 func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Name, Capital, LeaderName, Government, Continent string }
+	var in struct {
+		Name, Capital, LeaderName, Government string
+		Latitude, Longitude                   float64
+	}
 	if !decode(w, r, &in) {
 		return
 	}
 	strings.TrimSpace(in.Name)
 	strings.TrimSpace(in.Capital)
-	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.Name, in.Capital, in.Government, in.Continent})
+	continent, located := continentAt(in.Latitude, in.Longitude)
+	if !located {
+		problem(w, 400, "Choose a valid land position on the world map.")
+		return
+	}
+	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.Name, in.Capital, in.Government, continent})
 	if !ok {
 		problem(w, 400, "Nation and capital names are required.")
 		return
@@ -223,7 +238,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	defer tx.Rollback(r.Context())
 	nid, cid, gid := uuid(), uuid(), uuid()
 	userType := nationUserType(p.NationName)
-	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name,user_type) VALUES(?,?,?,?,?,?,'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, userType); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,location_lat,location_lng,currency_name,user_type) VALUES(?,?,?,?,?,?,?,?, 'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, in.Latitude, in.Longitude, userType); err != nil {
 		problem(w, 409, "That nation or leader name is already taken, or this account already has a nation.")
 		return
 	}
@@ -233,7 +248,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	tx.Exec(r.Context(), `INSERT INTO nation_economic_strategy(nation_id) VALUES(?)`, nid)
-	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id) VALUES(?)`, cid)
+	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id,latitude,longitude) VALUES(?,?,?)`, cid, in.Latitude, in.Longitude)
 	for _, resource := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,1)`, cid, resource)
 	}
@@ -260,64 +275,21 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 201, map[string]any{"id": nid, "guardianDays": 30})
 }
 func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Motto, Government, Continent string }
+	var in struct{ Motto, Government string }
 	if !decode(w, r, &in) {
 		return
 	}
 	in.Motto = strings.TrimSpace(in.Motto)
-	if len(in.Motto) > 120 || !governmentTypes[in.Government] || !continents[in.Continent] {
+	if len(in.Motto) > 120 || !governmentTypes[in.Government] {
 		problem(w, 400, "Invalid nation profile.")
 		return
 	}
-	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,continent=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, in.Continent, u.ID)
+	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, u.ID)
 	if e != nil {
 		problem(w, 400, "Could not save settings.")
 		return
 	}
 	write(w, 200, map[string]bool{"ok": true})
-}
-func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.Query(r.Context(), `SELECT o.id,n.name,o.side,o.resource,o.remaining,o.unit_price,o.created_at FROM market_orders o JOIN nations n ON n.id=o.nation_id WHERE o.status='open' ORDER BY o.created_at DESC LIMIT 100`)
-	if e != nil {
-		problem(w, 500, "Market unavailable.")
-		return
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var id, name, side, res string
-		var qty, price int64
-		var at time.Time
-		rows.Scan(&id, &name, &side, &res, &qty, &price, &at)
-		out = append(out, map[string]any{"id": id, "nation": name, "side": side, "resource": res, "quantity": qty, "unitPrice": price, "createdAt": at})
-	}
-	write(w, 200, out)
-}
-func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct {
-		Side, Resource      string
-		Quantity, UnitPrice int64
-	}
-	if !decode(w, r, &in) {
-		return
-	}
-	if (in.Side != "buy" && in.Side != "sell") || (in.Resource != "coal" && in.Resource != "steel" && in.Resource != "food") || in.Quantity < 1 || in.UnitPrice < 1 {
-		problem(w, 400, "Invalid order.")
-		return
-	}
-	var nid string
-	if a.db.QueryRow(r.Context(), `SELECT id FROM nations WHERE owner_id=?`, u.ID).Scan(&nid) != nil {
-		problem(w, 409, "Create a nation first.")
-		return
-	}
-	orderID := uuid()
-	_, e := a.db.Exec(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price) VALUES(?,?,?,?,?,?,?)`, orderID, nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice)
-	if e != nil {
-		problem(w, 500, "Could not place order.")
-		return
-	}
-	a.db.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Market order published',?)`, uuid(), nid, fmt.Sprintf("Your %s order for %d %s at ¥%d per unit is now open.", in.Side, in.Quantity, in.Resource, in.UnitPrice))
-	write(w, 201, map[string]bool{"ok": true})
 }
 func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct{ Kind, DefenderID string }
