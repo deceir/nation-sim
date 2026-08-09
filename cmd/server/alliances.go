@@ -226,16 +226,46 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		roleRows.Close()
 	}
 	brackets := []map[string]any{}
-	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,COALESCE(b.nation_id,''),COALESCE(n.name,''),b.cash_rate,b.resource_rate FROM alliance_tax_brackets b LEFT JOIN nations n ON n.id=b.nation_id WHERE b.alliance_id=? ORDER BY b.is_default DESC,n.name,b.name`, id)
+	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,b.cash_rate,b.resource_rate,(SELECT COUNT(*) FROM alliance_tax_assignments x WHERE x.bracket_id=b.id) FROM alliance_tax_brackets b WHERE b.alliance_id=? ORDER BY b.is_default DESC,b.name`, id)
 	if bracketRows != nil {
 		for bracketRows.Next() {
-			var bid, name, nationID, nation string
+			var bid, name string
 			var def bool
+			var assignedCount int
 			var cashRate, resourceRate float64
-			bracketRows.Scan(&bid, &name, &def, &nationID, &nation, &cashRate, &resourceRate)
-			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "nationID": nationID, "nation": nation, "cashRate": cashRate, "resourceRate": resourceRate})
+			bracketRows.Scan(&bid, &name, &def, &cashRate, &resourceRate, &assignedCount)
+			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "cashRate": cashRate, "resourceRate": resourceRate, "assignedCount": assignedCount})
 		}
 		bracketRows.Close()
+	}
+	defaultBracketID, defaultBracketName := "", "Default"
+	for _, bracket := range brackets {
+		if bracket["isDefault"].(bool) {
+			defaultBracketID, defaultBracketName = bracket["id"].(string), bracket["name"].(string)
+			break
+		}
+	}
+	assignments := map[string][2]string{}
+	assignmentRows, _ := a.db.QueryContext(r.Context(), `SELECT x.nation_id,b.id,b.name FROM alliance_tax_assignments x JOIN alliance_tax_brackets b ON b.id=x.bracket_id AND b.alliance_id=x.alliance_id WHERE x.alliance_id=?`, id)
+	if assignmentRows != nil {
+		for assignmentRows.Next() {
+			var nationID, bracketID, bracketName string
+			assignmentRows.Scan(&nationID, &bracketID, &bracketName)
+			assignments[nationID] = [2]string{bracketID, bracketName}
+		}
+		assignmentRows.Close()
+	}
+	for _, bracket := range brackets {
+		if bracket["isDefault"].(bool) {
+			bracket["assignedCount"] = len(members) - len(assignments)
+		}
+	}
+	for _, member := range members {
+		assignment, ok := assignments[member["nationID"].(string)]
+		if !ok {
+			assignment = [2]string{defaultBracketID, defaultBracketName}
+		}
+		member["taxBracketID"], member["taxBracketName"] = assignment[0], assignment[1]
 	}
 	activeTreaties, pendingTreaties := a.allianceTreaties(r.Context(), id, isMember && p.War)
 	military := map[string]int64{"soldiers": 0, "tanks": 0, "ships": 0, "jets": 0, "drones": 0}

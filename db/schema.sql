@@ -425,6 +425,18 @@ CREATE TABLE IF NOT EXISTS alliance_treaties (
   CONSTRAINT fk_treaty_resolver FOREIGN KEY(resolved_by_nation_id) REFERENCES nations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS alliance_tax_assignments (
+  alliance_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  bracket_id CHAR(36) NOT NULL,
+  assigned_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(alliance_id,nation_id),
+  INDEX idx_tax_assignment_bracket(bracket_id),
+  CONSTRAINT fk_tax_assignment_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_tax_assignment_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_tax_assignment_bracket FOREIGN KEY(bracket_id) REFERENCES alliance_tax_brackets(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS alliance_member_balances (
   alliance_id CHAR(36) NOT NULL,
   nation_id CHAR(36) NOT NULL,
@@ -545,6 +557,7 @@ CREATE TABLE IF NOT EXISTS crisis_options (
   effect_target VARCHAR(50) NOT NULL DEFAULT '',
   effect_value DECIMAL(14,3) NOT NULL DEFAULT 0,
   effect_text VARCHAR(240) NOT NULL,
+  effect_payload JSON NULL,
   UNIQUE KEY uq_crisis_option_order(template_id,sort_order),
   CONSTRAINT fk_crisis_option_template FOREIGN KEY(template_id) REFERENCES crisis_templates(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;

@@ -3,16 +3,17 @@ package main
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
-func TestCrisisCatalogContainsOneHundredValidTemplates(t *testing.T) {
+func TestCrisisCatalogContainsTwoHundredFiftyValidTemplates(t *testing.T) {
 	var catalog crisisCatalog
 	if err := json.Unmarshal(crisisCatalogJSON, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog.Templates) != 100 {
-		t.Fatalf("templates = %d, want 100", len(catalog.Templates))
+	if len(catalog.Templates) != 250 {
+		t.Fatalf("templates = %d, want 250", len(catalog.Templates))
 	}
 	seen := map[string]bool{}
 	for _, template := range catalog.Templates {
@@ -23,14 +24,25 @@ func TestCrisisCatalogContainsOneHundredValidTemplates(t *testing.T) {
 			t.Fatalf("duplicate template ID %q", template.ID)
 		}
 		seen[template.ID] = true
-		options, ok := catalog.Profiles[template.Profile]
-		if !ok || len(options) < 2 || len(options) > 3 {
-			t.Fatalf("template %q has invalid profile %q", template.ID, template.Profile)
+		options := template.Options
+		if len(options) != 3 {
+			t.Fatalf("template %q has %d options", template.ID, len(options))
 		}
 		for _, option := range options {
-			if option.Label == "" || option.EffectText == "" || !validCrisisEffects[option.EffectType] {
+			if option.Label == "" || option.EffectText == "" || len(option.Effects) == 0 {
 				t.Fatalf("template %q has invalid option %#v", template.ID, option)
 			}
+			for _, effect := range option.Effects {
+				if !validCrisisEffects[effect.Type] {
+					t.Fatalf("template %q has invalid effect %#v", template.ID, effect)
+				}
+			}
+		}
+		if options[2].Effects[0].Type != "none" {
+			t.Fatalf("template %q third option is not a neutral resolution", template.ID)
+		}
+		if strings.Contains(strings.ToLower(template.Briefing+options[0].EffectText+options[1].EffectText+options[2].EffectText), "no penalt") {
+			t.Fatalf("template %q contains retired no-penalty phrasing", template.ID)
 		}
 	}
 }

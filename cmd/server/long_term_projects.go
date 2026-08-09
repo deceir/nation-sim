@@ -99,6 +99,10 @@ func fmtDecimal(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 func longTermProjectSlots(infra float64, provinces int) int {
 	return 2 + int(infra/1200) + max(0, provinces-1)/2
 }
+func longTermProjectUsesSlot(projectID string) bool {
+	project, exists := longTermProjects[projectID]
+	return !exists || project.Category != "military"
+}
 
 func (a *app) longTermProjectsDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var nid string
@@ -150,9 +154,20 @@ func (a *app) longTermProjectCatalog(ctx context.Context, nid string, infra floa
 	out := []map[string]any{}
 	for _, id := range keys {
 		p := longTermProjects[id]
-		out = append(out, map[string]any{"id": p.ID, "name": p.Name, "category": p.Category, "description": p.Description, "target": p.Target, "exclusivity": p.Exclusivity, "unlock": p.Unlock, "cash": p.Cash, "turns": p.Turns, "costs": p.Costs, "completed": completed[id], "construction": building[id]})
+		out = append(out, map[string]any{"id": p.ID, "name": p.Name, "category": p.Category, "description": p.Description, "target": p.Target, "exclusivity": p.Exclusivity, "unlock": p.Unlock, "cash": p.Cash, "turns": p.Turns, "costs": p.Costs, "completed": completed[id], "construction": building[id], "usesSlot": longTermProjectUsesSlot(id)})
 	}
-	return out, longTermProjectSlots(infra, provinces), len(completed) + len(building)
+	used := 0
+	for id := range completed {
+		if longTermProjectUsesSlot(id) {
+			used++
+		}
+	}
+	for id := range building {
+		if longTermProjectUsesSlot(id) {
+			used++
+		}
+	}
+	return out, longTermProjectSlots(infra, provinces), used
 }
 
 func (a *app) startLongTermProject(w http.ResponseWriter, r *http.Request, u user) {
@@ -174,10 +189,24 @@ func (a *app) startLongTermProject(w http.ResponseWriter, r *http.Request, u use
 	var cash int64
 	var infra float64
 	var provinces, used int
-	if e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,(SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=n.id),(SELECT COUNT(*) FROM cities WHERE nation_id=n.id),(SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=n.id)+(SELECT COUNT(*) FROM national_project_construction WHERE nation_id=n.id AND status='building') FROM nations n WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &infra, &provinces, &used); e != nil {
+	if e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,(SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=n.id),(SELECT COUNT(*) FROM cities WHERE nation_id=n.id) FROM nations n WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nid, &cash, &infra, &provinces); e != nil {
 		return
 	}
-	if used >= longTermProjectSlots(infra, provinces) {
+	if p.Category != "military" {
+		rows, queryErr := tx.QueryContext(r.Context(), `SELECT project_type FROM national_long_term_projects WHERE nation_id=? UNION ALL SELECT project_type FROM national_project_construction WHERE nation_id=? AND status='building'`, nid, nid)
+		if queryErr != nil {
+			problem(w, 500, "Could not verify National Project capacity.")
+			return
+		}
+		for rows.Next() {
+			var projectID string
+			if rows.Scan(&projectID) == nil && longTermProjectUsesSlot(projectID) {
+				used++
+			}
+		}
+		rows.Close()
+	}
+	if p.Category != "military" && used >= longTermProjectSlots(infra, provinces) {
 		problem(w, 409, "No long-term Project Slot is available.")
 		return
 	}

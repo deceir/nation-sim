@@ -20,10 +20,18 @@ type crisisCatalog struct {
 	Profiles  map[string][]crisisCatalogOption `json:"profiles"`
 	Templates []crisisCatalogTemplate          `json:"templates"`
 }
-type crisisCatalogTemplate struct{ ID, Title, Briefing, Profile string }
+type crisisCatalogTemplate struct {
+	ID, Title, Briefing string
+	Options             []crisisCatalogOption
+}
+type crisisEffect struct {
+	Type, Target string
+	Value        float64
+}
 type crisisCatalogOption struct {
 	Label, Description, EffectType, EffectTarget, EffectText string
 	EffectValue                                              float64
+	Effects                                                  []crisisEffect
 }
 
 type crisisOptionItem struct {
@@ -54,31 +62,41 @@ func (a *app) syncCrisisCatalog(ctx context.Context) error {
 	if err := json.Unmarshal(crisisCatalogJSON, &catalog); err != nil {
 		return fmt.Errorf("decode crisis catalog: %w", err)
 	}
-	if len(catalog.Templates) != 100 {
-		return fmt.Errorf("crisis catalog contains %d templates; expected 100", len(catalog.Templates))
+	if len(catalog.Templates) != 250 {
+		return fmt.Errorf("crisis catalog contains %d templates; expected 250", len(catalog.Templates))
 	}
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, `UPDATE crisis_templates SET enabled=0`); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	for _, template := range catalog.Templates {
 		template.ID = strings.TrimSpace(template.ID)
-		options, ok := catalog.Profiles[template.Profile]
-		if template.ID == "" || seen[template.ID] || !ok || len(options) < 2 || len(options) > 3 {
-			return fmt.Errorf("invalid crisis template %q or response profile %q", template.ID, template.Profile)
+		options := template.Options
+		if template.ID == "" || seen[template.ID] || len(options) != 3 {
+			return fmt.Errorf("invalid crisis template %q", template.ID)
 		}
 		seen[template.ID] = true
 		if _, err = tx.ExecContext(ctx, `INSERT INTO crisis_templates(id,internal_name,title,briefing,enabled) VALUES(?,?,?,?,1) ON DUPLICATE KEY UPDATE internal_name=VALUES(internal_name),title=VALUES(title),briefing=VALUES(briefing),enabled=1`, template.ID, template.ID, template.Title, template.Briefing); err != nil {
 			return err
 		}
 		for index, option := range options {
-			if !validCrisisEffects[option.EffectType] {
-				return fmt.Errorf("unknown crisis effect %q", option.EffectType)
+			if len(option.Effects) == 0 {
+				option.Effects = []crisisEffect{{Type: option.EffectType, Target: option.EffectTarget, Value: option.EffectValue}}
 			}
+			for _, effect := range option.Effects {
+				if !validCrisisEffects[effect.Type] {
+					return fmt.Errorf("unknown crisis effect %q", effect.Type)
+				}
+			}
+			payload, _ := json.Marshal(option.Effects)
+			primary := option.Effects[0]
 			optionID := fmt.Sprintf("%s_%d", template.ID, index+1)
-			if _, err = tx.ExecContext(ctx, `INSERT INTO crisis_options(id,template_id,sort_order,label,description,effect_type,effect_target,effect_value,effect_text) VALUES(?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE label=VALUES(label),description=VALUES(description),effect_type=VALUES(effect_type),effect_target=VALUES(effect_target),effect_value=VALUES(effect_value),effect_text=VALUES(effect_text)`, optionID, template.ID, index+1, option.Label, option.Description, option.EffectType, option.EffectTarget, option.EffectValue, option.EffectText); err != nil {
+			if _, err = tx.ExecContext(ctx, `INSERT INTO crisis_options(id,template_id,sort_order,label,description,effect_type,effect_target,effect_value,effect_text,effect_payload) VALUES(?,?,?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE label=VALUES(label),description=VALUES(description),effect_type=VALUES(effect_type),effect_target=VALUES(effect_target),effect_value=VALUES(effect_value),effect_text=VALUES(effect_text),effect_payload=VALUES(effect_payload)`, optionID, template.ID, index+1, option.Label, option.Description, primary.Type, primary.Target, primary.Value, option.EffectText, payload); err != nil {
 				return err
 			}
 		}
@@ -228,7 +246,8 @@ func (a *app) respondToCrisis(w http.ResponseWriter, r *http.Request, u user) {
 	defer tx.Rollback()
 	var effectType, target, effectText string
 	var value float64
-	err = tx.QueryRowContext(r.Context(), `SELECT choice.effect_type,choice.effect_target,choice.effect_value,choice.effect_text FROM daily_crises crisis JOIN crisis_options choice ON choice.template_id=crisis.template_id WHERE crisis.id=? AND crisis.server_date=CURRENT_DATE() AND choice.id=? FOR UPDATE`, r.PathValue("id"), strings.TrimSpace(in.OptionID)).Scan(&effectType, &target, &value, &effectText)
+	var payload []byte
+	err = tx.QueryRowContext(r.Context(), `SELECT choice.effect_type,choice.effect_target,choice.effect_value,choice.effect_text,COALESCE(choice.effect_payload,JSON_ARRAY()) FROM daily_crises crisis JOIN crisis_options choice ON choice.template_id=crisis.template_id WHERE crisis.id=? AND crisis.server_date=CURRENT_DATE() AND choice.id=? FOR UPDATE`, r.PathValue("id"), strings.TrimSpace(in.OptionID)).Scan(&effectType, &target, &value, &effectText, &payload)
 	if err != nil {
 		problem(w, 400, "That Crisis or response is no longer available.")
 		return
@@ -239,16 +258,51 @@ func (a *app) respondToCrisis(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Your nation has already responded to this Crisis.")
 		return
 	}
-	switch effectType {
-	case "cash_grant":
-		_, err = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury+? WHERE id=?`, int64(value), nid)
-	case "resource_grant":
-		_, err = tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, target, value)
-	case "cash_income_pct", "production_pct", "happiness_pct", "population_growth_pct", "upkeep_reduction_pct":
-		_, err = tx.ExecContext(r.Context(), `INSERT INTO crisis_modifiers(nation_id,daily_crisis_id,modifier_type,target,value,expires_on) VALUES(?,?,?,?,?,DATE_ADD(CURRENT_DATE(),INTERVAL 1 DAY))`, nid, r.PathValue("id"), effectType, target, value)
-	case "none":
-	default:
-		err = fmt.Errorf("unsupported effect")
+	effects := []crisisEffect{}
+	if json.Unmarshal(payload, &effects) != nil || len(effects) == 0 {
+		effects = []crisisEffect{{Type: effectType, Target: target, Value: value}}
+	}
+	var cashDelta float64
+	resourceDeltas := map[string]float64{}
+	for _, effect := range effects {
+		if effect.Type == "cash_grant" {
+			cashDelta += effect.Value
+		} else if effect.Type == "resource_grant" {
+			resourceDeltas[effect.Target] += effect.Value
+		}
+	}
+	var treasury float64
+	if tx.QueryRowContext(r.Context(), `SELECT treasury FROM nations WHERE id=? FOR UPDATE`, nid).Scan(&treasury) != nil || treasury+cashDelta < 0 {
+		problem(w, 409, "Your nation cannot afford that response.")
+		return
+	}
+	for resource, delta := range resourceDeltas {
+		var available float64
+		resourceErr := tx.QueryRowContext(r.Context(), `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity=? FOR UPDATE`, nid, resource).Scan(&available)
+		if resourceErr != nil && resourceErr != sql.ErrNoRows {
+			problem(w, 500, "Could not verify the resources required for that response.")
+			return
+		}
+		if available+delta < 0 {
+			problem(w, 409, "Your nation lacks the resources required for that response.")
+			return
+		}
+	}
+	for _, effect := range effects {
+		switch effect.Type {
+		case "cash_grant":
+			_, err = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury+? WHERE id=?`, int64(effect.Value), nid)
+		case "resource_grant":
+			_, err = tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nid, effect.Target, effect.Value)
+		case "cash_income_pct", "production_pct", "happiness_pct", "population_growth_pct", "upkeep_reduction_pct":
+			_, err = tx.ExecContext(r.Context(), `INSERT INTO crisis_modifiers(nation_id,daily_crisis_id,modifier_type,target,value,expires_on) VALUES(?,?,?,?,?,DATE_ADD(CURRENT_DATE(),INTERVAL 1 DAY))`, nid, r.PathValue("id"), effect.Type, effect.Target, effect.Value)
+		case "none":
+		default:
+			err = fmt.Errorf("unsupported effect")
+		}
+		if err != nil {
+			break
+		}
 	}
 	if err != nil {
 		problem(w, 500, "Could not apply that Crisis outcome.")
@@ -259,8 +313,8 @@ func (a *app) respondToCrisis(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Your nation has already responded to this Crisis.")
 		return
 	}
-	if effectType == "cash_grant" {
-		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'daily_crisis',?,'Daily Crisis response')`, uuid(), nid, int64(value))
+	if cashDelta != 0 {
+		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'daily_crisis',?,'Daily Crisis response')`, uuid(), nid, int64(cashDelta))
 	}
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not record that response.")

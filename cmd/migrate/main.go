@@ -97,6 +97,7 @@ func main() {
 		{"trade_shipments", "delivered_at", "TIMESTAMP(6) NULL"},
 		{"trade_shipments", "status", "ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'"},
 		{"alliance_bank_transactions", "batch_id", "CHAR(36) NULL"},
+		{"crisis_options", "effect_payload", "JSON NULL"},
 	}
 	for _, u := range upgrades {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
@@ -149,6 +150,7 @@ func main() {
 		`INSERT INTO alliance_roles(id,alliance_id,title,rank_order,default_key,can_deposit_bank) SELECT UUID(),a.id,'Applicant',0,'applicant',0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_roles r WHERE r.alliance_id=a.id AND r.default_key='applicant')`,
 		`INSERT INTO alliance_tax_brackets(id,alliance_id,name,is_default,cash_rate,resource_rate) SELECT UUID(),a.id,'Default',1,a.tax_rate,0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_tax_brackets b WHERE b.alliance_id=a.id AND b.is_default=1)`,
 		`UPDATE alliance_tax_brackets SET role_id=NULL WHERE role_id IS NOT NULL`,
+		`INSERT IGNORE INTO alliance_tax_assignments(alliance_id,nation_id,bracket_id) SELECT b.alliance_id,b.nation_id,b.id FROM alliance_tax_brackets b JOIN alliance_members m ON m.alliance_id=b.alliance_id AND m.nation_id=b.nation_id WHERE b.nation_id IS NOT NULL`,
 		`UPDATE alliance_treaties SET proposed_by_alliance_id=alliance_a_id WHERE proposed_by_alliance_id IS NULL`,
 		`UPDATE alliance_treaties t JOIN alliances a ON a.id=t.proposed_by_alliance_id SET t.proposed_by_nation_id=a.founder_nation_id WHERE t.proposed_by_nation_id IS NULL`,
 		`UPDATE market_orders SET status='cancelled' WHERE status IN('open','pending') AND escrow_cash=0 AND escrow_goods=0`,
