@@ -65,6 +65,12 @@ func main() {
 		log.Fatal(err)
 	}
 	a := &app{db: db}
+	if err = a.syncCrisisCatalog(context.Background()); err != nil {
+		log.Fatal(err)
+	}
+	if err = a.ensureDailyCrises(context.Background()); err != nil {
+		log.Fatal(err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", a.register)
 	mux.HandleFunc("POST /api/auth/login", a.login)
@@ -98,6 +104,8 @@ func main() {
 	mux.HandleFunc("POST /api/ventures/invest", a.auth(a.investVenture))
 	mux.HandleFunc("POST /api/ventures/{id}/collect", a.auth(a.collectVenture))
 	mux.HandleFunc("POST /api/ventures/{id}/cancel", a.auth(a.cancelVenture))
+	mux.HandleFunc("GET /api/crises", a.auth(a.crises))
+	mux.HandleFunc("POST /api/crises/{id}/respond", a.auth(a.respondToCrisis))
 	mux.HandleFunc("GET /api/strategy", a.auth(a.strategyDashboard))
 	mux.HandleFunc("PATCH /api/strategy/gear", a.auth(a.setGear))
 	mux.HandleFunc("PATCH /api/strategy/policies", a.auth(a.setPolicies))

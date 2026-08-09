@@ -7,7 +7,7 @@ func TestVentureCancellationRefund(t *testing.T) {
 		t.Fatalf("refund = %d, want 750000", got)
 	}
 	if got := ventureCancellationRefund(101); got != 75 {
-		t.Fatalf("whole-Yen refund = %d, want 75", got)
+		t.Fatalf("whole-cash-unit refund = %d, want 75", got)
 	}
 }
 

@@ -263,7 +263,7 @@ func (a *app) transferVentureCapital(w http.ResponseWriter, r *http.Request, u u
 	}
 	in.Direction = strings.ToLower(strings.TrimSpace(in.Direction))
 	if in.Amount <= 0 || (in.Direction != "to_personal" && in.Direction != "to_treasury") {
-		problem(w, http.StatusBadRequest, "Choose a valid transfer direction and whole-Yen amount.")
+		problem(w, http.StatusBadRequest, "Choose a valid transfer direction and whole-number cash amount.")
 		return
 	}
 	nid, err := a.nationID(r.Context(), u.ID)
@@ -297,7 +297,7 @@ func (a *app) transferVentureCapital(w http.ResponseWriter, r *http.Request, u u
 	}
 	if in.Direction == "to_personal" {
 		if treasury < in.Amount {
-			problem(w, 400, "Your national Treasury does not hold enough Yen.")
+			problem(w, 400, "Your national Treasury does not hold enough cash.")
 			return
 		}
 		if capital+in.Amount > venturePersonalCapitalCap {
@@ -308,7 +308,7 @@ func (a *app) transferVentureCapital(w http.ResponseWriter, r *http.Request, u u
 		treasury -= in.Amount
 	} else {
 		if capital < in.Amount {
-			problem(w, 400, "Your Personal Capital does not hold enough Yen.")
+			problem(w, 400, "Your Personal Capital balance is too low for that transfer.")
 			return
 		}
 		capital -= in.Amount
@@ -322,7 +322,7 @@ func (a *app) transferVentureCapital(w http.ResponseWriter, r *http.Request, u u
 		problem(w, 500, "Transfer unavailable.")
 		return
 	}
-	memo := "Moved Yen from national Treasury to Personal Capital"
+	memo := "Moved cash from national Treasury to Personal Capital"
 	ledgerAmount := -in.Amount
 	if in.Direction == "to_treasury" {
 		memo = "Returned Personal Capital to national Treasury"
@@ -393,7 +393,7 @@ func (a *app) investVenture(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	if capital < in.Amount {
-		problem(w, 400, "Your Personal Capital does not hold enough Yen.")
+		problem(w, 400, "Your Personal Capital balance is too low for that investment.")
 		return
 	}
 	ventureID, matures := uuid(), time.Now().UTC().Add(time.Duration(duration)*time.Hour)

@@ -19,6 +19,9 @@ func (a *app) runHourlyTurns() {
 
 func (a *app) processHourlyTurn(turn time.Time) {
 	ctx := context.Background()
+	if err := a.ensureDailyCrises(ctx); err != nil {
+		log.Printf("daily Crisis generation failed: %v", err)
+	}
 	// Claiming the timestamp first makes turns idempotent across restarts.
 	if _, err := a.db.ExecContext(ctx, `INSERT INTO economy_turns(turn_at) VALUES(?)`, turn); err != nil {
 		return
@@ -47,7 +50,10 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		if strategyErr == nil {
 			strategyResult = calculateStrategy(strategy)
 		}
+		crisisModifiers := a.loadCrisisModifiers(ctx, nid)
+		applyCrisisTurnModifiers(&strategyResult, crisisModifiers)
 		cash := int64(math.Floor(result.NetDailyCash / balance.TurnsPerDay * strategyResult.IncomeMultiplier))
+		cash += int64(math.Floor(result.DailyUpkeep / balance.TurnsPerDay * crisisModifiers.UpkeepReductionPct / 100))
 		allianceID, allianceName, allianceRate, _ := applicableAllianceTax(ctx, a.db, nid)
 		allianceTax := int64(0)
 		if cash > 0 && allianceID != "" {

@@ -18,12 +18,17 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	result := calculateEconomy(n)
 	if strategy, e := a.loadStrategy(r.Context(), nid); e == nil {
 		strategic := calculateStrategy(strategy)
+		crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
+		applyCrisisTurnModifiers(&strategic, crisisModifiers)
 		result.DailyTax *= strategic.IncomeMultiplier
+		result.DailyUpkeep *= 1 - crisisModifiers.UpkeepReductionPct/100
 		result.NetDailyCash = result.DailyTax - result.DailyUpkeep
 		for i := range result.Cities {
 			result.Cities[i].TaxRevenue *= strategic.IncomeMultiplier
 		}
 		result.Contributors["economicGearIncome"] = strategic.IncomeMultiplier
+		result.Contributors["dailyCrisisIncome"] = 1 + crisisModifiers.CashIncomePct/100
+		result.Contributors["dailyCrisisUpkeepReduction"] = crisisModifiers.UpkeepReductionPct
 		result.DailyFoodProduction = strategic.Production["foodstuffs"]
 		result.NetDailyFood = result.DailyFoodProduction - result.DailyFoodConsumption
 	}

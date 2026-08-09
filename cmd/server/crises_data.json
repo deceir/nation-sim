@@ -1,0 +1,197 @@
+{
+  "profiles": {
+    "food": [
+      {"Label":"Release emergency reserves","Description":"Stabilize supplies with a limited release from strategic stores.","EffectType":"resource_grant","EffectTarget":"foodstuffs","EffectValue":18,"EffectText":"Gain 18 t Foodstuffs immediately."},
+      {"Label":"Mobilize agricultural cooperatives","Description":"Coordinate growers and distributors for the rest of the server day.","EffectType":"production_pct","EffectTarget":"foodstuffs","EffectValue":6,"EffectText":"Foodstuffs production +6% until the next server day."},
+      {"Label":"Let local markets adapt","Description":"Issue guidance but leave allocation to local institutions.","EffectType":"none","EffectTarget":"","EffectValue":0,"EffectText":"No mechanical effect."}
+    ],
+    "energy": [
+      {"Label":"Open the strategic energy reserve","Description":"Release a small emergency allocation.","EffectType":"resource_grant","EffectTarget":"energy","EffectValue":12,"EffectText":"Gain 12 t Energy immediately."},
+      {"Label":"Authorize temporary grid measures","Description":"Run a coordinated efficiency and generation program.","EffectType":"production_pct","EffectTarget":"energy","EffectValue":7,"EffectText":"Energy production +7% until the next server day."},
+      {"Label":"Fund emergency procurement","Description":"Use expedited private contracts to contain the disruption.","EffectType":"cash_grant","EffectTarget":"","EffectValue":100000,"EffectText":"Gain ¥100,000 Treasury immediately."}
+    ],
+    "industry": [
+      {"Label":"Prioritize basic inputs","Description":"Direct a small stock of industrial feedstock toward the bottleneck.","EffectType":"resource_grant","EffectTarget":"basic_metals","EffectValue":10,"EffectText":"Gain 10 t Basic Metals immediately."},
+      {"Label":"Issue emergency construction allotments","Description":"Release materials for repairs and continuity work.","EffectType":"resource_grant","EffectTarget":"construction_materials","EffectValue":7,"EffectText":"Gain 7 t Construction Materials immediately."},
+      {"Label":"Coordinate a national production drive","Description":"Improve scheduling across major producers for the day.","EffectType":"production_pct","EffectTarget":"all","EffectValue":2,"EffectText":"All commodity production +2% until the next server day."}
+    ],
+    "trade": [
+      {"Label":"Provide bridge financing","Description":"Keep affected firms solvent while commerce reorganizes.","EffectType":"cash_grant","EffectTarget":"","EffectValue":150000,"EffectText":"Gain ¥150,000 Treasury immediately."},
+      {"Label":"Streamline commercial clearances","Description":"Temporarily accelerate permits, inspections, and settlements.","EffectType":"cash_income_pct","EffectTarget":"","EffectValue":3,"EffectText":"Cash income +3% until the next server day."},
+      {"Label":"Convene the merchant councils","Description":"Seek a voluntary agreement without national intervention.","EffectType":"none","EffectTarget":"","EffectValue":0,"EffectText":"No mechanical effect."}
+    ],
+    "civil": [
+      {"Label":"Launch a public reassurance campaign","Description":"Give agencies a common message and visible public presence.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":3,"EffectText":"Happiness target +3% until the next server day."},
+      {"Label":"Fund local response grants","Description":"Send flexible funding to the institutions nearest the issue.","EffectType":"cash_grant","EffectTarget":"","EffectValue":110000,"EffectText":"Gain ¥110,000 Treasury immediately."},
+      {"Label":"Empower community organizations","Description":"Let civic groups coordinate a voluntary response.","EffectType":"none","EffectTarget":"","EffectValue":0,"EffectText":"No mechanical effect."}
+    ],
+    "health": [
+      {"Label":"Deploy emergency health teams","Description":"Fund mobile teams, testing, and public information.","EffectType":"cash_grant","EffectTarget":"","EffectValue":120000,"EffectText":"Gain ¥120,000 Treasury immediately."},
+      {"Label":"Distribute essential supplies","Description":"Release prepared food and medical-support stocks.","EffectType":"resource_grant","EffectTarget":"processed_foods","EffectValue":7,"EffectText":"Gain 7 t Processed Foods immediately."},
+      {"Label":"Hold daily public briefings","Description":"Build confidence through transparent, frequent updates.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":4,"EffectText":"Happiness target +4% until the next server day."}
+    ],
+    "labor": [
+      {"Label":"Broker a rapid settlement","Description":"Use mediation and limited support to restore activity.","EffectType":"cash_income_pct","EffectTarget":"","EffectValue":3,"EffectText":"Cash income +3% until the next server day."},
+      {"Label":"Support affected households","Description":"Prioritize public confidence and household stability.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":3,"EffectText":"Happiness target +3% until the next server day."},
+      {"Label":"Create a temporary adjustment fund","Description":"Give industries room to reorganize shifts and contracts.","EffectType":"cash_grant","EffectTarget":"","EffectValue":100000,"EffectText":"Gain ¥100,000 Treasury immediately."}
+    ],
+    "infrastructure": [
+      {"Label":"Release repair materials","Description":"Move prepared construction stocks to the damaged network.","EffectType":"resource_grant","EffectTarget":"construction_materials","EffectValue":8,"EffectText":"Gain 8 t Construction Materials immediately."},
+      {"Label":"Consolidate emergency maintenance","Description":"Centralize dispatch and defer nonessential work.","EffectType":"upkeep_reduction_pct","EffectTarget":"","EffectValue":5,"EffectText":"Civil infrastructure upkeep -5% until the next server day."},
+      {"Label":"Authorize emergency works funding","Description":"Provide immediate funding for repairs and detours.","EffectType":"cash_grant","EffectTarget":"","EffectValue":120000,"EffectText":"Gain ¥120,000 Treasury immediately."}
+    ],
+    "technology": [
+      {"Label":"Fund an accelerated technical review","Description":"Bring researchers and operators together around the problem.","EffectType":"production_pct","EffectTarget":"all","EffectValue":3,"EffectText":"All commodity production +3% until the next server day."},
+      {"Label":"Release strategic components","Description":"Provide scarce materials to the most promising teams.","EffectType":"resource_grant","EffectTarget":"strategic_minerals","EffectValue":6,"EffectText":"Gain 6 t Strategic Minerals immediately."},
+      {"Label":"Offer competitive research grants","Description":"Back multiple independent approaches and share the results.","EffectType":"cash_grant","EffectTarget":"","EffectValue":110000,"EffectText":"Gain ¥110,000 Treasury immediately."}
+    ],
+    "diplomacy": [
+      {"Label":"Host formal consultations","Description":"Reduce uncertainty through a visible diplomatic process.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":3,"EffectText":"Happiness target +3% until the next server day."},
+      {"Label":"Provide a goodwill assistance package","Description":"Use a modest allocation to reinforce peaceful relations.","EffectType":"cash_grant","EffectTarget":"","EffectValue":90000,"EffectText":"Gain ¥90,000 Treasury immediately."},
+      {"Label":"Issue a carefully neutral statement","Description":"Acknowledge the matter without committing national resources.","EffectType":"none","EffectTarget":"","EffectValue":0,"EffectText":"No mechanical effect."}
+    ],
+    "maritime": [
+      {"Label":"Dispatch harbor engineering crews","Description":"Use prepared materials to reopen key facilities.","EffectType":"resource_grant","EffectTarget":"timber","EffectValue":10,"EffectText":"Gain 10 t Timber immediately."},
+      {"Label":"Subsidize alternate shipping","Description":"Cover the immediate cost of rerouting essential cargo.","EffectType":"cash_grant","EffectTarget":"","EffectValue":120000,"EffectText":"Gain ¥120,000 Treasury immediately."},
+      {"Label":"Prioritize port energy supplies","Description":"Keep cranes, refrigeration, and navigation systems operating.","EffectType":"resource_grant","EffectTarget":"energy","EffectValue":8,"EffectText":"Gain 8 t Energy immediately."}
+    ],
+    "culture": [
+      {"Label":"Support a national civic program","Description":"Turn public attention toward a shared cultural effort.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":4,"EffectText":"Happiness target +4% until the next server day."},
+      {"Label":"Create an arts and heritage fund","Description":"Provide modest support for participating institutions.","EffectType":"cash_grant","EffectTarget":"","EffectValue":100000,"EffectText":"Gain ¥100,000 Treasury immediately."},
+      {"Label":"Recognize the occasion symbolically","Description":"Issue honors and proclamations without material intervention.","EffectType":"none","EffectTarget":"","EffectValue":0,"EffectText":"No mechanical effect."}
+    ],
+    "administration": [
+      {"Label":"Consolidate administrative offices","Description":"Reduce duplicated work for the rest of the day.","EffectType":"upkeep_reduction_pct","EffectTarget":"","EffectValue":5,"EffectText":"Civil infrastructure upkeep -5% until the next server day."},
+      {"Label":"Digitize the emergency workload","Description":"Improve processing speed across affected departments.","EffectType":"cash_income_pct","EffectTarget":"","EffectValue":2,"EffectText":"Cash income +2% until the next server day."},
+      {"Label":"Authorize contingency funding","Description":"Give the civil service immediate discretionary capacity.","EffectType":"cash_grant","EffectTarget":"","EffectValue":110000,"EffectText":"Gain ¥110,000 Treasury immediately."}
+    ],
+    "security": [
+      {"Label":"Increase visible civil protection","Description":"Deploy personnel and equipment around sensitive sites.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":3,"EffectText":"Happiness target +3% until the next server day."},
+      {"Label":"Release emergency equipment","Description":"Supply responders with useful manufactured goods.","EffectType":"resource_grant","EffectTarget":"basic_goods","EffectValue":8,"EffectText":"Gain 8 t Basic Goods immediately."},
+      {"Label":"Fund a focused security operation","Description":"Give investigators and local authorities temporary resources.","EffectType":"cash_grant","EffectTarget":"","EffectValue":100000,"EffectText":"Gain ¥100,000 Treasury immediately."}
+    ],
+    "environment": [
+      {"Label":"Mobilize conservation crews","Description":"Use field teams to contain damage and protect productive land.","EffectType":"production_pct","EffectTarget":"foodstuffs","EffectValue":5,"EffectText":"Foodstuffs production +5% until the next server day."},
+      {"Label":"Release restoration materials","Description":"Provide timber and supplies for immediate stabilization work.","EffectType":"resource_grant","EffectTarget":"timber","EffectValue":12,"EffectText":"Gain 12 t Timber immediately."},
+      {"Label":"Open the response to volunteers","Description":"Coordinate a broad civic cleanup and monitoring effort.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":3,"EffectText":"Happiness target +3% until the next server day."}
+    ],
+    "disaster": [
+      {"Label":"Activate national relief reserves","Description":"Release funding for shelter, transport, and emergency services.","EffectType":"cash_grant","EffectTarget":"","EffectValue":140000,"EffectText":"Gain ¥140,000 Treasury immediately."},
+      {"Label":"Prioritize reconstruction supplies","Description":"Move construction material toward the affected districts.","EffectType":"resource_grant","EffectTarget":"construction_materials","EffectValue":9,"EffectText":"Gain 9 t Construction Materials immediately."},
+      {"Label":"Organize a nationwide relief drive","Description":"Build solidarity through a coordinated voluntary response.","EffectType":"happiness_pct","EffectTarget":"","EffectValue":4,"EffectText":"Happiness target +4% until the next server day."}
+    ]
+  },
+  "templates": [
+    {"ID":"grain_blight_warning","Title":"Grain Blight Warning","Briefing":"Agronomists have identified a fast-moving crop disease in several productive districts. Markets remain calm, but growers want a national response before rumors outrun the facts.","Profile":"food"},
+    {"ID":"cold_storage_failure","Title":"Cold Storage Failure","Briefing":"A cascading refrigeration failure has stranded perishable goods across a major wholesale network. Local authorities need a rapid decision on reserves and distribution.","Profile":"food"},
+    {"ID":"fertilizer_shortfall","Title":"Fertilizer Shortfall","Briefing":"Import delays and an industrial accident have tightened fertilizer supplies ahead of planting. Agricultural unions are competing for the remaining allotments.","Profile":"food"},
+    {"ID":"bumper_harvest_glut","Title":"Bumper Harvest Glut","Briefing":"An unexpectedly strong harvest has overwhelmed silos and pushed farm prices sharply downward. Producers warn that abundance could still become waste.","Profile":"food"},
+    {"ID":"fishing_ground_closure","Title":"Fishing Ground Closure","Briefing":"Marine inspectors have closed a productive fishing area after detecting contamination. Coastal communities are demanding help while scientists assess the duration.","Profile":"food"},
+    {"ID":"seed_bank_dispute","Title":"National Seed Bank Dispute","Briefing":"Regional farming cooperatives disagree over access to a newly catalogued seed reserve. A poorly handled allocation could undermine confidence before the next season.","Profile":"food"},
+    {"ID":"livestock_quarantine","Title":"Livestock Quarantine","Briefing":"Veterinary officials have ordered precautionary livestock quarantines after unusual symptoms appeared at several markets. Food processors are already revising schedules.","Profile":"food"},
+    {"ID":"irrigation_allocation","Title":"Irrigation Allocation Emergency","Briefing":"Reservoir levels can cover farms or population centers at normal rates, but not both. Provincial administrators want immediate national guidance.","Profile":"food"},
+
+    {"ID":"regional_blackout","Title":"Regional Grid Blackout","Briefing":"A synchronization fault has disconnected several power districts. Hospitals are stable on backup generation, but industry cannot remain idle for long.","Profile":"energy"},
+    {"ID":"refinery_shutdown","Title":"Emergency Refinery Shutdown","Briefing":"Inspectors have halted a major refinery after discovering structural fatigue. Energy traders are pricing in a longer outage than officials currently expect.","Profile":"energy"},
+    {"ID":"winter_demand_surge","Title":"Winter Demand Surge","Briefing":"A severe cold front has pushed household energy demand beyond forecasts. Grid operators request temporary authority before reserve margins disappear.","Profile":"energy"},
+    {"ID":"solar_output_collapse","Title":"Solar Output Collapse","Briefing":"Persistent atmospheric haze has cut solar generation across several provinces. Storage systems are covering the shortfall, but only temporarily.","Profile":"energy"},
+    {"ID":"pipeline_pressure_drop","Title":"Pipeline Pressure Drop","Briefing":"Monitoring stations report an unexplained pressure loss along a strategic energy corridor. Engineers have isolated the line while investigators search for the cause.","Profile":"energy"},
+    {"ID":"hydroelectric_silt","Title":"Hydroelectric Silt Emergency","Briefing":"Unusually heavy sediment has reduced turbine throughput at a major dam. Clearing it quickly will require a coordinated shutdown and significant equipment.","Profile":"energy"},
+    {"ID":"fuel_terminal_strike","Title":"Fuel Terminal Strike","Briefing":"Workers at the largest fuel terminal have walked out over safety demands. Deliveries are slowing and both sides expect the government to intervene.","Profile":"energy"},
+    {"ID":"transformer_shortage","Title":"Transformer Shortage","Briefing":"A run of equipment failures has exhausted the national stock of high-voltage transformers. Utilities are quietly cannibalizing less critical installations.","Profile":"energy"},
+
+    {"ID":"steelworks_bottleneck","Title":"Steelworks Bottleneck","Briefing":"A critical rolling line has failed at the country's busiest metalworks. Downstream manufacturers are competing for the reduced output.","Profile":"industry"},
+    {"ID":"factory_robot_fault","Title":"Factory Automation Fault","Briefing":"A software defect is causing industrial robots to reject safe components across multiple factories. Engineers have a patch, but validation will take time.","Profile":"industry"},
+    {"ID":"cement_quality_alert","Title":"Cement Quality Alert","Briefing":"Laboratories have questioned the strength of cement shipped to several public projects. Contractors need a national ruling before work can continue.","Profile":"industry"},
+    {"ID":"warehouse_fire","Title":"Industrial Warehouse Fire","Briefing":"A large warehouse fire has destroyed inventories and disrupted a dense manufacturing district. Nearby firms are offering equipment and floor space.","Profile":"industry"},
+    {"ID":"machine_tool_shortage","Title":"Machine Tool Shortage","Briefing":"Demand for precision machinery has outpaced domestic inventories. Producers can expand shifts, but only if key inputs are allocated quickly.","Profile":"industry"},
+    {"ID":"industrial_patent_dispute","Title":"Industrial Patent Dispute","Briefing":"Two major manufacturers claim ownership of a process used throughout the economy. An injunction could halt output while courts consider the case.","Profile":"industry"},
+    {"ID":"freight_wagon_defect","Title":"Freight Wagon Defect","Briefing":"Inspectors have found fatigue cracks in a common freight wagon model. Removing every affected unit at once would strain industrial supply chains.","Profile":"industry"},
+    {"ID":"smelter_emissions_order","Title":"Smelter Emissions Order","Briefing":"A high court has ordered immediate emissions controls at several smelters. Industry accepts the ruling but warns of a short production shock.","Profile":"industry"},
+
+    {"ID":"merchant_bank_run","Title":"Merchant Bank Run","Briefing":"Rumors surrounding a respected merchant bank have triggered a wave of withdrawals. Its balance sheet appears sound, but confidence is deteriorating by the hour.","Profile":"trade"},
+    {"ID":"customs_system_outage","Title":"Customs System Outage","Briefing":"The digital customs network has gone offline, leaving cargo queued at every major border terminal. Paper processing can resume at a fraction of normal speed.","Profile":"trade"},
+    {"ID":"currency_counterfeit_wave","Title":"Counterfeit Currency Wave","Briefing":"Banks have detected a sophisticated series of counterfeit notes in several commercial centers. Retailers are refusing large transactions until guidance arrives.","Profile":"trade"},
+    {"ID":"insurance_market_freeze","Title":"Insurance Market Freeze","Briefing":"A cluster of unexpected claims has caused insurers to suspend new commercial coverage. Shipments and construction contracts are being delayed nationwide.","Profile":"trade"},
+    {"ID":"retail_inventory_panic","Title":"Retail Inventory Panic","Briefing":"Viral claims of a looming shortage have led retailers to over-order basic goods. Warehouses are full, yet storefront shelves remain unevenly stocked.","Profile":"trade"},
+    {"ID":"auction_house_scandal","Title":"National Auction Scandal","Briefing":"Investigators allege systematic price coordination among several prestigious auction houses. The scandal is spreading into broader questions about market oversight.","Profile":"trade"},
+    {"ID":"commercial_data_leak","Title":"Commercial Data Leak","Briefing":"Confidential pricing agreements from hundreds of firms have appeared online. Competitors are exploiting the disclosure while regulators assess its origin.","Profile":"trade"},
+    {"ID":"holiday_demand_shock","Title":"Holiday Demand Shock","Briefing":"Consumer demand has exceeded every seasonal forecast, producing shortages alongside record sales. Merchants want temporary flexibility to extend operations.","Profile":"trade"},
+
+    {"ID":"school_exam_leak","Title":"National Examination Leak","Briefing":"Portions of the national school examination appeared online before testing began. Students, teachers, and universities are demanding a fair resolution.","Profile":"civil"},
+    {"ID":"housing_registry_error","Title":"Housing Registry Error","Briefing":"A database migration has incorrectly reassigned thousands of housing records. No one has been evicted, but anxious residents are crowding municipal offices.","Profile":"civil"},
+    {"ID":"water_quality_rumor","Title":"Water Quality Rumor","Briefing":"Unverified messages claim that a municipal water network is unsafe. Tests remain normal, yet bottled supplies are disappearing from stores.","Profile":"civil"},
+    {"ID":"transit_fare_revolt","Title":"Transit Fare Revolt","Briefing":"Commuters are organizing fare refusals after a sudden price increase. Transport authorities warn that confrontations could halt service entirely.","Profile":"civil"},
+    {"ID":"census_undercount","Title":"Census Undercount","Briefing":"Independent statisticians argue that fast-growing districts were significantly undercounted. Funding formulas and political representation may be affected.","Profile":"civil"},
+    {"ID":"university_occupation","Title":"University Occupation","Briefing":"Students have occupied several university buildings over governance reforms. Administrators request mediation before examinations are disrupted.","Profile":"civil"},
+    {"ID":"public_records_backlog","Title":"Public Records Backlog","Briefing":"Requests for licenses, certificates, and court records have accumulated into a nationwide backlog. Citizens are losing patience with routine delays.","Profile":"administration"},
+    {"ID":"municipal_boundary_dispute","Title":"Municipal Boundary Dispute","Briefing":"Two neighboring administrations claim authority over a rapidly developing district. Services continue, but both are issuing contradictory permits.","Profile":"administration"},
+
+    {"ID":"hospital_capacity_surge","Title":"Hospital Capacity Surge","Briefing":"Emergency departments are reporting an unusual influx of respiratory cases. The cause appears manageable, but beds and staff are becoming scarce.","Profile":"health"},
+    {"ID":"medicine_recall","Title":"Essential Medicine Recall","Briefing":"A widely used medicine has been recalled after a manufacturing defect. Pharmacies need replacements and patients need reliable guidance.","Profile":"health"},
+    {"ID":"rural_clinic_closures","Title":"Rural Clinic Closures","Briefing":"Several rural clinics have announced simultaneous closures after losing staff. Neighboring facilities cannot absorb every patient without support.","Profile":"health"},
+    {"ID":"contaminated_food_batch","Title":"Contaminated Food Batch","Briefing":"Inspectors have traced a cluster of illnesses to a national processed-food batch. A broad recall would be expensive but fast.","Profile":"health"},
+    {"ID":"vaccine_storage_fault","Title":"Vaccine Storage Fault","Briefing":"Temperature logs show that a regional vaccine reserve may have been stored incorrectly. Health agencies need a decision before scheduled clinics open.","Profile":"health"},
+    {"ID":"medical_worker_burnout","Title":"Medical Worker Burnout","Briefing":"Hospital associations warn that exhaustion is driving experienced staff out of critical wards. A symbolic response will not cover tomorrow's shifts.","Profile":"health"},
+    {"ID":"mosquito_bloom","Title":"Mosquito Bloom","Briefing":"Warm weather and standing water have produced a sudden mosquito bloom near dense population centers. Disease risk remains low but is rising.","Profile":"health"},
+    {"ID":"antibiotic_resistance_alert","Title":"Resistance Surveillance Alert","Briefing":"Laboratories have detected a concerning pattern of antibiotic resistance. Specialists want coordinated surveillance before it becomes a wider threat.","Profile":"health"},
+
+    {"ID":"rail_union_walkout","Title":"Rail Union Walkout","Briefing":"Rail workers have stopped freight and passenger service after contract talks collapsed overnight. Both sides remain open to national mediation.","Profile":"labor"},
+    {"ID":"dockworker_slowdown","Title":"Dockworker Slowdown","Briefing":"Port workers are following every procedure to the letter in a coordinated slowdown. Cargo queues grow while negotiators dispute safety staffing.","Profile":"labor"},
+    {"ID":"teacher_pay_dispute","Title":"Teacher Pay Dispute","Briefing":"Teachers have voted for limited strike action during a critical school period. Families want continuity and educators want a credible settlement.","Profile":"labor"},
+    {"ID":"mine_safety_standoff","Title":"Mine Safety Standoff","Briefing":"Miners refuse to enter several shafts until independent inspections are completed. Operators argue that existing systems are adequate.","Profile":"labor"},
+    {"ID":"gig_worker_protests","Title":"Courier Protests","Briefing":"Independent couriers are blocking distribution depots over algorithmic pay changes. Retail deliveries are beginning to miss promised windows.","Profile":"labor"},
+    {"ID":"four_day_week_trial","Title":"Four-Day Week Dispute","Briefing":"A major employer's successful shorter-week trial has triggered national demands for reform. Business groups warn against making conclusions too quickly.","Profile":"labor"},
+    {"ID":"seasonal_worker_gap","Title":"Seasonal Worker Gap","Briefing":"Farms and tourist districts report that seasonal vacancies remain unfilled. Harvest and service schedules could both suffer.","Profile":"labor"},
+    {"ID":"automation_redundancies","Title":"Automation Redundancies","Briefing":"A wave of factory automation announcements has unsettled industrial towns. Firms promise new technical roles, but displaced workers remain unconvinced.","Profile":"labor"},
+
+    {"ID":"bridge_inspection_closure","Title":"Bridge Inspection Closure","Briefing":"Inspectors have closed a strategic bridge after finding unexpected structural movement. Detours are possible but costly and congested.","Profile":"infrastructure"},
+    {"ID":"reservoir_gate_failure","Title":"Reservoir Gate Failure","Briefing":"A control gate at a major reservoir is stuck partially open. Engineers can contain the loss if materials and access are secured quickly.","Profile":"infrastructure"},
+    {"ID":"subway_signal_fault","Title":"Subway Signal Fault","Briefing":"A software and hardware fault has forced trains to operate manually across the capital network. Commuter delays are spreading into the workday.","Profile":"infrastructure"},
+    {"ID":"rural_road_washout","Title":"Rural Road Washout","Briefing":"Flash flooding has erased several road sections linking farming districts to regional markets. Temporary crossings could reopen movement today.","Profile":"infrastructure"},
+    {"ID":"telecom_cable_cut","Title":"National Cable Cut","Briefing":"Construction crews have severed a major telecommunications trunk. Redundant routes are overloaded and remote work is faltering.","Profile":"infrastructure"},
+    {"ID":"sewer_pump_failure","Title":"Sewer Pump Failure","Briefing":"Multiple pumps have failed in a densely populated district after an electrical surge. Public works teams need materials and authority immediately.","Profile":"infrastructure"},
+    {"ID":"airport_runway_damage","Title":"Airport Runway Damage","Briefing":"Surface damage has closed the longest runway at a major airport. Passenger flights can be rerouted, but heavy cargo cannot.","Profile":"infrastructure"},
+    {"ID":"landslide_rail_block","Title":"Landslide Rail Block","Briefing":"A landslide has buried a mountain rail corridor used by both passengers and industry. Geological teams warn that the slope remains unstable.","Profile":"disaster"},
+
+    {"ID":"cybersecurity_zero_day","Title":"Government Zero-Day Alert","Briefing":"Cybersecurity teams have discovered an actively exploited flaw in software used across public agencies. A patch exists but could interrupt services.","Profile":"technology"},
+    {"ID":"ai_model_scandal","Title":"Public AI Model Scandal","Briefing":"An automated public-service model has been shown to produce systematically flawed decisions. Agencies have paused its use and requested technical guidance.","Profile":"technology"},
+    {"ID":"research_reactor_anomaly","Title":"Research Reactor Anomaly","Briefing":"Sensors at a research reactor recorded a brief unexplained fluctuation. Safety systems worked, but scientists disagree on whether experiments should resume.","Profile":"technology"},
+    {"ID":"satellite_data_loss","Title":"Earth-Observation Data Loss","Briefing":"A ground station fault has corrupted environmental and agricultural satellite data. Forecasting agencies are rebuilding models from partial records.","Profile":"technology"},
+    {"ID":"quantum_claim_dispute","Title":"Quantum Breakthrough Dispute","Briefing":"A national laboratory claims a major computing breakthrough, while outside reviewers question the evidence. Investors and researchers await the government's position.","Profile":"technology"},
+    {"ID":"chip_design_leak","Title":"Strategic Chip Design Leak","Briefing":"Proprietary semiconductor designs from a domestic firm have leaked online. The company fears commercial damage and broader security implications.","Profile":"technology"},
+    {"ID":"university_supercomputer_fire","Title":"Supercomputer Cooling Fire","Briefing":"A cooling-system fire has taken a national research supercomputer offline. Most data survived, but restoration needs specialized components.","Profile":"technology"},
+    {"ID":"drone_navigation_interference","Title":"Navigation Interference Event","Briefing":"Civilian drones and survey aircraft are reporting unreliable positioning data over a wide area. Engineers have not identified the source.","Profile":"technology"},
+
+    {"ID":"border_marker_dispute","Title":"Border Marker Dispute","Briefing":"Survey teams from a neighboring state have placed new markers in a lightly populated border area. Both governments describe the matter as administrative.","Profile":"diplomacy"},
+    {"ID":"embassy_protest","Title":"Embassy Protest","Briefing":"A large but peaceful crowd has gathered outside a foreign embassy after controversial remarks by its ambassador. Diplomats request visible protection.","Profile":"diplomacy"},
+    {"ID":"aid_convoy_request","Title":"Humanitarian Convoy Request","Briefing":"A neighboring country has requested permission and support for an urgent humanitarian convoy. The need is real, though domestic resources are limited.","Profile":"diplomacy"},
+    {"ID":"expelled_diplomat","Title":"Diplomatic Expulsion","Briefing":"A foreign government has expelled one of your diplomats without publicly stating a reason. Officials are divided between reciprocity and restraint.","Profile":"diplomacy"},
+    {"ID":"summit_venue_crisis","Title":"Summit Venue Crisis","Briefing":"The planned venue for an international summit has become unavailable at the last moment. Cancelling would embarrass every participant.","Profile":"diplomacy"},
+    {"ID":"cultural_restitution_request","Title":"Cultural Restitution Request","Briefing":"A foreign museum has formally requested the return of nationally significant artifacts. Public opinion is sympathetic but legal ownership is complex.","Profile":"diplomacy"},
+    {"ID":"refugee_rescue_request","Title":"Emergency Refuge Request","Briefing":"A small group fleeing political persecution has reached a diplomatic mission and requested protection. The host government demands their surrender.","Profile":"diplomacy"},
+    {"ID":"misprinted_treaty_map","Title":"Treaty Map Error","Briefing":"A newly published diplomatic map contains a boundary error that offends two friendly states. Correcting it is simple; explaining it is not.","Profile":"diplomacy"},
+
+    {"ID":"harbor_silt_emergency","Title":"Harbor Silt Emergency","Briefing":"An unusual current has deposited heavy silt in the main commercial channel. Large ships are waiting offshore for dredging or rerouting.","Profile":"maritime"},
+    {"ID":"container_ship_grounding","Title":"Container Ship Grounding","Briefing":"A loaded container ship has grounded near a busy harbor entrance. The hull is intact, but the navigation channel is partially blocked.","Profile":"maritime"},
+    {"ID":"lighthouse_network_failure","Title":"Lighthouse Network Failure","Briefing":"A control failure has darkened automated lighthouses along a dangerous stretch of coast. Mariners are reducing speed and delaying arrivals.","Profile":"maritime"},
+    {"ID":"ghost_fleet_sighting","Title":"Unregistered Fleet Sighting","Briefing":"Coastal patrols have recorded a cluster of vessels broadcasting incomplete identities. They appear commercial, but their purpose remains unclear.","Profile":"security"},
+    {"ID":"port_crane_collapse","Title":"Port Crane Collapse","Briefing":"A container crane has collapsed across two berths at the largest port. No lives were lost, but cargo handling capacity has fallen sharply.","Profile":"maritime"},
+    {"ID":"undersea_cable_damage","Title":"Undersea Cable Damage","Briefing":"A submarine communications cable has been damaged near national waters. Repair ships are available if diplomatic clearances are accelerated.","Profile":"maritime"},
+    {"ID":"coastal_algae_bloom","Title":"Coastal Algae Bloom","Briefing":"A large algae bloom is threatening fisheries, tourism, and desalination intakes. Scientists need vessels and monitoring equipment.","Profile":"environment"},
+    {"ID":"mangrove_illegal_clearance","Title":"Illegal Coastal Clearance","Briefing":"Satellite imagery shows contractors clearing protected coastal wetlands under questionable permits. Storm protection and local fisheries may be affected.","Profile":"environment"},
+    {"ID":"forest_fire_smoke","Title":"Forest Fire Smoke Front","Briefing":"Wildfire smoke is moving toward major population centers while firefighting crews defend remote communities. Wind conditions may worsen before improving.","Profile":"disaster"},
+    {"ID":"river_chemical_spill","Title":"River Chemical Spill","Briefing":"A transport accident has released industrial chemicals into a river used by farms and towns. Containment booms are being deployed downstream.","Profile":"environment"},
+
+    {"ID":"national_archive_discovery","Title":"National Archive Discovery","Briefing":"Archivists have uncovered a sealed collection that may alter the accepted history of a founding political crisis. Scholars urge careful release.","Profile":"culture"},
+    {"ID":"historic_monument_damage","Title":"Historic Monument Damage","Briefing":"A storm has damaged a nationally symbolic monument shortly before a major anniversary. Restoration experts disagree on reconstruction methods.","Profile":"culture"},
+    {"ID":"festival_security_question","Title":"Festival Security Question","Briefing":"Organizers expect record attendance at a beloved national festival, but local authorities say existing safety plans are inadequate.","Profile":"culture"},
+    {"ID":"public_broadcast_finale","Title":"Public Broadcaster Finale","Briefing":"The country's longest-running radio drama is ending unexpectedly after a funding dispute. Its audience has turned the cancellation into a national debate.","Profile":"culture"},
+    {"ID":"museum_heist_attempt","Title":"Museum Heist Attempt","Briefing":"Security prevented the theft of a major cultural artifact, but evidence suggests insiders assisted the plot. Museums nationwide are reviewing access.","Profile":"security"},
+    {"ID":"sports_final_transport","Title":"Championship Transport Surge","Briefing":"Two rival cities have reached the national championship, overwhelming rail and road bookings. Authorities expect enormous crowds in both places.","Profile":"culture"},
+    {"ID":"language_preservation_petition","Title":"Language Preservation Petition","Briefing":"A petition seeking official support for an endangered regional language has gathered unprecedented signatures. Education officials want direction.","Profile":"culture"},
+    {"ID":"national_symbol_redesign","Title":"National Symbol Redesign","Briefing":"A design commission has proposed modernizing a familiar national symbol. What began as routine branding has become a passionate public argument.","Profile":"culture"},
+    {"ID":"film_censorship_dispute","Title":"Film Classification Dispute","Briefing":"A controversial historical film has been denied general release, prompting protests from artists and veterans for opposing reasons.","Profile":"culture"},
+    {"ID":"lost_expedition_found","Title":"Lost Expedition Found","Briefing":"Searchers have located the abandoned camp of an expedition missing for decades. Personal effects and scientific records remain remarkably preserved.","Profile":"culture"}
+  ]
+}

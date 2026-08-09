@@ -304,6 +304,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		return
 	}
 	result := calculateStrategy(in)
+	applyCrisisTurnModifiers(&result, a.loadCrisisModifiers(r.Context(), nid))
 	var political float64
 	var changed, disruption sql.NullTime
 	a.db.QueryRowContext(r.Context(), `SELECT political_capital,gear_changed_at,disruption_until FROM nation_economic_strategy WHERE nation_id=?`, nid).Scan(&political, &changed, &disruption)

@@ -525,3 +525,72 @@ CREATE TABLE IF NOT EXISTS notifications (
   INDEX idx_notifications_unread(nation_id,read_at),
   CONSTRAINT fk_notifications_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS crisis_templates (
+  id VARCHAR(80) PRIMARY KEY,
+  internal_name VARCHAR(100) NOT NULL UNIQUE,
+  title VARCHAR(160) NOT NULL,
+  briefing VARCHAR(1200) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS crisis_options (
+  id VARCHAR(100) PRIMARY KEY,
+  template_id VARCHAR(80) NOT NULL,
+  sort_order INT NOT NULL,
+  label VARCHAR(120) NOT NULL,
+  description VARCHAR(500) NOT NULL,
+  effect_type VARCHAR(50) NOT NULL,
+  effect_target VARCHAR(50) NOT NULL DEFAULT '',
+  effect_value DECIMAL(14,3) NOT NULL DEFAULT 0,
+  effect_text VARCHAR(240) NOT NULL,
+  UNIQUE KEY uq_crisis_option_order(template_id,sort_order),
+  CONSTRAINT fk_crisis_option_template FOREIGN KEY(template_id) REFERENCES crisis_templates(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS crisis_days (
+  server_date DATE PRIMARY KEY,
+  crisis_count INT NOT NULL,
+  generated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS daily_crises (
+  id CHAR(36) PRIMARY KEY,
+  server_date DATE NOT NULL,
+  template_id VARCHAR(80) NOT NULL,
+  slot_number INT NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_daily_crisis_template(server_date,template_id),
+  UNIQUE KEY uq_daily_crisis_slot(server_date,slot_number),
+  INDEX idx_daily_crisis_date(server_date),
+  CONSTRAINT fk_daily_crisis_day FOREIGN KEY(server_date) REFERENCES crisis_days(server_date) ON DELETE CASCADE,
+  CONSTRAINT fk_daily_crisis_template FOREIGN KEY(template_id) REFERENCES crisis_templates(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS nation_crisis_responses (
+  nation_id CHAR(36) NOT NULL,
+  daily_crisis_id CHAR(36) NOT NULL,
+  option_id VARCHAR(100) NOT NULL,
+  effect_summary VARCHAR(240) NOT NULL,
+  responded_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(nation_id,daily_crisis_id),
+  INDEX idx_crisis_response_nation_time(nation_id,responded_at),
+  CONSTRAINT fk_crisis_response_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_crisis_response_daily FOREIGN KEY(daily_crisis_id) REFERENCES daily_crises(id) ON DELETE CASCADE,
+  CONSTRAINT fk_crisis_response_option FOREIGN KEY(option_id) REFERENCES crisis_options(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS crisis_modifiers (
+  nation_id CHAR(36) NOT NULL,
+  daily_crisis_id CHAR(36) NOT NULL,
+  modifier_type VARCHAR(50) NOT NULL,
+  target VARCHAR(50) NOT NULL DEFAULT '',
+  value DECIMAL(14,3) NOT NULL,
+  expires_on DATE NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(nation_id,daily_crisis_id,modifier_type,target),
+  INDEX idx_crisis_modifier_active(nation_id,expires_on),
+  CONSTRAINT fk_crisis_modifier_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_crisis_modifier_daily FOREIGN KEY(daily_crisis_id) REFERENCES daily_crises(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
