@@ -26,6 +26,8 @@ func main() {
 		{"nations", "leader_name", "VARCHAR(100) NOT NULL DEFAULT 'Unknown Leader'"},
 		{"nations", "government_type", "VARCHAR(60) NOT NULL DEFAULT 'Presidential Republic'"},
 		{"nations", "continent", "VARCHAR(30) NOT NULL DEFAULT 'Asia'"},
+		{"nations", "location_lat", "DECIMAL(9,6) NULL"},
+		{"nations", "location_lng", "DECIMAL(9,6) NULL"},
 		{"nations", "user_type", "ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER'"},
 		{"nations", "employment_rate", "DECIMAL(5,2) NOT NULL DEFAULT 72.00"},
 		{"nations", "tax_rate", "DECIMAL(5,2) NOT NULL DEFAULT 25.00"},

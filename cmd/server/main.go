@@ -69,6 +69,7 @@ func main() {
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
 	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
+	mux.HandleFunc("POST /api/nation/location", a.auth(a.resetNationLocation))
 	mux.HandleFunc("GET /api/cities", a.auth(a.cities))
 	mux.HandleFunc("POST /api/cities", a.auth(a.createCity))
 	mux.HandleFunc("POST /api/cities/invest", a.auth(a.investCity))
@@ -196,8 +197,9 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		EmploymentRate, TaxRate                                                                                        float64
 		GuardianUntil                                                                                                  *time.Time
 		CreatedAt                                                                                                      time.Time
+		LocationLat, LocationLng                                                                                       *float64
 	}
-	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced') FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear)
+	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.coal,n.steel,n.food,n.iron,n.oil,n.bauxite,n.aluminum,n.gasoline,n.munitions,n.uranium,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced'),n.location_lat,n.location_lng FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Coal, &n.Steel, &n.Food, &n.Iron, &n.Oil, &n.Bauxite, &n.Aluminum, &n.Gasoline, &n.Munitions, &n.Uranium, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear, &n.LocationLat, &n.LocationLng)
 	if err != nil {
 		write(w, 200, map[string]any{"user": u, "nation": nil})
 		return
@@ -205,13 +207,21 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]any{"user": u, "nation": n})
 }
 func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Name, Capital, LeaderName, Government, Continent string }
+	var in struct {
+		Name, Capital, LeaderName, Government string
+		Latitude, Longitude                   float64
+	}
 	if !decode(w, r, &in) {
 		return
 	}
 	strings.TrimSpace(in.Name)
 	strings.TrimSpace(in.Capital)
-	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.Name, in.Capital, in.Government, in.Continent})
+	continent, located := continentAt(in.Latitude, in.Longitude)
+	if !located {
+		problem(w, 400, "Choose a valid land position on the world map.")
+		return
+	}
+	p, ok := validateFoundingProfile(foundingProfile{in.LeaderName, in.Name, in.Capital, in.Government, continent})
 	if !ok {
 		problem(w, 400, "Nation and capital names are required.")
 		return
@@ -224,7 +234,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	defer tx.Rollback(r.Context())
 	nid, cid, gid := uuid(), uuid(), uuid()
 	userType := nationUserType(p.NationName)
-	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,currency_name,user_type) VALUES(?,?,?,?,?,?,'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, userType); err != nil {
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,location_lat,location_lng,currency_name,user_type) VALUES(?,?,?,?,?,?,?,?, 'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, in.Latitude, in.Longitude, userType); err != nil {
 		problem(w, 409, "That nation or leader name is already taken, or this account already has a nation.")
 		return
 	}
@@ -234,7 +244,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	tx.Exec(r.Context(), `INSERT INTO nation_economic_strategy(nation_id) VALUES(?)`, nid)
-	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id) VALUES(?)`, cid)
+	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id,latitude,longitude) VALUES(?,?,?)`, cid, in.Latitude, in.Longitude)
 	for _, resource := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,1)`, cid, resource)
 	}
@@ -261,16 +271,16 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 201, map[string]any{"id": nid, "guardianDays": 30})
 }
 func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Motto, Government, Continent string }
+	var in struct{ Motto, Government string }
 	if !decode(w, r, &in) {
 		return
 	}
 	in.Motto = strings.TrimSpace(in.Motto)
-	if len(in.Motto) > 120 || !governmentTypes[in.Government] || !continents[in.Continent] {
+	if len(in.Motto) > 120 || !governmentTypes[in.Government] {
 		problem(w, 400, "Invalid nation profile.")
 		return
 	}
-	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,continent=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, in.Continent, u.ID)
+	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, u.ID)
 	if e != nil {
 		problem(w, 400, "Could not save settings.")
 		return

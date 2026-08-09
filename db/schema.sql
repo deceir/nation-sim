@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS nations (
 	leader_name VARCHAR(100) NOT NULL,
 	government_type VARCHAR(60) NOT NULL,
   continent VARCHAR(30) NOT NULL,
+	location_lat DECIMAL(9,6) NULL,
+	location_lng DECIMAL(9,6) NULL,
 	user_type ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER',
   motto VARCHAR(120) NOT NULL DEFAULT '',
   currency_name VARCHAR(30) NOT NULL DEFAULT 'Yen',
