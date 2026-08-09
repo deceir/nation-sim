@@ -1,4 +1,5 @@
 import {useEffect,useMemo,useState}from'react';
+import './shipment-layout.css';
 import{ArrowRight,Clock,Globe2,PackageCheck,Plus,RefreshCw,Search,Ship,Users}from'lucide-react';
 
 const request=async(path:string,options?:RequestInit)=>{const response=await fetch('/api'+path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),text=await response.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{throw Error(`Invalid server response (${response.status}).`)}if(!response.ok)throw Error(data.error||'Request failed.');if(path==='/market/orders'&&options?.method==='POST'){if(data?.marketVersion!==2||!data?.orderID)throw Error('The API did not confirm escrow. Redeploy the Diplomatia API and try again.');window.dispatchEvent(new Event('diplomatia:resources'))}return data};

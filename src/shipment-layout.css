@@ -1,0 +1,20 @@
+.shipment-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.shipment-detail > .shipment-heading {
+  order: 1;
+}
+
+.shipment-detail > .shipment-facts {
+  order: 2;
+  margin-top: 18px;
+}
+
+.shipment-detail > .route-map {
+  order: 3;
+  width: 100%;
+  max-width: 900px;
+  margin: 18px auto 0;
+}

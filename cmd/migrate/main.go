@@ -94,6 +94,21 @@ func main() {
 		`ALTER TABLE market_orders MODIFY quantity DECIMAL(20,3) NOT NULL`,
 		`ALTER TABLE market_orders MODIFY remaining DECIMAL(20,3) NOT NULL`,
 		`ALTER TABLE market_orders MODIFY status ENUM('open','pending','filled','cancelled','rejected') NOT NULL DEFAULT 'open'`,
+		`ALTER TABLE trade_shipments MODIFY resource VARCHAR(40) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY quantity DECIMAL(20,3) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY unit_price BIGINT NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY goods_value BIGINT NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY shipping_fee BIGINT NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY distance_modifier DECIMAL(6,3) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY risk_percent DECIMAL(6,3) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY origin_lat DECIMAL(9,6) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY origin_lng DECIMAL(9,6) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY destination_lat DECIMAL(9,6) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY destination_lng DECIMAL(9,6) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY departed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)`,
+		`ALTER TABLE trade_shipments MODIFY estimated_arrival_at TIMESTAMP(6) NOT NULL`,
+		`ALTER TABLE trade_shipments MODIFY delivered_at TIMESTAMP(6) NULL`,
+		`ALTER TABLE trade_shipments MODIFY status ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'`,
 	} {
 		if _, err = db.Exec(q); err != nil {
 			log.Fatal(err)
