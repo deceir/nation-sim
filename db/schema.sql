@@ -331,9 +331,10 @@ CREATE TABLE IF NOT EXISTS alliance_bank (
 CREATE TABLE IF NOT EXISTS alliance_bank_transactions (
   id CHAR(36) PRIMARY KEY, alliance_id CHAR(36) NOT NULL, actor_nation_id CHAR(36) NULL,
   recipient_nation_id CHAR(36) NULL, kind ENUM('deposit','withdrawal','grant','tax','loan','repayment','balance_adjustment') NOT NULL,
-  resource VARCHAR(30) NOT NULL, amount DECIMAL(20,3) NOT NULL, memo VARCHAR(255) NOT NULL DEFAULT '',
+  resource VARCHAR(30) NOT NULL, amount DECIMAL(20,3) NOT NULL, memo VARCHAR(255) NOT NULL DEFAULT '', batch_id CHAR(36) NULL,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   INDEX idx_alliance_bank_log(alliance_id,created_at),
+  INDEX idx_alliance_bank_batch(alliance_id,batch_id),
   CONSTRAINT fk_bank_log_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 

@@ -161,13 +161,13 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	logs := []map[string]any{}
 	if isMember && p.Audit {
-		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.id,''),COALESCE(n.name,'System'),COALESCE(recipient.id,''),COALESCE(recipient.name,'') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id LEFT JOIN nations recipient ON recipient.id=t.recipient_nation_id WHERE t.alliance_id=? ORDER BY t.created_at DESC LIMIT 50`, id)
+		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.id,''),COALESCE(n.name,'System'),COALESCE(recipient.id,''),COALESCE(recipient.name,''),COALESCE(t.batch_id,'') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id LEFT JOIN nations recipient ON recipient.id=t.recipient_nation_id WHERE t.alliance_id=? ORDER BY t.created_at DESC LIMIT 50`, id)
 		for rows.Next() {
-			var kind, res, memo, actorID, actor, recipientID, recipient string
+			var kind, res, memo, actorID, actor, recipientID, recipient, batchID string
 			var amount float64
 			var at time.Time
-			rows.Scan(&kind, &res, &amount, &memo, &at, &actorID, &actor, &recipientID, &recipient)
-			logs = append(logs, map[string]any{"kind": kind, "resource": res, "amount": amount, "memo": memo, "createdAt": at, "actorID": actorID, "actor": actor, "recipientID": recipientID, "recipient": recipient})
+			rows.Scan(&kind, &res, &amount, &memo, &at, &actorID, &actor, &recipientID, &recipient, &batchID)
+			logs = append(logs, map[string]any{"kind": kind, "resource": res, "amount": amount, "memo": memo, "createdAt": at, "actorID": actorID, "actor": actor, "recipientID": recipientID, "recipient": recipient, "batchID": batchID})
 		}
 		rows.Close()
 	}
@@ -237,6 +237,21 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		bracketRows.Close()
 	}
 	activeTreaties, pendingTreaties := a.allianceTreaties(r.Context(), id, isMember && p.War)
+	military := map[string]int64{"soldiers": 0, "tanks": 0, "ships": 0, "jets": 0, "drones": 0}
+	militaryRows, _ := a.db.QueryContext(r.Context(), `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (
+		SELECT inventory.unit_type,inventory.quantity FROM military_inventory inventory JOIN alliance_members member ON member.nation_id=inventory.nation_id WHERE member.alliance_id=?
+		UNION ALL
+		SELECT orders.resource,orders.escrow_goods FROM market_orders orders JOIN alliance_members member ON member.nation_id=orders.nation_id WHERE member.alliance_id=? AND orders.side='sell' AND orders.status IN('open','pending') AND orders.resource IN('tanks','ships','jets','drones')
+	) alliance_units GROUP BY unit_type`, id, id)
+	if militaryRows != nil {
+		for militaryRows.Next() {
+			var unitType string
+			var quantity int64
+			militaryRows.Scan(&unitType, &quantity)
+			military[unitType] = quantity
+		}
+		militaryRows.Close()
+	}
 	memberBalances := map[string]map[string]float64{}
 	if isMember {
 		query, args := `SELECT nation_id,resource,amount FROM alliance_member_balances WHERE alliance_id=? AND nation_id=?`, []any{id, p.NationID}
@@ -257,7 +272,7 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 			rows.Close()
 		}
 	}
-	write(w, 200, map[string]any{"alliance": out, "members": members, "roles": roles, "taxBrackets": brackets, "taxHistory": taxHistory, "announcements": announcements, "treatyTypes": treatyCatalog(), "treaties": activeTreaties, "treatyProposals": pendingTreaties, "isMember": isMember, "permissions": map[string]any{"nationID": p.NationID, "role": p.Title, "rank": p.Rank, "viewBank": p.ViewBank, "deposit": p.Deposit, "withdraw": p.Withdraw, "tax": p.Tax, "applicants": p.Applicants, "remove": p.Remove, "edit": p.Edit, "roles": p.Roles, "promote": p.Promote, "announcements": p.Announcements, "audit": p.Audit, "war": p.War}, "bank": bank, "memberBalances": memberBalances, "transactions": logs, "applications": applications})
+	write(w, 200, map[string]any{"alliance": out, "members": members, "roles": roles, "taxBrackets": brackets, "taxHistory": taxHistory, "announcements": announcements, "treatyTypes": treatyCatalog(), "treaties": activeTreaties, "treatyProposals": pendingTreaties, "military": military, "isMember": isMember, "permissions": map[string]any{"nationID": p.NationID, "role": p.Title, "rank": p.Rank, "viewBank": p.ViewBank, "deposit": p.Deposit, "withdraw": p.Withdraw, "tax": p.Tax, "applicants": p.Applicants, "remove": p.Remove, "edit": p.Edit, "roles": p.Roles, "promote": p.Promote, "announcements": p.Announcements, "audit": p.Audit, "war": p.War}, "bank": bank, "memberBalances": memberBalances, "transactions": logs, "applications": applications})
 }
 
 func (a *app) updateAlliance(w http.ResponseWriter, r *http.Request, u user) {
@@ -376,6 +391,7 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 		Kind, Resource, RecipientNationID, Memo string
 		Amount                                  float64
 		Deposits                                map[string]float64
+		Payouts                                 map[string]float64
 	}
 	if !decode(w, r, &in) {
 		problem(w, 400, "Invalid bank transaction.")
@@ -427,7 +443,7 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 				return
 			}
 		}
-		memo := strings.TrimSpace(in.Memo)
+		memo, batchID := strings.TrimSpace(in.Memo), uuid()
 		for _, resource := range keys {
 			amount := in.Deposits[resource]
 			if resource == "cash" {
@@ -451,7 +467,7 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 				_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_member_balances(alliance_id,nation_id,resource,amount) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, aid, p.NationID, resource, amount)
 			}
 			if err == nil {
-				_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo) VALUES(?,?,?,'deposit',?,?,?)`, uuid(), aid, p.NationID, resource, amount, memo)
+				_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo,batch_id) VALUES(?,?,?,'deposit',?,?,?,?)`, uuid(), aid, p.NationID, resource, amount, memo, batchID)
 			}
 			if err != nil {
 				problem(w, 500, "The deposit could not be completed.")
@@ -463,6 +479,95 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 			return
 		}
 		write(w, 200, map[string]any{"ok": true, "resourcesDeposited": len(keys)})
+		return
+	}
+	if (in.Kind == "withdrawal" || in.Kind == "grant") && len(in.Payouts) > 0 {
+		keys := make([]string, 0, len(in.Payouts))
+		var requestedTotal float64
+		for resource, amount := range in.Payouts {
+			if !allianceResources[resource] || amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) || math.Abs(amount*1000-math.Round(amount*1000)) > .000001 || (resource == "cash" && amount != math.Trunc(amount)) {
+				problem(w, 400, "Payout amounts must be positive and use no more than three decimal places. Treasury payouts must be whole Yen.")
+				return
+			}
+			keys = append(keys, resource)
+			requestedTotal += amount
+		}
+		sort.Strings(keys)
+		recipient := strings.TrimSpace(in.RecipientNationID)
+		if recipient == "" {
+			recipient = p.NationID
+		}
+		tx, err := a.db.BeginTx(r.Context(), nil)
+		if err != nil {
+			problem(w, 500, "Alliance bank is temporarily unavailable.")
+			return
+		}
+		defer tx.Rollback()
+		var member int
+		tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM alliance_members WHERE alliance_id=? AND nation_id=?`, aid, recipient).Scan(&member)
+		if member == 0 {
+			problem(w, 404, "Payout recipient is not an Alliance member.")
+			return
+		}
+		if p.Limit > 0 {
+			var used float64
+			tx.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(ABS(amount)),0) FROM alliance_bank_transactions WHERE alliance_id=? AND actor_nation_id=? AND kind IN('withdrawal','grant') AND created_at>=CURRENT_DATE()`, aid, p.NationID).Scan(&used)
+			if used+requestedTotal > float64(p.Limit) {
+				problem(w, 429, "Your role's daily withdrawal limit would be exceeded.")
+				return
+			}
+		}
+		for _, resource := range keys {
+			amount := in.Payouts[resource]
+			var bankBalance float64
+			if resource == "cash" {
+				err = tx.QueryRowContext(r.Context(), `SELECT cash FROM alliance_bank WHERE alliance_id=? FOR UPDATE`, aid).Scan(&bankBalance)
+			} else {
+				err = tx.QueryRowContext(r.Context(), `SELECT amount FROM alliance_stockpiles WHERE alliance_id=? AND commodity=? FOR UPDATE`, aid, resource).Scan(&bankBalance)
+			}
+			if err != nil || bankBalance+0.0000001 < amount {
+				problem(w, 409, "One or more payout amounts exceed the Alliance bank holdings.")
+				return
+			}
+			if in.Kind == "withdrawal" {
+				tx.ExecContext(r.Context(), `INSERT IGNORE INTO alliance_member_balances(alliance_id,nation_id,resource,amount) VALUES(?,?,?,0)`, aid, recipient, resource)
+				var claim float64
+				if err = tx.QueryRowContext(r.Context(), `SELECT amount FROM alliance_member_balances WHERE alliance_id=? AND nation_id=? AND resource=? FOR UPDATE`, aid, recipient, resource).Scan(&claim); err != nil || claim+0.0000001 < amount {
+					problem(w, 409, "One or more payout amounts exceed the member's tracked balance. Use an Alliance grant to preserve their balance.")
+					return
+				}
+			}
+		}
+		memo, batchID := strings.TrimSpace(in.Memo), uuid()
+		for _, resource := range keys {
+			amount := in.Payouts[resource]
+			if resource == "cash" {
+				_, err = tx.ExecContext(r.Context(), `UPDATE alliance_bank SET cash=cash-? WHERE alliance_id=?`, amount, aid)
+				if err == nil {
+					_, err = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury+? WHERE id=?`, amount, recipient)
+				}
+			} else {
+				_, err = tx.ExecContext(r.Context(), `UPDATE alliance_stockpiles SET amount=amount-? WHERE alliance_id=? AND commodity=?`, amount, aid, resource)
+				if err == nil {
+					_, err = tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, recipient, resource, amount)
+				}
+			}
+			if err == nil && in.Kind == "withdrawal" {
+				_, err = tx.ExecContext(r.Context(), `UPDATE alliance_member_balances SET amount=amount-? WHERE alliance_id=? AND nation_id=? AND resource=?`, amount, aid, recipient, resource)
+			}
+			if err == nil {
+				_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,recipient_nation_id,kind,resource,amount,memo,batch_id) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), aid, p.NationID, recipient, in.Kind, resource, amount, memo, batchID)
+			}
+			if err != nil {
+				problem(w, 500, "The multi-asset payout could not be completed.")
+				return
+			}
+		}
+		if err = tx.Commit(); err != nil {
+			problem(w, 500, "The multi-asset payout could not be completed.")
+			return
+		}
+		write(w, 200, map[string]any{"ok": true, "assetsPaid": len(keys)})
 		return
 	}
 	if in.Amount <= 0 || !allianceResources[in.Resource] || math.IsNaN(in.Amount) || math.IsInf(in.Amount, 0) || math.Abs(in.Amount*1000-math.Round(in.Amount*1000)) > .000001 || (in.Resource == "cash" && in.Amount != math.Trunc(in.Amount)) {
@@ -568,11 +673,28 @@ func (a *app) adjustAllianceMemberBalance(w http.ResponseWriter, r *http.Request
 	var in struct {
 		NationID, Resource, Memo string
 		Amount                   float64
+		Adjustments              map[string]float64
 	}
-	if !decode(w, r, &in) || !allianceResources[in.Resource] || in.Amount == 0 || math.IsNaN(in.Amount) || math.IsInf(in.Amount, 0) || math.Abs(in.Amount*1000-math.Round(in.Amount*1000)) > .000001 || (in.Resource == "cash" && in.Amount != math.Trunc(in.Amount)) {
-		problem(w, 400, "Adjustments must use a valid asset and no more than three decimal places. Treasury adjustments must be whole Yen.")
+	if !decode(w, r, &in) {
+		problem(w, 400, "Invalid member balance adjustment.")
 		return
 	}
+	if len(in.Adjustments) == 0 && in.Resource != "" {
+		in.Adjustments = map[string]float64{in.Resource: in.Amount}
+	}
+	keys := make([]string, 0, len(in.Adjustments))
+	for resource, amount := range in.Adjustments {
+		if !allianceResources[resource] || amount == 0 || math.IsNaN(amount) || math.IsInf(amount, 0) || math.Abs(amount*1000-math.Round(amount*1000)) > .000001 || (resource == "cash" && amount != math.Trunc(amount)) {
+			problem(w, 400, "Adjustments must use valid assets and no more than three decimal places. Treasury adjustments must be whole Yen.")
+			return
+		}
+		keys = append(keys, resource)
+	}
+	if len(keys) == 0 {
+		problem(w, 400, "Enter at least one member balance adjustment.")
+		return
+	}
+	sort.Strings(keys)
 	aid := r.PathValue("id")
 	p, err := a.alliancePermission(r.Context(), u.ID, aid)
 	if err != nil || !p.Withdraw {
@@ -591,20 +713,30 @@ func (a *app) adjustAllianceMemberBalance(w http.ResponseWriter, r *http.Request
 		problem(w, 404, "Balance owner is not an Alliance member.")
 		return
 	}
-	tx.ExecContext(r.Context(), `INSERT IGNORE INTO alliance_member_balances(alliance_id,nation_id,resource,amount) VALUES(?,?,?,0)`, aid, in.NationID, in.Resource)
-	var current float64
-	if err = tx.QueryRowContext(r.Context(), `SELECT amount FROM alliance_member_balances WHERE alliance_id=? AND nation_id=? AND resource=? FOR UPDATE`, aid, in.NationID, in.Resource).Scan(&current); err != nil {
-		problem(w, 500, "Member balance could not be loaded.")
-		return
+	for _, resource := range keys {
+		tx.ExecContext(r.Context(), `INSERT IGNORE INTO alliance_member_balances(alliance_id,nation_id,resource,amount) VALUES(?,?,?,0)`, aid, in.NationID, resource)
+		var current float64
+		if err = tx.QueryRowContext(r.Context(), `SELECT amount FROM alliance_member_balances WHERE alliance_id=? AND nation_id=? AND resource=? FOR UPDATE`, aid, in.NationID, resource).Scan(&current); err != nil {
+			problem(w, 500, "Member balances could not be loaded.")
+			return
+		}
+		if current+in.Adjustments[resource] < -0.0000001 {
+			problem(w, 409, "One or more adjustments would reduce the member's balance below zero.")
+			return
+		}
 	}
-	if current+in.Amount < -0.0000001 {
-		problem(w, 409, "An adjustment cannot reduce a member balance below zero.")
-		return
+	batchID, memo := uuid(), strings.TrimSpace(in.Memo)
+	for _, resource := range keys {
+		amount := in.Adjustments[resource]
+		if _, err = tx.ExecContext(r.Context(), `UPDATE alliance_member_balances SET amount=amount+? WHERE alliance_id=? AND nation_id=? AND resource=?`, amount, aid, in.NationID, resource); err == nil {
+			_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,recipient_nation_id,kind,resource,amount,memo,batch_id) VALUES(?,?,?,?,'balance_adjustment',?,?,?,?)`, uuid(), aid, p.NationID, in.NationID, resource, amount, memo, batchID)
+		}
+		if err != nil {
+			problem(w, 500, "Member balance adjustments could not be saved.")
+			return
+		}
 	}
-	if _, err = tx.ExecContext(r.Context(), `UPDATE alliance_member_balances SET amount=amount+? WHERE alliance_id=? AND nation_id=? AND resource=?`, in.Amount, aid, in.NationID, in.Resource); err == nil {
-		_, err = tx.ExecContext(r.Context(), `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,recipient_nation_id,kind,resource,amount,memo) VALUES(?,?,?,?, 'balance_adjustment',?,?,?)`, uuid(), aid, p.NationID, in.NationID, in.Resource, in.Amount, strings.TrimSpace(in.Memo))
-	}
-	if err != nil || tx.Commit() != nil {
+	if tx.Commit() != nil {
 		problem(w, 500, "Member balance adjustment could not be saved.")
 		return
 	}

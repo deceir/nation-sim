@@ -96,6 +96,7 @@ func main() {
 		{"trade_shipments", "estimated_arrival_at", "TIMESTAMP(6) NOT NULL"},
 		{"trade_shipments", "delivered_at", "TIMESTAMP(6) NULL"},
 		{"trade_shipments", "status", "ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'"},
+		{"alliance_bank_transactions", "batch_id", "CHAR(36) NULL"},
 	}
 	for _, u := range upgrades {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
