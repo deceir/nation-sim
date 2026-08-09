@@ -114,7 +114,7 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Shipments unavailable.")
 		return
 	}
-	write(w, 200, map[string]any{"nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities})
+	write(w, 200, map[string]any{"marketVersion": 2, "nation": me, "offers": offers, "shipments": shipments, "commodities": strategicCommodities})
 }
 
 func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
@@ -196,8 +196,16 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 	if in.Channel == "private" {
 		status, target = "pending", in.TargetNationID
 	}
-	if _, err = tx.ExecContext(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price,channel,target_nation_id,escrow_cash,escrow_goods,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, uuid(), nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice, in.Channel, target, escrowCash, escrowGoods, status); err != nil {
+	orderID := uuid()
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price,channel,target_nation_id,escrow_cash,escrow_goods,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, orderID, nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice, in.Channel, target, escrowCash, escrowGoods, status); err != nil {
 		problem(w, 500, "Could not publish offer.")
+		return
+	}
+	var savedStatus string
+	var savedCash int64
+	var savedGoods float64
+	if err = tx.QueryRowContext(r.Context(), `SELECT status,escrow_cash,escrow_goods FROM market_orders WHERE id=? FOR UPDATE`, orderID).Scan(&savedStatus, &savedCash, &savedGoods); err != nil || savedStatus != status || savedCash != escrowCash || math.Abs(savedGoods-escrowGoods) > 0.000001 {
+		problem(w, 500, "The offer failed escrow verification and was not published.")
 		return
 	}
 	if in.Channel == "private" {
@@ -209,7 +217,7 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not publish offer.")
 		return
 	}
-	write(w, 201, map[string]bool{"ok": true})
+	write(w, 201, map[string]any{"ok": true, "marketVersion": 2, "orderID": orderID, "status": status, "escrowCash": escrowCash, "escrowGoods": escrowGoods})
 }
 
 func affected(result sql.Result) int64 { n, _ := result.RowsAffected(); return n }

@@ -20,7 +20,7 @@ function DockItem({label,icon,value,cash=false}:{label:string;icon:ComponentProp
 
 export default function ResourceDock(){
  const[data,setData]=useState<any>();
- useEffect(()=>{const load=()=>Promise.all([fetch('/api/me',{credentials:'include'}).then(r=>r.json()),fetch('/api/strategy',{credentials:'include'}).then(r=>r.json())]).then(([me,strategy])=>setData({nation:me.nation,stockpiles:strategy.stockpiles||{}}));void load();const timer=setInterval(load,15000);return()=>clearInterval(timer)},[]);
+ useEffect(()=>{const load=()=>Promise.all([fetch('/api/me',{credentials:'include'}).then(r=>r.json()),fetch('/api/strategy',{credentials:'include'}).then(r=>r.json())]).then(([me,strategy])=>setData({nation:me.nation,stockpiles:strategy.stockpiles||{}}));void load();const refresh=()=>{void load()};window.addEventListener('diplomatia:resources',refresh);const timer=setInterval(load,15000);return()=>{clearInterval(timer);window.removeEventListener('diplomatia:resources',refresh)}},[]);
  if(!data)return <div className="resource-dock loading">Loading national stockpiles…</div>;
  return <section className="resource-dock" aria-label="Resources on hand"><div className="dock-title"><Boxes size={15}/><span>ON HAND</span></div><DockItem label="Treasury" icon="Treasury" value={Number(data.nation.Treasury||0)} cash/>{items.map(([key,label,icon])=><DockItem key={key} label={label} icon={icon} value={Number(data.stockpiles[key]||0)}/>)}</section>;
 }
