@@ -22,12 +22,16 @@ func TestDistanceTableSpecifiedPairs(t *testing.T) {
 
 func TestShipmentTerms(t *testing.T) {
 	distance, turns, fee, risk := shipmentTerms("Africa", "Africa", 100, 100000)
-	if distance != 1 || turns != 3 || fee != 1000 || risk != .5 {
+	if distance != 1 || turns != 3 || fee != 750 || risk != .5 {
 		t.Fatalf("same-continent terms incorrect: %v %v %v %v", distance, turns, fee, risk)
 	}
+	_, distantTurns, distantFee, _ := shipmentTerms("Asia", "South America", 100, 100000)
+	if distantTurns != 9 || distantFee < 3300 || distantFee > 3400 {
+		t.Fatalf("expected a 9-turn distant route near a 3.4%% fee, got %d turns and %d", distantTurns, distantFee)
+	}
 	_, bulkTurns, _, _ := shipmentTerms("Asia", "South America", 20000, 100000)
-	if bulkTurns != 8 {
-		t.Fatalf("expected 8 bulk turns, got %d", bulkTurns)
+	if bulkTurns != 11 {
+		t.Fatalf("expected 11 bulk turns, got %d", bulkTurns)
 	}
 }
 
