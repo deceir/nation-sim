@@ -400,7 +400,7 @@ func (a *app) nationTradeHistory(w http.ResponseWriter, r *http.Request, _ user)
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT s.id,s.resource,s.quantity,s.unit_price,s.goods_value,s.shipping_fee,s.status,s.departed_at,s.estimated_arrival_at,s.delivered_at,CASE WHEN s.seller_nation_id=? THEN 'sale' ELSE 'purchase' END,CASE WHEN s.seller_nation_id=? THEN buyer.name ELSE seller.name END FROM trade_shipments s JOIN nations seller ON seller.id=s.seller_nation_id JOIN nations buyer ON buyer.id=s.buyer_nation_id WHERE s.seller_nation_id=? OR s.buyer_nation_id=? ORDER BY s.departed_at DESC LIMIT 200`, nationID, nationID, nationID, nationID)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT s.id,s.resource,s.quantity,s.unit_price,s.goods_value,s.shipping_fee,s.status,s.departed_at,s.estimated_arrival_at,s.delivered_at,CASE WHEN s.seller_nation_id=? THEN 'sale' ELSE 'purchase' END,CASE WHEN s.seller_nation_id=? THEN buyer.name ELSE seller.name END,CASE WHEN s.seller_nation_id=? THEN buyer.id ELSE seller.id END FROM trade_shipments s JOIN nations seller ON seller.id=s.seller_nation_id JOIN nations buyer ON buyer.id=s.buyer_nation_id WHERE s.seller_nation_id=? OR s.buyer_nation_id=? ORDER BY s.departed_at DESC LIMIT 200`, nationID, nationID, nationID, nationID, nationID)
 	if err != nil {
 		problem(w, 500, "Trade history unavailable.")
 		return
@@ -408,16 +408,16 @@ func (a *app) nationTradeHistory(w http.ResponseWriter, r *http.Request, _ user)
 	defer rows.Close()
 	items := []map[string]any{}
 	for rows.Next() {
-		var id, resource, status, direction, partner string
+		var id, resource, status, direction, partner, partnerID string
 		var quantity float64
 		var unitPrice, goodsValue, shippingFee int64
 		var departed, estimated time.Time
 		var delivered *time.Time
-		if err = rows.Scan(&id, &resource, &quantity, &unitPrice, &goodsValue, &shippingFee, &status, &departed, &estimated, &delivered, &direction, &partner); err != nil {
+		if err = rows.Scan(&id, &resource, &quantity, &unitPrice, &goodsValue, &shippingFee, &status, &departed, &estimated, &delivered, &direction, &partner, &partnerID); err != nil {
 			problem(w, 500, "Trade history could not be read.")
 			return
 		}
-		items = append(items, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": unitPrice, "goodsValue": goodsValue, "shippingFee": shippingFee, "status": status, "departedAt": departed, "estimatedArrivalAt": estimated, "deliveredAt": delivered, "direction": direction, "partner": partner})
+		items = append(items, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": unitPrice, "goodsValue": goodsValue, "shippingFee": shippingFee, "status": status, "departedAt": departed, "estimatedArrivalAt": estimated, "deliveredAt": delivered, "direction": direction, "partner": partner, "partnerID": partnerID})
 	}
 	write(w, 200, map[string]any{"nationID": nationID, "nationName": nationName, "items": items})
 }
