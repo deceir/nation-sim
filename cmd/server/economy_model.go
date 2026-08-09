@@ -10,7 +10,9 @@ type EconomyConfig struct {
 	EducationIncomeMax, TechnologyIncomePerLevel, InfraUpkeepBase    float64
 }
 
-var balance = EconomyConfig{24, 90, 50, 28, .001, .018, .0012, .55, .0025, .32}
+const yenScale int64 = 100
+
+var balance = EconomyConfig{24, 90, 50, 2800, .001, .018, .0012, .55, .0025, 32}
 
 type BuildingSpec struct {
 	Name, Category, InputResource, OutputResource          string
@@ -52,6 +54,17 @@ var beginnerProjects = map[string]ProjectSpec{
 	"resource_survey":             {"Resource Survey & Extraction Boost", "Extraction", "Farm, mine, and well output increases by 12%.", 100000, 250, 50, 0, 0, 0},
 	"basic_power_grid":            {"Basic Power Grid", "Power", "Power capacity rises by 10% and power improvements cost less.", 130000, 0, 100, 0, 300, 0},
 	"public_health_sanitation":    {"Public Health & Sanitation", "Stability", "Lower disease and pollution pressure with better Happiness recovery.", 115000, 0, 80, 0, 0, 500},
+}
+
+func init() {
+	for key, spec := range buildings {
+		spec.Cost *= float64(yenScale)
+		buildings[key] = spec
+	}
+	for key, project := range beginnerProjects {
+		project.Cash *= yenScale
+		beginnerProjects[key] = project
+	}
 }
 
 type ModelCity struct {
@@ -109,7 +122,7 @@ type NationResult struct {
 func infraUnitCost(current float64, tech int) float64 {
 	x := math.Max(0, current-5)
 	discount := math.Max(.72, 1-.004*float64(tech))
-	return (475 + math.Pow(x, 2.15)/760) * discount
+	return (475 + math.Pow(x, 2.15)/760) * discount * float64(yenScale)
 }
 
 func infraPurchaseCost(current, amount float64, tech int) float64 {
@@ -136,7 +149,7 @@ func landPurchaseCost(current, amount float64, tech int) float64 {
 	}
 	total := 0.0
 	for i := 0.0; i < math.Ceil(amount); i++ {
-		total += (90 + math.Pow(math.Max(0, current+i), 1.72)/520) * math.Max(.78, 1-.003*float64(tech))
+		total += (90 + math.Pow(math.Max(0, current+i), 1.72)/520) * math.Max(.78, 1-.003*float64(tech)) * float64(yenScale)
 	}
 	if amount >= 100 {
 		total *= .98

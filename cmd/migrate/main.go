@@ -67,6 +67,7 @@ func main() {
 		{"alliance_roles", "can_manage_roles", "BOOLEAN NOT NULL DEFAULT FALSE"},
 		{"alliance_roles", "can_promote_members", "BOOLEAN NOT NULL DEFAULT FALSE"},
 		{"alliance_roles", "can_view_audit_log", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_tax_brackets", "nation_id", "CHAR(36) NULL"},
 		{"alliance_treaties", "proposed_by_alliance_id", "CHAR(36) NULL"},
 		{"alliance_treaties", "proposed_by_nation_id", "CHAR(36) NULL"},
 		{"alliance_treaties", "duration_days", "INT NULL"},
@@ -104,6 +105,9 @@ func main() {
 	if err = ensureUniqueIndex(db, "nations", "uq_nations_leader_name", "leader_name"); err != nil {
 		log.Fatal(err)
 	}
+	if err = ensureUniqueIndex(db, "alliance_tax_brackets", "uq_alliance_tax_nation", "nation_id"); err != nil {
+		log.Fatal(err)
+	}
 	if _, err = db.Exec(`ALTER TABLE nations ALTER COLUMN currency_name SET DEFAULT 'Yen'`); err != nil {
 		log.Fatal(err)
 	}
@@ -139,6 +143,7 @@ func main() {
 		`UPDATE alliance_roles r JOIN (SELECT alliance_id,MIN(rank_order) mn FROM alliance_roles WHERE default_key IS NULL GROUP BY alliance_id) x ON x.alliance_id=r.alliance_id AND x.mn=r.rank_order SET r.default_key='member',r.can_deposit_bank=1`,
 		`INSERT INTO alliance_roles(id,alliance_id,title,rank_order,default_key,can_deposit_bank) SELECT UUID(),a.id,'Applicant',0,'applicant',0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_roles r WHERE r.alliance_id=a.id AND r.default_key='applicant')`,
 		`INSERT INTO alliance_tax_brackets(id,alliance_id,name,is_default,cash_rate,resource_rate) SELECT UUID(),a.id,'Default',1,a.tax_rate,0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_tax_brackets b WHERE b.alliance_id=a.id AND b.is_default=1)`,
+		`UPDATE alliance_tax_brackets SET role_id=NULL WHERE role_id IS NOT NULL`,
 		`UPDATE alliance_treaties SET proposed_by_alliance_id=alliance_a_id WHERE proposed_by_alliance_id IS NULL`,
 		`UPDATE alliance_treaties t JOIN alliances a ON a.id=t.proposed_by_alliance_id SET t.proposed_by_nation_id=a.founder_nation_id WHERE t.proposed_by_nation_id IS NULL`,
 		`UPDATE market_orders SET status='cancelled' WHERE status IN('open','pending') AND escrow_cash=0 AND escrow_goods=0`,
@@ -154,7 +159,49 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	if err = applyYenRedenomination(db); err != nil {
+		log.Fatal(err)
+	}
 	log.Print("schema ready")
+}
+
+func applyYenRedenomination(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`INSERT IGNORE INTO balance_migrations(migration_key) VALUES('yen_scale_v1_100x')`)
+	if err != nil {
+		return err
+	}
+	applied, err := result.RowsAffected()
+	if err != nil || applied == 0 {
+		return err
+	}
+	statements := []string{
+		`UPDATE nations SET treasury=treasury*100`,
+		`UPDATE cities SET total_invested=total_invested*100`,
+		`UPDATE city_investments SET amount=amount*100`,
+		`UPDATE city_industries SET total_invested=total_invested*100`,
+		`UPDATE market_orders SET unit_price=unit_price*100,escrow_cash=escrow_cash*100`,
+		`UPDATE trade_shipments SET unit_price=unit_price*100,goods_value=goods_value*100,shipping_fee=shipping_fee*100`,
+		`UPDATE ledger_entries SET amount=amount*100`,
+		`UPDATE daily_login_rewards SET amount=amount*100`,
+		`UPDATE national_project_construction SET cash_locked=cash_locked*100`,
+		`UPDATE economic_snapshots SET cash_income=cash_income*100,upkeep=upkeep*100`,
+		`UPDATE alliance_roles SET daily_withdrawal_limit=daily_withdrawal_limit*100`,
+		`UPDATE alliance_members SET cash_contributed=cash_contributed*100`,
+		`UPDATE alliance_bank SET cash=cash*100`,
+		`UPDATE alliance_bank_transactions SET amount=amount*100 WHERE resource='cash'`,
+		`UPDATE alliance_loans SET principal=principal*100,outstanding=outstanding*100`,
+	}
+	for _, statement := range statements {
+		if _, err = tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func ensureColumn(db *sql.DB, table, column, definition string) error {

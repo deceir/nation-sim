@@ -75,6 +75,7 @@ func init() {
 	primary := map[string]bool{"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true, "strategic_minerals": true}
 	advanced := map[string]bool{"consumer_goods": true, "luxury_goods": true, "military_equipment": true}
 	for id, p := range longTermProjects {
+		p.Cash *= yenScale
 		for commodity, amount := range p.Costs {
 			p.Costs[commodity] = math.Ceil(amount*.12/10) * 10
 		}

@@ -12,12 +12,10 @@ type allianceTaxQuery interface {
 }
 
 func applicableAllianceTax(ctx context.Context, q allianceTaxQuery, nid string) (aid, name string, cashRate, resourceRate float64) {
-	var roleID string
-	var provinces int
-	if q.QueryRowContext(ctx, `SELECT m.alliance_id,a.name,m.role_id,(SELECT COUNT(*) FROM cities WHERE nation_id=m.nation_id) FROM alliance_members m JOIN alliances a ON a.id=m.alliance_id WHERE m.nation_id=?`, nid).Scan(&aid, &name, &roleID, &provinces) != nil {
+	if q.QueryRowContext(ctx, `SELECT m.alliance_id,a.name FROM alliance_members m JOIN alliances a ON a.id=m.alliance_id WHERE m.nation_id=?`, nid).Scan(&aid, &name) != nil {
 		return
 	}
-	if q.QueryRowContext(ctx, `SELECT cash_rate,resource_rate FROM alliance_tax_brackets WHERE alliance_id=? AND minimum_provinces<=? AND (role_id IS NULL OR role_id=?) ORDER BY (role_id=?) DESC,is_default ASC,minimum_provinces DESC LIMIT 1`, aid, provinces, roleID, roleID).Scan(&cashRate, &resourceRate) != nil {
+	if q.QueryRowContext(ctx, `SELECT cash_rate,resource_rate FROM alliance_tax_brackets WHERE alliance_id=? AND (nation_id=? OR is_default=1) ORDER BY (nation_id=?) DESC,is_default ASC LIMIT 1`, aid, nid, nid).Scan(&cashRate, &resourceRate) != nil {
 		q.QueryRowContext(ctx, `SELECT tax_rate FROM alliances WHERE id=?`, aid).Scan(&cashRate)
 	}
 	return
@@ -169,7 +167,7 @@ func (a *app) removeAllianceMember(w http.ResponseWriter, r *http.Request, u use
 }
 
 type taxBracketInput struct {
-	Name, RoleID           string
+	Name, NationID         string
 	MinimumProvinces       int
 	CashRate, ResourceRate float64
 }
@@ -185,11 +183,17 @@ func (a *app) createAllianceTaxBracket(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	var in taxBracketInput
-	if !decode(w, r, &in) || !validBracket(in) {
+	if !decode(w, r, &in) || !validBracket(in) || in.NationID == "" {
 		problem(w, 400, "Invalid tax bracket.")
 		return
 	}
-	_, e = a.db.ExecContext(r.Context(), `INSERT INTO alliance_tax_brackets(id,alliance_id,name,role_id,minimum_provinces,cash_rate,resource_rate) VALUES(?,?,?,?,?,?,?)`, uuid(), aid, strings.TrimSpace(in.Name), nullString(in.RoleID), in.MinimumProvinces, in.CashRate, in.ResourceRate)
+	var member int
+	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM alliance_members WHERE alliance_id=? AND nation_id=?`, aid, in.NationID).Scan(&member)
+	if member != 1 {
+		problem(w, 400, "Choose a current Alliance member.")
+		return
+	}
+	_, e = a.db.ExecContext(r.Context(), `INSERT INTO alliance_tax_brackets(id,alliance_id,name,nation_id,minimum_provinces,cash_rate,resource_rate) VALUES(?,?,?,?,0,?,?)`, uuid(), aid, strings.TrimSpace(in.Name), in.NationID, in.CashRate, in.ResourceRate)
 	if e != nil {
 		problem(w, 409, "Tax bracket could not be created.")
 		return
@@ -208,7 +212,22 @@ func (a *app) updateAllianceTaxBracket(w http.ResponseWriter, r *http.Request, u
 		problem(w, 400, "Invalid tax bracket.")
 		return
 	}
-	_, e = a.db.ExecContext(r.Context(), `UPDATE alliance_tax_brackets SET name=?,role_id=?,minimum_provinces=?,cash_rate=?,resource_rate=? WHERE id=? AND alliance_id=?`, strings.TrimSpace(in.Name), nullString(in.RoleID), in.MinimumProvinces, in.CashRate, in.ResourceRate, bid, aid)
+	var isDefault bool
+	if a.db.QueryRowContext(r.Context(), `SELECT is_default FROM alliance_tax_brackets WHERE id=? AND alliance_id=?`, bid, aid).Scan(&isDefault) != nil {
+		problem(w, 404, "Tax bracket not found.")
+		return
+	}
+	if !isDefault {
+		var member int
+		a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM alliance_members WHERE alliance_id=? AND nation_id=?`, aid, in.NationID).Scan(&member)
+		if member != 1 {
+			problem(w, 400, "Choose a current Alliance member.")
+			return
+		}
+	} else {
+		in.NationID = ""
+	}
+	_, e = a.db.ExecContext(r.Context(), `UPDATE alliance_tax_brackets SET name=?,role_id=NULL,nation_id=?,minimum_provinces=0,cash_rate=?,resource_rate=? WHERE id=? AND alliance_id=?`, strings.TrimSpace(in.Name), nullString(in.NationID), in.CashRate, in.ResourceRate, bid, aid)
 	if e != nil {
 		problem(w, 409, "Tax bracket could not be updated.")
 		return

@@ -54,8 +54,9 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			allianceTax = int64(math.Floor(float64(cash) * allianceRate / 100))
 		}
 		netCash := cash - allianceTax
-		// Happiness uses inertia; education changes only gradually and can decay.
-		newHappy := clamp(n.Happiness+(result.HappinessTarget-n.Happiness)*.08/balance.TurnsPerDay, 0, 100)
+		// Happiness uses inertia; Gear and social-policy modifiers shift the target
+		// while the nation still moves toward it gradually each hourly turn.
+		newHappy := calculateHourlyHappiness(n.Happiness, result.HappinessTarget, strategyResult.HappinessMultiplier)
 		newEducation := clamp(n.Education+result.EducationChange/balance.TurnsPerDay, 0, 100)
 		tx, e := a.db.BeginTx(ctx, nil)
 		if e != nil {
@@ -113,4 +114,12 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	a.processTradeShipments(ctx, turn)
 	a.processLongTermProjects(ctx)
 	log.Printf("hourly economic turn processed %d nations", processed)
+}
+
+func calculateHourlyHappiness(current, target, strategyMultiplier float64) float64 {
+	if strategyMultiplier <= 0 {
+		strategyMultiplier = 1
+	}
+	adjustedTarget := clamp(target*strategyMultiplier, 0, 100)
+	return clamp(current+(adjustedTarget-current)*.08/balance.TurnsPerDay, 0, 100)
 }

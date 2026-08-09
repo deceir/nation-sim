@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -31,7 +30,7 @@ func (a *app) alliancePermission(ctx context.Context, userID, allianceID string)
 }
 
 func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.level,a.tax_rate,COUNT(DISTINCT m.nation_id),COALESCE(SUM(DISTINCT n.population),0),COALESCE(SUM(c.infrastructure),0) FROM alliances a LEFT JOIN alliance_members m ON m.alliance_id=a.id LEFT JOIN nations n ON n.id=m.nation_id LEFT JOIN cities c ON c.nation_id=n.id GROUP BY a.id ORDER BY COUNT(DISTINCT m.nation_id) DESC,a.name LIMIT 100`)
+	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.tax_rate,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id),(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id),(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) FROM alliances a ORDER BY (SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) DESC,a.name LIMIT 100`)
 	if e != nil {
 		problem(w, 500, "Alliances unavailable.")
 		return
@@ -40,11 +39,12 @@ func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) 
 	out := []map[string]any{}
 	for rows.Next() {
 		var id, name, description, emblem, policy string
-		var level, members int
+		var members, provinces int
 		var tax float64
-		var pop, infra int64
-		rows.Scan(&id, &name, &description, &emblem, &policy, &level, &tax, &members, &pop, &infra)
-		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "level": level, "taxRate": tax, "members": members, "population": pop, "infrastructure": infra})
+		var pop int64
+		var createdAt time.Time
+		rows.Scan(&id, &name, &description, &emblem, &policy, &tax, &createdAt, &members, &pop, &provinces)
+		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "taxRate": tax, "createdAt": createdAt, "members": members, "population": pop, "provinces": provinces})
 	}
 	var membership map[string]any
 	nid, _ := a.nationID(r.Context(), u.ID)
@@ -116,12 +116,11 @@ func (a *app) createAlliance(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 	id := r.PathValue("id")
 	var out struct {
-		ID, Name, Description, EmblemURL, CommunityURL, JoinPolicy  string
-		Level, MinimumCities, MinimumAgeDays, MinimumInfrastructure int
-		TaxRate                                                     float64
-		CreatedAt                                                   time.Time
+		ID, Name, Description, EmblemURL, CommunityURL, JoinPolicy string
+		TaxRate                                                    float64
+		CreatedAt                                                  time.Time
 	}
-	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,level,minimum_cities,minimum_age_days,minimum_infrastructure,tax_rate,created_at FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.Level, &out.MinimumCities, &out.MinimumAgeDays, &out.MinimumInfrastructure, &out.TaxRate, &out.CreatedAt)
+	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,tax_rate,created_at FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.TaxRate, &out.CreatedAt)
 	if e != nil {
 		problem(w, 404, "Alliance not found.")
 		return
@@ -220,15 +219,14 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		roleRows.Close()
 	}
 	brackets := []map[string]any{}
-	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,COALESCE(b.role_id,''),COALESCE(r.title,''),b.minimum_provinces,b.cash_rate,b.resource_rate FROM alliance_tax_brackets b LEFT JOIN alliance_roles r ON r.id=b.role_id WHERE b.alliance_id=? ORDER BY b.is_default,b.minimum_provinces DESC,b.name`, id)
+	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,COALESCE(b.nation_id,''),COALESCE(n.name,''),b.cash_rate,b.resource_rate FROM alliance_tax_brackets b LEFT JOIN nations n ON n.id=b.nation_id WHERE b.alliance_id=? ORDER BY b.is_default DESC,n.name,b.name`, id)
 	if bracketRows != nil {
 		for bracketRows.Next() {
-			var bid, name, roleID, role string
+			var bid, name, nationID, nation string
 			var def bool
-			var minimum int
 			var cashRate, resourceRate float64
-			bracketRows.Scan(&bid, &name, &def, &roleID, &role, &minimum, &cashRate, &resourceRate)
-			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "roleID": roleID, "role": role, "minimumProvinces": minimum, "cashRate": cashRate, "resourceRate": resourceRate})
+			bracketRows.Scan(&bid, &name, &def, &nationID, &nation, &cashRate, &resourceRate)
+			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "nationID": nationID, "nation": nation, "cashRate": cashRate, "resourceRate": resourceRate})
 		}
 		bracketRows.Close()
 	}
@@ -243,19 +241,15 @@ func (a *app) updateAlliance(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 403, "Alliance leadership required.")
 		return
 	}
-	var in struct{ Description, CommunityURL, JoinPolicy, TaxRate, MinimumCities, MinimumAgeDays, MinimumInfrastructure string }
+	var in struct{ Description, CommunityURL, JoinPolicy string }
 	if !decode(w, r, &in) {
 		return
 	}
-	tax, _ := strconv.ParseFloat(in.TaxRate, 64)
-	cities, _ := strconv.Atoi(in.MinimumCities)
-	age, _ := strconv.Atoi(in.MinimumAgeDays)
-	infra, _ := strconv.Atoi(in.MinimumInfrastructure)
-	if len(in.Description) > 1000 || !validOptionalURL(in.CommunityURL) || !map[string]bool{"open": true, "apply": true, "invite_only": true}[in.JoinPolicy] || tax < 0 || tax > 100 || cities < 1 || age < 0 || infra < 0 {
+	if len(in.Description) > 5000 || !validOptionalURL(in.CommunityURL) || !map[string]bool{"open": true, "apply": true, "invite_only": true}[in.JoinPolicy] {
 		problem(w, 400, "Invalid Alliance settings.")
 		return
 	}
-	_, e = a.db.ExecContext(r.Context(), `UPDATE alliances SET description=?,community_url=?,join_policy=?,tax_rate=?,minimum_cities=?,minimum_age_days=?,minimum_infrastructure=? WHERE id=?`, strings.TrimSpace(in.Description), in.CommunityURL, in.JoinPolicy, tax, cities, age, infra, aid)
+	_, e = a.db.ExecContext(r.Context(), `UPDATE alliances SET description=?,community_url=?,join_policy=? WHERE id=?`, strings.TrimSpace(in.Description), in.CommunityURL, in.JoinPolicy, aid)
 	if e != nil {
 		problem(w, 500, "Alliance settings could not be saved.")
 		return
@@ -274,16 +268,9 @@ func (a *app) applyAlliance(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	aid := r.PathValue("id")
 	var policy string
-	var minCities, minAge, minInfra int
-	e = a.db.QueryRowContext(r.Context(), `SELECT join_policy,minimum_cities,minimum_age_days,minimum_infrastructure FROM alliances WHERE id=?`, aid).Scan(&policy, &minCities, &minAge, &minInfra)
+	e = a.db.QueryRowContext(r.Context(), `SELECT join_policy FROM alliances WHERE id=?`, aid).Scan(&policy)
 	if e != nil {
 		problem(w, 404, "Alliance not found.")
-		return
-	}
-	var cities, age, infra int
-	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*),TIMESTAMPDIFF(DAY,n.created_at,NOW()),COALESCE(SUM(c.infrastructure),0) FROM nations n LEFT JOIN cities c ON c.nation_id=n.id WHERE n.id=? GROUP BY n.id`, nid).Scan(&cities, &age, &infra)
-	if cities < minCities || age < minAge || infra < minInfra {
-		problem(w, 409, "Your nation does not meet this Alliance's entry requirements.")
 		return
 	}
 	if policy == "invite_only" {

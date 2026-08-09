@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS nations (
 	user_type ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER',
   motto VARCHAR(120) NOT NULL DEFAULT '',
   currency_name VARCHAR(30) NOT NULL DEFAULT 'Yen',
-  treasury BIGINT NOT NULL DEFAULT 100000,
+  treasury BIGINT NOT NULL DEFAULT 10000000,
   coal BIGINT NOT NULL DEFAULT 500,
   steel BIGINT NOT NULL DEFAULT 250,
   food BIGINT NOT NULL DEFAULT 1000,
@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS city_investments (id CHAR(36) PRIMARY KEY,city_id CHA
 CREATE TABLE IF NOT EXISTS city_industries (id CHAR(36) PRIMARY KEY,city_id CHAR(36) NOT NULL,resource ENUM('coal','steel','food') NOT NULL,level INT NOT NULL DEFAULT 1,total_invested BIGINT NOT NULL,UNIQUE KEY uq_city_industry(city_id,resource),CONSTRAINT fk_industries_city FOREIGN KEY(city_id) REFERENCES cities(id) ON DELETE CASCADE) ENGINE=InnoDB;
 DROP TABLE IF EXISTS technology_investments;
 CREATE TABLE IF NOT EXISTS economy_turns (turn_at DATETIME PRIMARY KEY,processed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),nations_processed INT NOT NULL DEFAULT 0) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS balance_migrations (migration_key VARCHAR(80) PRIMARY KEY,applied_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS guardian_grants (
   id CHAR(36) PRIMARY KEY,
   nation_id CHAR(36) NOT NULL,
@@ -143,7 +144,7 @@ CREATE TABLE IF NOT EXISTS daily_login_rewards (
   nation_id CHAR(36) NOT NULL,
   reward_date DATE NOT NULL,
   streak INT NOT NULL,
-  amount BIGINT NOT NULL DEFAULT 25000,
+  amount BIGINT NOT NULL DEFAULT 2500000,
   awarded_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   PRIMARY KEY (nation_id, reward_date),
   CONSTRAINT fk_daily_login_nation FOREIGN KEY (nation_id) REFERENCES nations(id) ON DELETE CASCADE,
@@ -215,9 +216,6 @@ CREATE TABLE IF NOT EXISTS alliances (
   emblem_url VARCHAR(500) NOT NULL DEFAULT '',
   community_url VARCHAR(500) NOT NULL DEFAULT '',
   join_policy ENUM('open','apply','invite_only') NOT NULL DEFAULT 'apply',
-  minimum_cities INT NOT NULL DEFAULT 1,
-  minimum_age_days INT NOT NULL DEFAULT 0,
-  minimum_infrastructure INT NOT NULL DEFAULT 0,
   tax_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
   level INT NOT NULL DEFAULT 1,
   experience BIGINT NOT NULL DEFAULT 0,
@@ -257,13 +255,16 @@ CREATE TABLE IF NOT EXISTS alliance_tax_brackets (
   name VARCHAR(80) NOT NULL,
   is_default BOOLEAN NOT NULL DEFAULT FALSE,
   role_id CHAR(36) NULL,
+  nation_id CHAR(36) NULL,
   minimum_provinces INT NOT NULL DEFAULT 0,
   cash_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
   resource_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   UNIQUE KEY uq_alliance_tax_name(alliance_id,name),
+  UNIQUE KEY uq_alliance_tax_nation(nation_id),
   CONSTRAINT fk_tax_bracket_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
   CONSTRAINT fk_tax_bracket_role FOREIGN KEY(role_id) REFERENCES alliance_roles(id) ON DELETE SET NULL,
+  CONSTRAINT fk_tax_bracket_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   CHECK(cash_rate BETWEEN 0 AND 100),
   CHECK(resource_rate BETWEEN 0 AND 100)
 ) ENGINE=InnoDB;

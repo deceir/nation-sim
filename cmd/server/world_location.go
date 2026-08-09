@@ -73,10 +73,10 @@ func (a *app) resetNationLocation(w http.ResponseWriter, r *http.Request, u user
 	}
 	cost := int64(0)
 	if currentLat.Valid && currentLng.Valid {
-		cost = 50000
+		cost = 50000 * yenScale
 	}
 	if treasury < cost {
-		problem(w, http.StatusConflict, "Resetting national location requires ¥50,000.")
+		problem(w, http.StatusConflict, "Resetting national location requires ¥5,000,000.")
 		return
 	}
 	if _, err = tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-?,continent=?,location_lat=?,location_lng=? WHERE id=?`, cost, continent, in.Latitude, in.Longitude, nid); err != nil {
@@ -86,7 +86,7 @@ func (a *app) resetNationLocation(w http.ResponseWriter, r *http.Request, u user
 	// The capital anchors the nation's geographic position for future mechanics.
 	tx.ExecContext(r.Context(), `UPDATE province_economies p JOIN cities c ON c.id=p.city_id SET p.latitude=?,p.longitude=? WHERE c.nation_id=? AND c.created_at=(SELECT first_created FROM (SELECT MIN(created_at) first_created FROM cities WHERE nation_id=?) x)`, in.Latitude, in.Longitude, nid, nid)
 	if cost > 0 {
-		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'location_reset',-50000,?)`, uuid(), nid, "Reset national location to "+continent)
+		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'location_reset',?,?)`, uuid(), nid, -cost, "Reset national location to "+continent)
 	}
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not complete location change.")

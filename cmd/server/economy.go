@@ -21,13 +21,13 @@ func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
 		var level, slots, used int
 		var invested, populationCapacity int64
 		rows.Scan(&id, &name, &level, &invested, &slots, &populationCapacity, &used, &industries)
-		expandCost := int64(20000) << max(0, slots-2)
+		expandCost := (int64(20000) * yenScale) << max(0, slots-2)
 		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity": populationCapacity, "nextExpansionCost": expandCost, "industries": industries})
 	}
 	var cityCount int
 	var last sql.NullTime
 	a.db.QueryRow(r.Context(), `SELECT count(*),max(c.created_at) FROM cities c JOIN nations n ON n.id=c.nation_id WHERE n.owner_id=?`, u.ID).Scan(&cityCount, &last)
-	newCityCost := int64(50000) << max(0, cityCount-1)
+	newCityCost := (int64(50000) * yenScale) << max(0, cityCount-1)
 	var nextCityAt *time.Time
 	if cityCount > 1 && last.Valid {
 		t := last.Time.Add(7 * 24 * time.Hour)
@@ -133,7 +133,7 @@ func (a *app) investCity(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This city has no open improvement slots. Expand it or found another city.")
 		return
 	}
-	cost := int64(10000 * (used + 1) * (used + 1))
+	cost := int64(10000*yenScale) * int64((used+1)*(used+1))
 	if cash < cost {
 		problem(w, 409, "Insufficient treasury for this program.")
 		return
@@ -167,7 +167,7 @@ func (a *app) expandCity(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This city has reached its maximum capacity. Found a new city.")
 		return
 	}
-	cost := int64(20000) << max(0, slots-2)
+	cost := (int64(20000) * yenScale) << max(0, slots-2)
 	if cash < cost {
 		problem(w, 409, "Insufficient treasury for this expansion.")
 		return
@@ -209,7 +209,7 @@ func (a *app) investIndustry(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This city has no open improvement slots.")
 		return
 	}
-	cost := int64(20000 * (current + 1) * (current + 1))
+	cost := int64(20000*yenScale) * int64((current+1)*(current+1))
 	if cash < cost {
 		problem(w, 409, "Insufficient treasury.")
 		return
@@ -237,7 +237,7 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	satisfactionFactor := 0.5 + satisfaction/200
 	productivityFactor := 1 + technology/500
 	dailyCash := int64(baseDaily * employmentFactor * educationFactor * satisfactionFactor * productivityFactor)
-	hourlyCash := dailyCash / 24
+	hourlyCash := dailyCash / 24 * yenScale
 	var populationCapacity int64
 	a.db.QueryRow(r.Context(), `SELECT COALESCE(sum(population_capacity),0) FROM cities WHERE nation_id=?`, nid).Scan(&populationCapacity)
 	dailyPopulationGrowth := int64(float64(pop) * 0.002 * satisfactionFactor)

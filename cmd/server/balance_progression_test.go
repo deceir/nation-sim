@@ -5,7 +5,7 @@ import "testing"
 func TestNewNationEconomyHasRewardingRunway(t *testing.T) {
 	n := ModelNation{TaxRate: 25, Happiness: 65, Education: 40, Technology: 20, Projects: map[string]bool{}, LongTermProjects: map[string]bool{}, Cities: []ModelCity{{ID: "capital", Name: "Capital", Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}}
 	cash := calculateEconomy(n)
-	if cash.NetDailyCash < 75000 || cash.NetDailyCash > 175000 {
+	if cash.NetDailyCash < 7500000 || cash.NetDailyCash > 17500000 {
 		t.Fatalf("starter daily cash should fund visible progress without trivializing expansion: %.0f", cash.NetDailyCash)
 	}
 	in := strategicInput{Gear: "balanced", Education: 40, Technology: 20, Policies: map[string]bool{}, Quotas: map[string]float64{"processed_foods": 35, "construction_materials": 45, "basic_goods": 20}, Provinces: []provinceStrategy{{ID: "capital", Infra: 100, Specialization: "mixed", Deposits: map[string]float64{"foodstuffs": startingDepositRichness("Asia", "foodstuffs"), "timber": startingDepositRichness("Asia", "timber"), "fibers": startingDepositRichness("Asia", "fibers"), "basic_metals": startingDepositRichness("Asia", "basic_metals"), "energy": startingDepositRichness("Asia", "energy"), "strategic_minerals": startingDepositRichness("Asia", "strategic_minerals")}, Upgrades: map[string]int{}}}}
@@ -21,7 +21,7 @@ func TestNewNationEconomyHasRewardingRunway(t *testing.T) {
 func TestProgressionCostsHaveDistinctTimeHorizons(t *testing.T) {
 	secondCash, secondMaterials, _ := provinceFoundingCosts(1, "balanced", map[string]bool{})
 	thirdCash, thirdMaterials, _ := provinceFoundingCosts(2, "balanced", map[string]bool{})
-	if secondCash != 225000 || secondMaterials != 40 {
+	if secondCash != 22500000 || secondMaterials != 40 {
 		t.Fatalf("unexpected second Province runway: %d / %.0f", secondCash, secondMaterials)
 	}
 	if thirdCash < secondCash*5 || thirdMaterials < secondMaterials*4 {
