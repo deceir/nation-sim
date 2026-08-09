@@ -18,19 +18,19 @@ const projected=([lng,lat]:Point)=>`${(lng+180)/360*1000},${(90-lat)/180*500}`;
 function inPolygon(point:Point,polygon:Point[]){let inside=false;for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){const[aLng,aLat]=polygon[i],[bLng,bLat]=polygon[j];if((aLat>point[1])!==(bLat>point[1])&&point[0]<(bLng-aLng)*(point[1]-aLat)/(bLat-aLat)+aLng)inside=!inside}return inside}
 function locate(latitude:number,longitude:number){return shapes.find(shape=>inPolygon([longitude,latitude],shape.points))?.name}
 
-export default function WorldLocationPicker({value,onChange,disabled=false}:{value:WorldLocation|null;onChange:(value:WorldLocation)=>void;disabled?:boolean}){
-  const svg=useRef<SVGSVGElement>(null),labelId=useId(),[hint,setHint]=useState('Select a point on land.');
+export default function WorldLocationPicker({value,onChange,disabled=false,readOnly=false,compact=false}:{value:WorldLocation|null;onChange:(value:WorldLocation)=>void;disabled?:boolean;readOnly?:boolean;compact?:boolean}){
+  const svg=useRef<SVGSVGElement>(null),labelId=useId(),[hint,setHint]=useState(readOnly?'Approximate national position':'Select a point on land.');
   const choose=(event:React.MouseEvent<SVGSVGElement>)=>{
-    if(disabled||!svg.current)return;
+    if(disabled||readOnly||!svg.current)return;
     const matrix=svg.current.getScreenCTM();if(!matrix)return;
     const cursor=svg.current.createSVGPoint();cursor.x=event.clientX;cursor.y=event.clientY;
     const point=cursor.matrixTransform(matrix.inverse()),longitude=point.x/1000*360-180,latitude=90-point.y/500*180,continent=locate(latitude,longitude);
     if(!continent){setHint('That point is ocean. Choose a position on land.');return}
     const next={latitude:Number(latitude.toFixed(4)),longitude:Number(longitude.toFixed(4)),continent};onChange(next);setHint(`${continent} selected.`);
   };
-  return <div className="world-location-picker">
-    <div className="location-heading"><div><span className="eyebrow">NATIONAL LOCATION</span><h3>Pick a position on the world map</h3></div>{value&&<strong>{value.continent}</strong>}</div>
-    <p>Click the approximate location of your capital. Diplomatia determines the continent automatically and stores the coordinates for future distance-based mechanics.</p>
+  return <div className={`world-location-picker${readOnly?' readonly':''}${compact?' compact':''}`}>
+    <div className="location-heading"><div><span className="eyebrow">NATIONAL LOCATION</span><h3>{readOnly?'Position in the world':'Pick a position on the world map'}</h3></div>{value&&<strong>{value.continent}</strong>}</div>
+    {!readOnly&&<p>Click the approximate location of your capital. Diplomatia determines the continent automatically and stores the coordinates for future distance-based mechanics.</p>}
     <svg ref={svg} viewBox="0 0 1000 500" onClick={choose} role="img" aria-labelledby={labelId} className={disabled?'disabled':''}>
       <title id={labelId}>Interactive world map location picker</title>
       <defs><radialGradient id="ocean"><stop stopColor="#1f2a36"/><stop offset="1" stopColor="#10161e"/></radialGradient></defs>
