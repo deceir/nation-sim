@@ -52,6 +52,10 @@ func main() {
 		{"cities", "pollution", "DECIMAL(7,3) NOT NULL DEFAULT 0"},
 		{"cities", "disease_rate", "DECIMAL(7,5) NOT NULL DEFAULT 0.02"},
 		{"cities", "crime_rate", "DECIMAL(7,5) NOT NULL DEFAULT 0.03"},
+		{"market_orders", "channel", "ENUM('public','private') NOT NULL DEFAULT 'public'"},
+		{"market_orders", "target_nation_id", "CHAR(36) NULL"},
+		{"market_orders", "escrow_cash", "BIGINT NOT NULL DEFAULT 0"},
+		{"market_orders", "escrow_goods", "DECIMAL(20,3) NOT NULL DEFAULT 0"},
 	}
 	for _, u := range upgrades {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
@@ -64,7 +68,18 @@ func main() {
 	if _, err = db.Exec(`ALTER TABLE nations ALTER COLUMN currency_name SET DEFAULT 'Yen'`); err != nil {
 		log.Fatal(err)
 	}
+	for _, q := range []string{
+		`ALTER TABLE market_orders MODIFY resource VARCHAR(40) NOT NULL`,
+		`ALTER TABLE market_orders MODIFY quantity DECIMAL(20,3) NOT NULL`,
+		`ALTER TABLE market_orders MODIFY remaining DECIMAL(20,3) NOT NULL`,
+		`ALTER TABLE market_orders MODIFY status ENUM('open','pending','filled','cancelled','rejected') NOT NULL DEFAULT 'open'`,
+	} {
+		if _, err = db.Exec(q); err != nil {
+			log.Fatal(err)
+		}
+	}
 	bootstrap := []string{
+		`UPDATE market_orders SET status='cancelled' WHERE status IN('open','pending') AND escrow_cash=0 AND escrow_goods=0`,
 		`INSERT IGNORE INTO nation_economic_strategy(nation_id) SELECT id FROM nations`,
 		`INSERT IGNORE INTO province_economies(city_id,latitude,longitude) SELECT c.id,CASE n.continent WHEN 'Africa' THEN 5 WHEN 'Asia' THEN 34 WHEN 'Europe' THEN 50 WHEN 'North America' THEN 40 WHEN 'South America' THEN -15 WHEN 'Oceania' THEN -25 ELSE -75 END,CASE n.continent WHEN 'Africa' THEN 20 WHEN 'Asia' THEN 100 WHEN 'Europe' THEN 15 WHEN 'North America' THEN -100 WHEN 'South America' THEN -60 WHEN 'Oceania' THEN 135 ELSE 0 END FROM cities c JOIN nations n ON n.id=c.nation_id`,
 		`INSERT IGNORE INTO province_deposits(city_id,resource,richness) SELECT c.id,r.resource,CASE r.resource WHEN 'foodstuffs' THEN 1.15 WHEN 'timber' THEN IF(n.continent IN('South America','North America'),1.35,.85) WHEN 'fibers' THEN IF(n.continent IN('Asia','Africa'),1.3,.8) WHEN 'basic_metals' THEN IF(n.continent IN('Africa','South America'),1.3,.9) WHEN 'energy' THEN IF(n.continent IN('Asia','North America'),1.25,.85) ELSE IF(n.continent IN('Africa','Oceania'),1.25,.75) END FROM cities c JOIN nations n ON n.id=c.nation_id CROSS JOIN (SELECT 'foodstuffs' resource UNION ALL SELECT 'timber' UNION ALL SELECT 'fibers' UNION ALL SELECT 'basic_metals' UNION ALL SELECT 'energy' UNION ALL SELECT 'strategic_minerals') r`,

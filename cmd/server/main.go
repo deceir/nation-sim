@@ -91,9 +91,13 @@ func main() {
 	mux.HandleFunc("PATCH /api/notifications/read", a.auth(a.readNotifications))
 	mux.HandleFunc("POST /api/dev/notifications", a.auth(a.broadcastGameNotification))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
-	mux.HandleFunc("GET /api/world/stats", a.auth(a.worldStats))
+	mux.HandleFunc("GET /api/world/stats", a.worldStats)
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
 	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/accept", a.auth(a.acceptMarketOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/cancel", a.auth(a.cancelMarketOrder))
+	mux.HandleFunc("POST /api/market/orders/{id}/reject", a.auth(a.rejectMarketOrder))
+	mux.HandleFunc("GET /api/market/shipments/{id}", a.auth(a.shipmentDetail))
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
 	mux.HandleFunc("GET /api/alliances", a.auth(a.allianceDirectory))
 	mux.HandleFunc("POST /api/alliances", a.auth(a.createAlliance))
@@ -286,49 +290,6 @@ func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	write(w, 200, map[string]bool{"ok": true})
-}
-func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.Query(r.Context(), `SELECT o.id,n.name,o.side,o.resource,o.remaining,o.unit_price,o.created_at FROM market_orders o JOIN nations n ON n.id=o.nation_id WHERE o.status='open' ORDER BY o.created_at DESC LIMIT 100`)
-	if e != nil {
-		problem(w, 500, "Market unavailable.")
-		return
-	}
-	defer rows.Close()
-	out := []map[string]any{}
-	for rows.Next() {
-		var id, name, side, res string
-		var qty, price int64
-		var at time.Time
-		rows.Scan(&id, &name, &side, &res, &qty, &price, &at)
-		out = append(out, map[string]any{"id": id, "nation": name, "side": side, "resource": res, "quantity": qty, "unitPrice": price, "createdAt": at})
-	}
-	write(w, 200, out)
-}
-func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct {
-		Side, Resource      string
-		Quantity, UnitPrice int64
-	}
-	if !decode(w, r, &in) {
-		return
-	}
-	if (in.Side != "buy" && in.Side != "sell") || (in.Resource != "coal" && in.Resource != "steel" && in.Resource != "food") || in.Quantity < 1 || in.UnitPrice < 1 {
-		problem(w, 400, "Invalid order.")
-		return
-	}
-	var nid string
-	if a.db.QueryRow(r.Context(), `SELECT id FROM nations WHERE owner_id=?`, u.ID).Scan(&nid) != nil {
-		problem(w, 409, "Create a nation first.")
-		return
-	}
-	orderID := uuid()
-	_, e := a.db.Exec(r.Context(), `INSERT INTO market_orders(id,nation_id,side,resource,quantity,remaining,unit_price) VALUES(?,?,?,?,?,?,?)`, orderID, nid, in.Side, in.Resource, in.Quantity, in.Quantity, in.UnitPrice)
-	if e != nil {
-		problem(w, 500, "Could not place order.")
-		return
-	}
-	a.db.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'market','Market order published',?)`, uuid(), nid, fmt.Sprintf("Your %s order for %d %s at ¥%d per unit is now open.", in.Side, in.Quantity, in.Resource, in.UnitPrice))
-	write(w, 201, map[string]bool{"ok": true})
 }
 func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct{ Kind, DefenderID string }

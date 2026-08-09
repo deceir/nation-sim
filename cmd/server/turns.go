@@ -110,5 +110,6 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		}
 	}
 	a.db.ExecContext(ctx, `UPDATE economy_turns SET nations_processed=? WHERE turn_at=?`, processed, turn)
+	a.processTradeShipments(ctx, turn)
 	log.Printf("hourly economic turn processed %d nations", processed)
 }
