@@ -493,7 +493,24 @@ func (a *app) nationTradeHistory(w http.ResponseWriter, r *http.Request, _ user)
 		}
 		items = append(items, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": unitPrice, "goodsValue": goodsValue, "shippingFee": shippingFee, "status": status, "departedAt": departed, "estimatedArrivalAt": estimated, "deliveredAt": delivered, "direction": direction, "partner": partner, "partnerID": partnerID})
 	}
-	write(w, 200, map[string]any{"nationID": nationID, "nationName": nationName, "items": items})
+	bankItems := []map[string]any{}
+	bankRows, err := a.db.QueryContext(r.Context(), `SELECT t.id,COALESCE(t.batch_id,''),t.kind,t.resource,t.amount,t.created_at,a.id,a.name,COALESCE(actor.id,''),COALESCE(actor.name,'') FROM alliance_bank_transactions t JOIN alliances a ON a.id=t.alliance_id LEFT JOIN nations actor ON actor.id=t.actor_nation_id WHERE (t.kind='deposit' AND t.actor_nation_id=?) OR (t.kind IN('withdrawal','grant','balance_adjustment') AND t.recipient_nation_id=?) ORDER BY t.created_at DESC LIMIT 200`, nationID, nationID)
+	if err != nil {
+		problem(w, 500, "Alliance bank history unavailable.")
+		return
+	}
+	defer bankRows.Close()
+	for bankRows.Next() {
+		var id, batchID, kind, resource, allianceID, allianceName, actorID, actorName string
+		var amount float64
+		var createdAt time.Time
+		if err = bankRows.Scan(&id, &batchID, &kind, &resource, &amount, &createdAt, &allianceID, &allianceName, &actorID, &actorName); err != nil {
+			problem(w, 500, "Alliance bank history could not be read.")
+			return
+		}
+		bankItems = append(bankItems, map[string]any{"id": id, "batchID": batchID, "kind": kind, "resource": resource, "amount": amount, "createdAt": createdAt, "allianceID": allianceID, "allianceName": allianceName, "actorID": actorID, "actorName": actorName})
+	}
+	write(w, 200, map[string]any{"nationID": nationID, "nationName": nationName, "items": items, "bankItems": bankItems})
 }
 
 func shipmentDelayRoll(id string, turn time.Time) float64 {

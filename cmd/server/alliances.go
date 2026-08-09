@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -161,7 +162,7 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	logs := []map[string]any{}
 	if isMember && p.Audit {
-		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.id,''),COALESCE(n.name,'System'),COALESCE(recipient.id,''),COALESCE(recipient.name,''),COALESCE(t.batch_id,'') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id LEFT JOIN nations recipient ON recipient.id=t.recipient_nation_id WHERE t.alliance_id=? ORDER BY t.created_at DESC LIMIT 50`, id)
+		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.id,''),COALESCE(n.name,'System'),COALESCE(recipient.id,''),COALESCE(recipient.name,''),COALESCE(t.batch_id,'') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id LEFT JOIN nations recipient ON recipient.id=t.recipient_nation_id WHERE t.alliance_id=? AND t.kind<>'tax' ORDER BY t.created_at DESC LIMIT 50`, id)
 		for rows.Next() {
 			var kind, res, memo, actorID, actor, recipientID, recipient, batchID string
 			var amount float64
@@ -563,6 +564,17 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 				return
 			}
 		}
+		var allianceName string
+		tx.QueryRowContext(r.Context(), `SELECT name FROM alliances WHERE id=?`, aid).Scan(&allianceName)
+		balanceEffect := "This Alliance grant did not reduce your tracked member balance."
+		if in.Kind == "withdrawal" {
+			balanceEffect = "The same amounts were deducted from your tracked member balance."
+		}
+		message := fmt.Sprintf("%s sent your nation %s. %s", allianceName, formatAllianceAssets(in.Payouts, keys), balanceEffect)
+		if _, err = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Alliance bank payout',?)`, uuid(), recipient, message); err != nil {
+			problem(w, 500, "The payout notification could not be recorded.")
+			return
+		}
 		if err = tx.Commit(); err != nil {
 			problem(w, 500, "The multi-asset payout could not be completed.")
 			return
@@ -653,6 +665,17 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 			tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, recipient, in.Resource, in.Amount)
 		}
 		in.RecipientNationID = recipient
+		var allianceName string
+		tx.QueryRowContext(r.Context(), `SELECT name FROM alliances WHERE id=?`, aid).Scan(&allianceName)
+		balanceEffect := "This Alliance grant did not reduce your tracked member balance."
+		if in.Kind == "withdrawal" {
+			balanceEffect = "The same amount was deducted from your tracked member balance."
+		}
+		message := fmt.Sprintf("%s sent your nation %s. %s", allianceName, formatAllianceAssets(map[string]float64{in.Resource: in.Amount}, []string{in.Resource}), balanceEffect)
+		if _, e = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Alliance bank payout',?)`, uuid(), recipient, message); e != nil {
+			problem(w, 500, "The payout notification could not be recorded.")
+			return
+		}
 	}
 	kind := in.Kind
 	if kind == "" {
@@ -736,11 +759,32 @@ func (a *app) adjustAllianceMemberBalance(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	var allianceName string
+	tx.QueryRowContext(r.Context(), `SELECT name FROM alliances WHERE id=?`, aid).Scan(&allianceName)
+	message := fmt.Sprintf("%s modified your Alliance member balances: %s. No assets were transferred.", allianceName, formatAllianceAssets(in.Adjustments, keys))
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'economic','Alliance balance adjusted',?)`, uuid(), in.NationID, message); err != nil {
+		problem(w, 500, "The balance adjustment notification could not be recorded.")
+		return
+	}
 	if tx.Commit() != nil {
 		problem(w, 500, "Member balance adjustment could not be saved.")
 		return
 	}
 	write(w, 200, map[string]bool{"ok": true})
+}
+
+func formatAllianceAssets(amounts map[string]float64, keys []string) string {
+	parts := make([]string, 0, len(keys))
+	for _, resource := range keys {
+		amount := amounts[resource]
+		if resource == "cash" {
+			parts = append(parts, fmt.Sprintf("%+.0f Yen", amount))
+			continue
+		}
+		value := strings.TrimRight(strings.TrimRight(fmt.Sprintf("%+.3f", amount), "0"), ".")
+		parts = append(parts, value+" t "+commodityName(resource))
+	}
+	return strings.Join(parts, ", ")
 }
 func nullString(s string) any {
 	if s == "" {
