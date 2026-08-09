@@ -1,0 +1,2 @@
+.trade-form label>small{color:var(--muted);font-size:9px;font-weight:400}.trade-review{padding:14px 16px;border:1px solid #d6b66f66;border-left:3px solid #d6b66f;background:linear-gradient(110deg,#d6b66f10,transparent)}.trade-review h4{margin:.35rem 0;font:20px 'Libre Caslon Display',serif}.trade-review p{margin:.3rem 0}.offer-action{display:flex;justify-content:flex-end;gap:7px;flex-wrap:wrap}@media(max-width:1000px){.offer-action{justify-content:flex-start}}
+[data-theme="light"] .trade-review{background:#fff9eb;border-color:#b7944c}

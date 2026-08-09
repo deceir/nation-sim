@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -116,13 +117,14 @@ func (a *app) market(w http.ResponseWriter, r *http.Request, u user) {
 
 func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct {
-		Side, Resource, Channel, TargetNationID string
-		Quantity                                float64
-		UnitPrice                               int64
+		Side, Resource, Channel, TargetNationID, TargetNationName string
+		Quantity                                                  float64
+		UnitPrice                                                 int64
 	}
 	if !decode(w, r, &in) {
 		return
 	}
+	in.TargetNationName = strings.TrimSpace(in.TargetNationName)
 	if (in.Side != "buy" && in.Side != "sell") || !tradeCommodities[in.Resource] || in.Quantity <= 0 || in.Quantity > 1e9 || in.UnitPrice < 1 || in.UnitPrice > 1e12 {
 		problem(w, 400, "Invalid trade offer.")
 		return
@@ -150,10 +152,21 @@ func (a *app) placeOrder(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	if in.Channel == "private" {
-		var exists bool
-		tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM nations WHERE id=? AND id<>?)`, in.TargetNationID, nid).Scan(&exists)
-		if !exists {
-			problem(w, 400, "Choose another nation for this direct trade.")
+		if in.TargetNationName != "" {
+			if err = tx.QueryRowContext(r.Context(), `SELECT id FROM nations WHERE LOWER(name)=LOWER(?) AND id<>?`, in.TargetNationName, nid).Scan(&in.TargetNationID); err != nil {
+				problem(w, 404, "No other nation exists with that exact name.")
+				return
+			}
+		} else {
+			var exists bool
+			tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM nations WHERE id=? AND id<>?)`, in.TargetNationID, nid).Scan(&exists)
+			if !exists {
+				problem(w, 400, "Enter another nation's exact name for this direct trade.")
+				return
+			}
+		}
+		if in.TargetNationID == "" {
+			problem(w, 400, "Enter another nation's exact name for this direct trade.")
 			return
 		}
 	} else {
