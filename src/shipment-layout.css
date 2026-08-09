@@ -18,3 +18,48 @@
   max-width: 900px;
   margin: 18px auto 0;
 }
+
+.maritime-route .sea-leg,
+.maritime-route .land-leg {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.maritime-route .sea-leg {
+  stroke: #d6b66f;
+  stroke-width: 2.5;
+}
+
+.maritime-route .land-leg {
+  stroke: #8ba5bc;
+  stroke-width: 2;
+  stroke-dasharray: 5 5;
+}
+
+.route-legend {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  display: flex;
+  gap: 12px;
+  padding: 5px 8px;
+  background: #0d1219dd;
+  color: #c9c9c9;
+  font-size: 9px;
+}
+
+.route-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.route-legend i {
+  width: 14px;
+  height: 2px;
+  background: #d6b66f;
+}
+
+.route-legend i.land {
+  background: repeating-linear-gradient(90deg,#8ba5bc 0 4px,transparent 4px 7px);
+}
