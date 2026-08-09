@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"strings"
@@ -285,6 +286,7 @@ func (a *app) acceptMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 	shipmentID, arrival := uuid(), time.Now().UTC().Add(time.Duration(turns)*time.Hour)
 	_, err = tx.ExecContext(r.Context(), `INSERT INTO trade_shipments(id,order_id,seller_nation_id,buyer_nation_id,resource,quantity,unit_price,goods_value,shipping_fee,distance_modifier,risk_percent,turns_total,turns_remaining,origin_lat,origin_lng,destination_lat,destination_lng,estimated_arrival_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, shipmentID, r.PathValue("id"), seller.ID, buyer.ID, resource, quantity, unitPrice, value, fee, distance, risk, turns, turns, seller.Lat, seller.Lng, buyer.Lat, buyer.Lng, arrival)
 	if err != nil {
+		log.Printf("market shipment insert failed for order %s: %v", r.PathValue("id"), err)
 		problem(w, 500, "Could not dispatch shipment.")
 		return
 	}

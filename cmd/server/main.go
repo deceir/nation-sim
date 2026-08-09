@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -48,7 +48,14 @@ type app struct{ db *database }
 type user struct{ ID, Email, ThemePreference string }
 
 func main() {
-	raw, err := sql.Open("mysql", env("DATABASE_URL", "diplomatia:diplomatia@tcp(localhost:3306)/diplomatia?parseTime=true&multiStatements=true"))
+	dsn := env("DATABASE_URL", "diplomatia:diplomatia@tcp(localhost:3306)/diplomatia?parseTime=true&multiStatements=true")
+	config, err := mysql.ParseDSN(dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	config.ParseTime = true
+	config.MultiStatements = true
+	raw, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		log.Fatal(err)
 	}
