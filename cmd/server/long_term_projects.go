@@ -68,6 +68,29 @@ func init() {
 	} {
 		add(p)
 	}
+	// Commodity requirements should reinforce trade and preparation without
+	// eclipsing the multi-million-Yen gate by several months. Specialization
+	// projects remain deliberately powerful because limited slots are their
+	// primary long-run opportunity cost.
+	primary := map[string]bool{"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true, "strategic_minerals": true}
+	advanced := map[string]bool{"consumer_goods": true, "luxury_goods": true, "military_equipment": true}
+	for id, p := range longTermProjects {
+		for commodity, amount := range p.Costs {
+			p.Costs[commodity] = math.Ceil(amount*.12/10) * 10
+		}
+		if p.Category == "specialization" {
+			switch {
+			case primary[p.Target]:
+				p.ProductionBoost = 1.00
+			case advanced[p.Target]:
+				p.ProductionBoost = .80
+			default:
+				p.ProductionBoost = .90
+			}
+			p.Description = "+" + formatPercent(p.ProductionBoost) + " permanent " + commodityName(p.Target) + " production."
+		}
+		longTermProjects[id] = p
+	}
 }
 
 func fmtInt(v int64) string       { return strconv.FormatInt(v, 10) }

@@ -43,6 +43,22 @@ var socialPolicies = map[string]policySpec{
 var strategicCommodities = []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals", "textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"}
 var commodityRecipes = map[string]map[string]float64{"textiles": {"fibers": .8, "energy": .15}, "processed_foods": {"foodstuffs": .9, "energy": .1}, "construction_materials": {"timber": .45, "basic_metals": .45, "energy": .15}, "basic_goods": {"basic_metals": .5, "timber": .2, "energy": .2}, "consumer_goods": {"basic_goods": .55, "fibers": .2, "energy": .2}, "military_equipment": {"basic_metals": .7, "energy": .35, "strategic_minerals": .12}, "luxury_goods": {"consumer_goods": .5, "strategic_minerals": .08, "energy": .15}}
 
+func startingDepositRichness(continent, resource string) float64 {
+	profiles := map[string]map[string]float64{
+		"Africa":        {"foodstuffs": 1.05, "timber": .75, "fibers": 1.10, "basic_metals": 1.35, "energy": .90, "strategic_minerals": 1.30},
+		"Asia":          {"foodstuffs": 1.05, "timber": .70, "fibers": 1.35, "basic_metals": .90, "energy": 1.25, "strategic_minerals": .85},
+		"Europe":        {"foodstuffs": 1.10, "timber": .90, "fibers": .90, "basic_metals": 1.00, "energy": .70, "strategic_minerals": .70},
+		"North America": {"foodstuffs": 1.10, "timber": 1.35, "fibers": .75, "basic_metals": .90, "energy": 1.25, "strategic_minerals": 1.00},
+		"South America": {"foodstuffs": 1.25, "timber": 1.30, "fibers": 1.15, "basic_metals": 1.20, "energy": .70, "strategic_minerals": .85},
+		"Oceania":       {"foodstuffs": .90, "timber": .85, "fibers": .75, "basic_metals": 1.20, "energy": 1.05, "strategic_minerals": 1.35},
+		"Antarctica":    {"foodstuffs": .45, "timber": .45, "fibers": .45, "basic_metals": .65, "energy": 1.10, "strategic_minerals": 1.50},
+	}
+	if value := profiles[continent][resource]; value > 0 {
+		return value
+	}
+	return 1
+}
+
 func commodityName(key string) string {
 	parts := strings.Split(key, "_")
 	for i, part := range parts {
@@ -144,11 +160,11 @@ func calculateStrategy(in strategicInput) strategicResult {
 			if resource == "foodstuffs" || resource == "fibers" {
 				agricultureBoost += agriculture * .03
 			}
-			v := p.Infra * .075 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment
+			v := p.Infra * .10 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment
 			out[resource] += v
 			r.Production[resource] += v
 		}
-		capacity := p.Infra * .035 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment
+		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 			quotaTotal += math.Max(0, in.Quotas[k])
@@ -338,7 +354,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 			nextProvinceAt = next
 		}
 	}
-	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥200,000 × N^2.6 × Gear × Policy"}
+	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥225,000 × N^2.6 × Gear × Policy"}
 	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
 }
 
@@ -476,6 +492,7 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 
 func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult, foodNeed float64) error {
 	produced := []string{}
+	producedAmounts := map[string]float64{}
 	for _, commodity := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
 		hourly := result.Production[commodity] / 24
 		if hourly <= 0 {
@@ -485,6 +502,7 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 			return e
 		}
 		produced = append(produced, fmt.Sprintf("%.2f %s", hourly, commodityName(commodity)))
+		producedAmounts[commodity] += hourly
 	}
 	// Population has first claim on food before industry converts primary inputs.
 	if _, e := tx.ExecContext(ctx, `INSERT IGNORE INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,'foodstuffs',0)`, nid); e != nil {
@@ -521,6 +539,23 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 			return e
 		}
 		produced = append(produced, fmt.Sprintf("%.2f %s", actual, commodityName(commodity)))
+		producedAmounts[commodity] += actual
+	}
+	allianceID, allianceName, _, resourceTaxRate := applicableAllianceTax(ctx, tx, nid)
+	if allianceID != "" && resourceTaxRate > 0 {
+		for commodity, gross := range producedAmounts {
+			tax := gross * resourceTaxRate / 100
+			if tax <= 0 {
+				continue
+			}
+			if _, e := tx.ExecContext(ctx, `UPDATE nation_stockpiles SET amount=GREATEST(0,amount-?) WHERE nation_id=? AND commodity=?`, tax, nid, commodity); e != nil {
+				return e
+			}
+			if _, e := tx.ExecContext(ctx, `INSERT INTO alliance_stockpiles(alliance_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, allianceID, commodity, tax); e != nil {
+				return e
+			}
+			tx.ExecContext(ctx, `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo) VALUES(?,?,?,'tax',?,?,?)`, uuid(), allianceID, nid, commodity, int64(math.Ceil(tax)), fmt.Sprintf("%.2f%% resource tax for %s", resourceTaxRate, allianceName))
+		}
 	}
 	if len(produced) > 0 || foodNeed > 0 {
 		message := fmt.Sprintf("Population upkeep consumed %.2f Foodstuffs.", foodConsumed)

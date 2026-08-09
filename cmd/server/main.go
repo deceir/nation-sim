@@ -117,7 +117,20 @@ func main() {
 	mux.HandleFunc("POST /api/alliances/{id}/apply", a.auth(a.applyAlliance))
 	mux.HandleFunc("GET /api/alliances/{id}/applications", a.auth(a.allianceApplications))
 	mux.HandleFunc("POST /api/alliances/{id}/applications/{applicationID}/accept", a.auth(a.acceptAllianceApplication))
+	mux.HandleFunc("POST /api/alliances/{id}/applications/{applicationID}/reject", a.auth(a.rejectAllianceApplication))
+	mux.HandleFunc("POST /api/alliances/{id}/announcements", a.auth(a.postAllianceAnnouncement))
 	mux.HandleFunc("POST /api/alliances/{id}/bank", a.auth(a.allianceBankTransfer))
+	mux.HandleFunc("POST /api/alliances/{id}/roles", a.auth(a.createAllianceRole))
+	mux.HandleFunc("PATCH /api/alliances/{id}/roles/{roleID}", a.auth(a.updateAllianceRole))
+	mux.HandleFunc("DELETE /api/alliances/{id}/roles/{roleID}", a.auth(a.deleteAllianceRole))
+	mux.HandleFunc("PATCH /api/alliances/{id}/members/{nationID}/role", a.auth(a.assignAllianceRole))
+	mux.HandleFunc("DELETE /api/alliances/{id}/members/{nationID}", a.auth(a.removeAllianceMember))
+	mux.HandleFunc("POST /api/alliances/{id}/tax-brackets", a.auth(a.createAllianceTaxBracket))
+	mux.HandleFunc("PATCH /api/alliances/{id}/tax-brackets/{bracketID}", a.auth(a.updateAllianceTaxBracket))
+	mux.HandleFunc("DELETE /api/alliances/{id}/tax-brackets/{bracketID}", a.auth(a.deleteAllianceTaxBracket))
+	mux.HandleFunc("POST /api/alliances/{id}/treaties", a.auth(a.proposeAllianceTreaty))
+	mux.HandleFunc("POST /api/alliances/{id}/treaties/{treatyID}/{action}", a.auth(a.resolveAllianceTreaty))
+	mux.HandleFunc("DELETE /api/alliances/{id}/treaties/{treatyID}", a.auth(a.cancelAllianceTreaty))
 	addr := ":" + env("PORT", "8080")
 	go a.runHourlyTurns()
 	log.Printf("api listening on %s", addr)
@@ -261,14 +274,20 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	tx.Exec(r.Context(), `INSERT INTO nation_economic_strategy(nation_id) VALUES(?)`, nid)
 	tx.Exec(r.Context(), `INSERT INTO province_economies(city_id,latitude,longitude) VALUES(?,?,?)`, cid, in.Latitude, in.Longitude)
 	for _, resource := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
-		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,1)`, cid, resource)
+		tx.Exec(r.Context(), `INSERT INTO province_deposits(city_id,resource,richness) VALUES(?,?,?)`, cid, resource, startingDepositRichness(p.Continent, resource))
 	}
 	for _, commodity := range strategicCommodities {
 		initial := float64(0)
 		if map[string]bool{"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true}[commodity] {
 			initial = 500
 		}
+		if starter, ok := map[string]float64{"construction_materials": 75, "processed_foods": 100, "basic_goods": 75}[commodity]; ok {
+			initial = starter
+		}
 		tx.Exec(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?)`, nid, commodity, initial)
+	}
+	for commodity, priority := range map[string]float64{"processed_foods": 35, "construction_materials": 45, "basic_goods": 20} {
+		tx.Exec(r.Context(), `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?)`, nid, commodity, priority)
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 DAY),'new_nation','system')`, gid, nid)
 	if err != nil {

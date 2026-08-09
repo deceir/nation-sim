@@ -109,7 +109,7 @@ type NationResult struct {
 func infraUnitCost(current float64, tech int) float64 {
 	x := math.Max(0, current-5)
 	discount := math.Max(.72, 1-.004*float64(tech))
-	return (250 + math.Pow(x, 2.15)/900) * discount
+	return (475 + math.Pow(x, 2.15)/760) * discount
 }
 
 func infraPurchaseCost(current, amount float64, tech int) float64 {

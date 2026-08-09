@@ -12,10 +12,11 @@ import (
 var allianceResources = map[string]bool{"cash": true, "foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true, "strategic_minerals": true, "textiles": true, "processed_foods": true, "construction_materials": true, "basic_goods": true, "consumer_goods": true, "military_equipment": true, "luxury_goods": true}
 
 type alliancePermission struct {
-	AllianceID, NationID, RoleID, Title    string
-	Rank                                   int
-	Bank, Tax, Members, War, Announcements bool
-	Limit                                  int64
+	AllianceID, NationID, RoleID, Title                                          string
+	Rank                                                                         int
+	Bank, Tax, Members, War, Announcements                                       bool
+	ViewBank, Deposit, Withdraw, Applicants, Remove, Edit, Roles, Promote, Audit bool
+	Limit                                                                        int64
 }
 
 func (a *app) nationID(ctx context.Context, userID string) (string, error) {
@@ -25,7 +26,7 @@ func (a *app) nationID(ctx context.Context, userID string) (string, error) {
 }
 func (a *app) alliancePermission(ctx context.Context, userID, allianceID string) (alliancePermission, error) {
 	var p alliancePermission
-	err := a.db.QueryRowContext(ctx, `SELECT m.alliance_id,m.nation_id,m.role_id,r.title,r.rank_order,r.can_manage_bank,r.can_set_tax,r.can_manage_members,r.can_declare_war,r.can_post_announcements,r.daily_withdrawal_limit FROM alliance_members m JOIN alliance_roles r ON r.id=m.role_id JOIN nations n ON n.id=m.nation_id WHERE n.owner_id=? AND m.alliance_id=?`, userID, allianceID).Scan(&p.AllianceID, &p.NationID, &p.RoleID, &p.Title, &p.Rank, &p.Bank, &p.Tax, &p.Members, &p.War, &p.Announcements, &p.Limit)
+	err := a.db.QueryRowContext(ctx, `SELECT m.alliance_id,m.nation_id,m.role_id,r.title,r.rank_order,r.can_manage_bank,r.can_set_tax,r.can_manage_members,r.can_declare_war,r.can_post_announcements,r.can_view_bank,r.can_deposit_bank,r.can_withdraw_bank,r.can_accept_applicants,r.can_remove_members,r.can_edit_details,r.can_manage_roles,r.can_promote_members,r.can_view_audit_log,r.daily_withdrawal_limit FROM alliance_members m JOIN alliance_roles r ON r.id=m.role_id JOIN nations n ON n.id=m.nation_id WHERE n.owner_id=? AND m.alliance_id=?`, userID, allianceID).Scan(&p.AllianceID, &p.NationID, &p.RoleID, &p.Title, &p.Rank, &p.Bank, &p.Tax, &p.Members, &p.War, &p.Announcements, &p.ViewBank, &p.Deposit, &p.Withdraw, &p.Applicants, &p.Remove, &p.Edit, &p.Roles, &p.Promote, &p.Audit, &p.Limit)
 	return p, err
 }
 
@@ -90,25 +91,22 @@ func (a *app) createAlliance(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Leave your current Alliance before creating another.")
 		return
 	}
-	aid, leader, heir, officer, member := uuid(), uuid(), uuid(), uuid(), uuid()
+	aid, leader, member, applicant := uuid(), uuid(), uuid(), uuid()
 	_, e = tx.ExecContext(r.Context(), `INSERT INTO alliances(id,founder_nation_id,name,description,emblem_url,community_url,join_policy) VALUES(?,?,?,?,?,?,?)`, aid, nid, in.Name, in.Description, in.EmblemURL, in.CommunityURL, in.JoinPolicy)
 	if e != nil {
 		problem(w, 409, "That Alliance name is unavailable.")
 		return
 	}
-	roles := []struct {
-		id, title                         string
-		rank                              int
-		bank, tax, members, war, announce bool
-		limit                             int64
-	}{{leader, "Founder", 100, true, true, true, true, true, 0}, {heir, "Heir", 90, true, true, true, true, true, 0}, {officer, "Officer", 60, true, false, true, false, true, 250000}, {member, "Member", 10, false, false, false, false, false, 0}}
-	for _, x := range roles {
-		if _, e = tx.ExecContext(r.Context(), `INSERT INTO alliance_roles(id,alliance_id,title,rank_order,can_manage_bank,can_set_tax,can_manage_members,can_declare_war,can_post_announcements,daily_withdrawal_limit) VALUES(?,?,?,?,?,?,?,?,?,?)`, x.id, aid, x.title, x.rank, x.bank, x.tax, x.members, x.war, x.announce, x.limit); e != nil {
-			return
-		}
+	_, e = tx.ExecContext(r.Context(), `INSERT INTO alliance_roles(id,alliance_id,title,rank_order,default_key,can_manage_bank,can_set_tax,can_manage_members,can_declare_war,can_post_announcements,can_view_bank,can_deposit_bank,can_withdraw_bank,can_accept_applicants,can_remove_members,can_edit_details,can_manage_roles,can_promote_members,can_view_audit_log) VALUES
+		(?,?,?,100,'leader',1,1,1,1,1,1,1,1,1,1,1,1,1,1),
+		(?,?,?,10,'member',0,0,0,0,0,0,1,0,0,0,0,0,0,0),
+		(?,?,?,0,'applicant',0,0,0,0,0,0,0,0,0,0,0,0,0,0)`, leader, aid, "Leader", member, aid, "Member", applicant, aid, "Applicant")
+	if e != nil {
+		return
 	}
 	tx.ExecContext(r.Context(), `INSERT INTO alliance_members(alliance_id,nation_id,role_id) VALUES(?,?,?)`, aid, nid, leader)
 	tx.ExecContext(r.Context(), `INSERT INTO alliance_bank(alliance_id) VALUES(?)`, aid)
+	tx.ExecContext(r.Context(), `INSERT INTO alliance_tax_brackets(id,alliance_id,name,is_default,cash_rate,resource_rate) VALUES(?,?,"Default",1,0,0)`, uuid(), aid)
 	if tx.Commit() != nil {
 		return
 	}
@@ -121,26 +119,29 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		ID, Name, Description, EmblemURL, CommunityURL, JoinPolicy  string
 		Level, MinimumCities, MinimumAgeDays, MinimumInfrastructure int
 		TaxRate                                                     float64
+		CreatedAt                                                   time.Time
 	}
-	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,level,minimum_cities,minimum_age_days,minimum_infrastructure,tax_rate FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.Level, &out.MinimumCities, &out.MinimumAgeDays, &out.MinimumInfrastructure, &out.TaxRate)
+	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,level,minimum_cities,minimum_age_days,minimum_infrastructure,tax_rate,created_at FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.Level, &out.MinimumCities, &out.MinimumAgeDays, &out.MinimumInfrastructure, &out.TaxRate, &out.CreatedAt)
 	if e != nil {
 		problem(w, 404, "Alliance not found.")
 		return
 	}
-	memberRows, _ := a.db.QueryContext(r.Context(), `SELECT n.id,n.name,n.user_type,r.title,m.cash_contributed,m.resources_contributed,m.joined_at FROM alliance_members m JOIN nations n ON n.id=m.nation_id JOIN alliance_roles r ON r.id=m.role_id WHERE m.alliance_id=? ORDER BY r.rank_order DESC,n.name`, id)
+	memberRows, _ := a.db.QueryContext(r.Context(), `SELECT n.id,n.name,n.user_type,r.id,r.title,r.rank_order,m.cash_contributed,m.resources_contributed,m.joined_at,n.population,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) FROM alliance_members m JOIN nations n ON n.id=m.nation_id JOIN alliance_roles r ON r.id=m.role_id WHERE m.alliance_id=? ORDER BY r.rank_order DESC,n.name`, id)
 	members := []map[string]any{}
 	for memberRows.Next() {
-		var nid, name, userType, role string
+		var nid, name, userType, roleID, role string
+		var rank, provinces int
 		var cash, res int64
+		var population int64
 		var joined time.Time
-		memberRows.Scan(&nid, &name, &userType, &role, &cash, &res, &joined)
-		members = append(members, map[string]any{"nationID": nid, "name": name, "userType": userType, "role": role, "cashContributed": cash, "resourcesContributed": res, "joinedAt": joined})
+		memberRows.Scan(&nid, &name, &userType, &roleID, &role, &rank, &cash, &res, &joined, &population, &provinces)
+		members = append(members, map[string]any{"nationID": nid, "name": name, "userType": userType, "roleID": roleID, "role": role, "rank": rank, "cashContributed": cash, "resourcesContributed": res, "joinedAt": joined, "population": population, "provinces": provinces, "seniorityDays": int(time.Since(joined).Hours() / 24)})
 	}
 	memberRows.Close()
 	p, e := a.alliancePermission(r.Context(), u.ID, id)
 	isMember := e == nil
 	bank := map[string]float64{}
-	if isMember {
+	if isMember && p.ViewBank {
 		var cash float64
 		a.db.QueryRowContext(r.Context(), `SELECT cash FROM alliance_bank WHERE alliance_id=?`, id).Scan(&cash)
 		bank["cash"] = cash
@@ -154,19 +155,33 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		rows.Close()
 	}
 	logs := []map[string]any{}
-	if isMember {
-		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.name,'System') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id WHERE t.alliance_id=? ORDER BY t.created_at DESC LIMIT 50`, id)
+	if isMember && p.Audit {
+		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.kind,t.resource,t.amount,t.memo,t.created_at,COALESCE(n.id,''),COALESCE(n.name,'System') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id WHERE t.alliance_id=? ORDER BY t.created_at DESC LIMIT 50`, id)
 		for rows.Next() {
-			var kind, res, memo, actor string
+			var kind, res, memo, actorID, actor string
 			var amount int64
 			var at time.Time
-			rows.Scan(&kind, &res, &amount, &memo, &at, &actor)
-			logs = append(logs, map[string]any{"kind": kind, "resource": res, "amount": amount, "memo": memo, "createdAt": at, "actor": actor})
+			rows.Scan(&kind, &res, &amount, &memo, &at, &actorID, &actor)
+			logs = append(logs, map[string]any{"kind": kind, "resource": res, "amount": amount, "memo": memo, "createdAt": at, "actorID": actorID, "actor": actor})
 		}
 		rows.Close()
 	}
+	taxHistory := []map[string]any{}
+	if isMember {
+		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.resource,t.amount,t.memo,t.created_at,COALESCE(n.name,'System') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id WHERE t.alliance_id=? AND t.kind='tax' ORDER BY t.created_at DESC LIMIT 100`, id)
+		if rows != nil {
+			for rows.Next() {
+				var resource, memo, nation string
+				var amount int64
+				var at time.Time
+				rows.Scan(&resource, &amount, &memo, &at, &nation)
+				taxHistory = append(taxHistory, map[string]any{"resource": resource, "amount": amount, "memo": memo, "createdAt": at, "nation": nation})
+			}
+			rows.Close()
+		}
+	}
 	applications := []map[string]any{}
-	if isMember && p.Members {
+	if isMember && p.Applicants {
 		rows, _ := a.db.QueryContext(r.Context(), `SELECT ap.id,n.name,ap.message,ap.created_at FROM alliance_applications ap JOIN nations n ON n.id=ap.nation_id WHERE ap.alliance_id=? AND ap.status='pending' ORDER BY ap.created_at`, id)
 		for rows.Next() {
 			var appID, name, message string
@@ -176,13 +191,55 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		}
 		rows.Close()
 	}
-	write(w, 200, map[string]any{"alliance": out, "members": members, "isMember": isMember, "permissions": map[string]any{"role": p.Title, "bank": p.Bank, "tax": p.Tax, "members": p.Members, "announcements": p.Announcements}, "bank": bank, "transactions": logs, "applications": applications})
+	announcements := []map[string]any{}
+	announcementRows, _ := a.db.QueryContext(r.Context(), `SELECT x.id,x.title,x.body,x.created_at,n.name FROM alliance_announcements x JOIN nations n ON n.id=x.author_nation_id WHERE x.alliance_id=? ORDER BY x.created_at DESC LIMIT 20`, id)
+	if announcementRows != nil {
+		for announcementRows.Next() {
+			var xid, title, body, author string
+			var at time.Time
+			announcementRows.Scan(&xid, &title, &body, &at, &author)
+			announcements = append(announcements, map[string]any{"id": xid, "title": title, "body": body, "createdAt": at, "author": author})
+		}
+		announcementRows.Close()
+	}
+	roles := []map[string]any{}
+	roleRows, _ := a.db.QueryContext(r.Context(), `SELECT id,title,rank_order,COALESCE(default_key,''),can_view_bank,can_deposit_bank,can_withdraw_bank,can_accept_applicants,can_remove_members,can_edit_details,can_manage_roles,can_set_tax,can_promote_members,can_post_announcements,can_view_audit_log,can_declare_war,daily_withdrawal_limit FROM alliance_roles WHERE alliance_id=? ORDER BY rank_order DESC`, id)
+	if roleRows != nil {
+		for roleRows.Next() {
+			var rid, title, key string
+			var rank int
+			var view, deposit, withdraw, applicants, remove, edit, manageRoles, tax, promote, announce, audit, war bool
+			var limit int64
+			roleRows.Scan(&rid, &title, &rank, &key, &view, &deposit, &withdraw, &applicants, &remove, &edit, &manageRoles, &tax, &promote, &announce, &audit, &war, &limit)
+			item := map[string]any{"id": rid, "title": title, "rank": rank, "defaultKey": key}
+			if isMember && p.Roles {
+				item["permissions"] = map[string]any{"viewBank": view, "deposit": deposit, "withdraw": withdraw, "applicants": applicants, "remove": remove, "edit": edit, "roles": manageRoles, "tax": tax, "promote": promote, "announcements": announce, "audit": audit, "war": war, "withdrawalLimit": limit}
+			}
+			roles = append(roles, item)
+		}
+		roleRows.Close()
+	}
+	brackets := []map[string]any{}
+	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,COALESCE(b.role_id,''),COALESCE(r.title,''),b.minimum_provinces,b.cash_rate,b.resource_rate FROM alliance_tax_brackets b LEFT JOIN alliance_roles r ON r.id=b.role_id WHERE b.alliance_id=? ORDER BY b.is_default,b.minimum_provinces DESC,b.name`, id)
+	if bracketRows != nil {
+		for bracketRows.Next() {
+			var bid, name, roleID, role string
+			var def bool
+			var minimum int
+			var cashRate, resourceRate float64
+			bracketRows.Scan(&bid, &name, &def, &roleID, &role, &minimum, &cashRate, &resourceRate)
+			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "roleID": roleID, "role": role, "minimumProvinces": minimum, "cashRate": cashRate, "resourceRate": resourceRate})
+		}
+		bracketRows.Close()
+	}
+	activeTreaties, pendingTreaties := a.allianceTreaties(r.Context(), id, isMember && p.War)
+	write(w, 200, map[string]any{"alliance": out, "members": members, "roles": roles, "taxBrackets": brackets, "taxHistory": taxHistory, "announcements": announcements, "treatyTypes": treatyCatalog(), "treaties": activeTreaties, "treatyProposals": pendingTreaties, "isMember": isMember, "permissions": map[string]any{"role": p.Title, "rank": p.Rank, "viewBank": p.ViewBank, "deposit": p.Deposit, "withdraw": p.Withdraw, "tax": p.Tax, "applicants": p.Applicants, "remove": p.Remove, "edit": p.Edit, "roles": p.Roles, "promote": p.Promote, "announcements": p.Announcements, "audit": p.Audit, "war": p.War}, "bank": bank, "transactions": logs, "applications": applications})
 }
 
 func (a *app) updateAlliance(w http.ResponseWriter, r *http.Request, u user) {
 	aid := r.PathValue("id")
 	p, e := a.alliancePermission(r.Context(), u.ID, aid)
-	if e != nil || !p.Tax {
+	if e != nil || !p.Edit {
 		problem(w, 403, "Alliance leadership required.")
 		return
 	}
@@ -235,7 +292,7 @@ func (a *app) applyAlliance(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	if policy == "open" {
 		var role string
-		a.db.QueryRowContext(r.Context(), `SELECT id FROM alliance_roles WHERE alliance_id=? ORDER BY rank_order LIMIT 1`, aid).Scan(&role)
+		a.db.QueryRowContext(r.Context(), `SELECT id FROM alliance_roles WHERE alliance_id=? AND default_key='member' LIMIT 1`, aid).Scan(&role)
 		_, e = a.db.ExecContext(r.Context(), `INSERT INTO alliance_members(alliance_id,nation_id,role_id) VALUES(?,?,?)`, aid, nid, role)
 		if e != nil {
 			problem(w, 409, "Your nation is already in an Alliance.")
@@ -261,7 +318,7 @@ func (a *app) applyAlliance(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) allianceApplications(w http.ResponseWriter, r *http.Request, u user) {
 	aid := r.PathValue("id")
 	p, e := a.alliancePermission(r.Context(), u.ID, aid)
-	if e != nil || !p.Members {
+	if e != nil || !p.Applicants {
 		problem(w, 403, "Member-management permission required.")
 		return
 	}
@@ -279,7 +336,7 @@ func (a *app) allianceApplications(w http.ResponseWriter, r *http.Request, u use
 func (a *app) acceptAllianceApplication(w http.ResponseWriter, r *http.Request, u user) {
 	aid := r.PathValue("id")
 	p, e := a.alliancePermission(r.Context(), u.ID, aid)
-	if e != nil || !p.Members {
+	if e != nil || !p.Applicants {
 		problem(w, 403, "Member-management permission required.")
 		return
 	}
@@ -291,7 +348,7 @@ func (a *app) acceptAllianceApplication(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	var role string
-	tx.QueryRowContext(r.Context(), `SELECT id FROM alliance_roles WHERE alliance_id=? ORDER BY rank_order LIMIT 1`, aid).Scan(&role)
+	tx.QueryRowContext(r.Context(), `SELECT id FROM alliance_roles WHERE alliance_id=? AND default_key='member' LIMIT 1`, aid).Scan(&role)
 	if _, e = tx.ExecContext(r.Context(), `INSERT INTO alliance_members(alliance_id,nation_id,role_id) VALUES(?,?,?)`, aid, nid, role); e != nil {
 		problem(w, 409, "Nation has already joined an Alliance.")
 		return
@@ -316,8 +373,8 @@ func (a *app) allianceBankTransfer(w http.ResponseWriter, r *http.Request, u use
 		problem(w, 403, "Alliance membership required.")
 		return
 	}
-	if in.Kind != "deposit" && !p.Bank {
-		problem(w, 403, "Bank-management permission required.")
+	if (in.Kind == "deposit" && !p.Deposit) || (in.Kind != "deposit" && !p.Withdraw) {
+		problem(w, 403, "Your Alliance role does not permit this bank transaction.")
 		return
 	}
 	tx, _ := a.db.BeginTx(r.Context(), nil)

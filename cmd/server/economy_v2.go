@@ -28,10 +28,9 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		result.NetDailyFood = result.DailyFoodProduction - result.DailyFoodConsumption
 	}
 	alliance := map[string]any{"name": "", "taxRate": float64(0), "projectedDailyTax": int64(0)}
-	var allianceName string
-	var allianceRate float64
-	if a.db.QueryRowContext(r.Context(), `SELECT a.name,a.tax_rate FROM alliance_members m JOIN alliances a ON a.id=m.alliance_id WHERE m.nation_id=?`, nid).Scan(&allianceName, &allianceRate) == nil {
-		alliance = map[string]any{"name": allianceName, "taxRate": allianceRate, "projectedDailyTax": int64(math.Max(0, result.NetDailyCash) * allianceRate / 100)}
+	allianceID, allianceName, allianceRate, resourceRate := applicableAllianceTax(r.Context(), a.db, nid)
+	if allianceID != "" {
+		alliance = map[string]any{"name": allianceName, "taxRate": allianceRate, "resourceRate": resourceRate, "projectedDailyTax": int64(math.Max(0, result.NetDailyCash) * allianceRate / 100)}
 	}
 	types := make([]map[string]any, 0, len(buildings))
 	keys := make([]string, 0, len(buildings))

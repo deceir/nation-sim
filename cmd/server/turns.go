@@ -48,8 +48,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			strategyResult = calculateStrategy(strategy)
 		}
 		cash := int64(math.Floor(result.NetDailyCash / balance.TurnsPerDay * strategyResult.IncomeMultiplier))
-		allianceID, allianceName, allianceRate := "", "", 0.0
-		a.db.QueryRowContext(ctx, `SELECT a.id,a.name,a.tax_rate FROM alliance_members m JOIN alliances a ON a.id=m.alliance_id WHERE m.nation_id=?`, nid).Scan(&allianceID, &allianceName, &allianceRate)
+		allianceID, allianceName, allianceRate, _ := applicableAllianceTax(ctx, a.db, nid)
 		allianceTax := int64(0)
 		if cash > 0 && allianceID != "" {
 			allianceTax = int64(math.Floor(float64(cash) * allianceRate / 100))

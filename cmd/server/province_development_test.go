@@ -6,7 +6,7 @@ func TestProvinceFoundingCostsScaleAndRespectStrategy(t *testing.T) {
 	first, materials, _ := provinceFoundingCosts(1, "balanced", map[string]bool{})
 	third, moreMaterials, _ := provinceFoundingCosts(3, "balanced", map[string]bool{})
 	cheap, _, _ := provinceFoundingCosts(3, "agrarian", map[string]bool{"land_grants": true})
-	if first != 200000 || third <= first || moreMaterials <= materials {
+	if first != 225000 || third <= first || moreMaterials <= materials {
 		t.Fatalf("expected escalating founding costs, got %d/%d and %.2f/%.2f", first, third, materials, moreMaterials)
 	}
 	if cheap >= third {

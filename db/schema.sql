@@ -237,8 +237,35 @@ CREATE TABLE IF NOT EXISTS alliance_roles (
   can_declare_war BOOLEAN NOT NULL DEFAULT FALSE,
   can_post_announcements BOOLEAN NOT NULL DEFAULT FALSE,
   daily_withdrawal_limit BIGINT NOT NULL DEFAULT 0,
+  default_key ENUM('leader','member','applicant') NULL,
+  can_view_bank BOOLEAN NOT NULL DEFAULT FALSE,
+  can_deposit_bank BOOLEAN NOT NULL DEFAULT TRUE,
+  can_withdraw_bank BOOLEAN NOT NULL DEFAULT FALSE,
+  can_accept_applicants BOOLEAN NOT NULL DEFAULT FALSE,
+  can_remove_members BOOLEAN NOT NULL DEFAULT FALSE,
+  can_edit_details BOOLEAN NOT NULL DEFAULT FALSE,
+  can_manage_roles BOOLEAN NOT NULL DEFAULT FALSE,
+  can_promote_members BOOLEAN NOT NULL DEFAULT FALSE,
+  can_view_audit_log BOOLEAN NOT NULL DEFAULT FALSE,
   UNIQUE KEY uq_alliance_role_title(alliance_id,title),
   CONSTRAINT fk_alliance_roles_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS alliance_tax_brackets (
+  id CHAR(36) PRIMARY KEY,
+  alliance_id CHAR(36) NOT NULL,
+  name VARCHAR(80) NOT NULL,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  role_id CHAR(36) NULL,
+  minimum_provinces INT NOT NULL DEFAULT 0,
+  cash_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  resource_rate DECIMAL(5,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_alliance_tax_name(alliance_id,name),
+  CONSTRAINT fk_tax_bracket_alliance FOREIGN KEY(alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_tax_bracket_role FOREIGN KEY(role_id) REFERENCES alliance_roles(id) ON DELETE SET NULL,
+  CHECK(cash_rate BETWEEN 0 AND 100),
+  CHECK(resource_rate BETWEEN 0 AND 100)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS alliance_members (
@@ -311,8 +338,17 @@ CREATE TABLE IF NOT EXISTS alliance_loans (
 
 CREATE TABLE IF NOT EXISTS alliance_treaties (
   id CHAR(36) PRIMARY KEY, alliance_a_id CHAR(36) NOT NULL, alliance_b_id CHAR(36) NOT NULL,
-  treaty_type ENUM('NAP','MDP','MDoAP','protectorate','trade') NOT NULL, status ENUM('proposed','active','cancelled') NOT NULL DEFAULT 'proposed',
-  terms TEXT NOT NULL, created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+  proposed_by_alliance_id CHAR(36) NOT NULL, proposed_by_nation_id CHAR(36) NOT NULL,
+  treaty_type VARCHAR(16) NOT NULL, status ENUM('proposed','active','rejected','cancelled','expired') NOT NULL DEFAULT 'proposed',
+  terms TEXT NOT NULL, duration_days INT NULL, starts_on DATE NULL, ends_on DATE NULL,
+  resolved_by_nation_id CHAR(36) NULL, resolved_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_treaty_parties(alliance_a_id,alliance_b_id,status),
+  CONSTRAINT fk_treaty_a FOREIGN KEY(alliance_a_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_treaty_b FOREIGN KEY(alliance_b_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_treaty_proposer_alliance FOREIGN KEY(proposed_by_alliance_id) REFERENCES alliances(id) ON DELETE CASCADE,
+  CONSTRAINT fk_treaty_proposer_nation FOREIGN KEY(proposed_by_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_treaty_resolver FOREIGN KEY(resolved_by_nation_id) REFERENCES nations(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS nation_economic_strategy (

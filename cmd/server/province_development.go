@@ -70,8 +70,8 @@ func expansionPolicyModifier(policies map[string]bool) float64 {
 
 func provinceFoundingCosts(count int, gear string, policies map[string]bool) (int64, float64, int) {
 	n := math.Max(1, float64(count))
-	cash := 200000 * math.Pow(n, 2.6) * expansionGearModifier(gear) * expansionPolicyModifier(policies)
-	materials := 120 * math.Pow(n, 2.2)
+	cash := 225000 * math.Pow(n, 2.6) * expansionGearModifier(gear) * expansionPolicyModifier(policies)
+	materials := 40 * math.Pow(n, 2.2)
 	strain := min(12, 2+count)
 	return int64(math.Ceil(cash)), math.Ceil(materials*100) / 100, strain
 }

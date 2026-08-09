@@ -57,6 +57,23 @@ func main() {
 		{"market_orders", "target_nation_id", "CHAR(36) NULL"},
 		{"market_orders", "escrow_cash", "BIGINT NOT NULL DEFAULT 0"},
 		{"market_orders", "escrow_goods", "DECIMAL(20,3) NOT NULL DEFAULT 0"},
+		{"alliance_roles", "default_key", "ENUM('leader','member','applicant') NULL"},
+		{"alliance_roles", "can_view_bank", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_deposit_bank", "BOOLEAN NOT NULL DEFAULT TRUE"},
+		{"alliance_roles", "can_withdraw_bank", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_accept_applicants", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_remove_members", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_edit_details", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_manage_roles", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_promote_members", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_roles", "can_view_audit_log", "BOOLEAN NOT NULL DEFAULT FALSE"},
+		{"alliance_treaties", "proposed_by_alliance_id", "CHAR(36) NULL"},
+		{"alliance_treaties", "proposed_by_nation_id", "CHAR(36) NULL"},
+		{"alliance_treaties", "duration_days", "INT NULL"},
+		{"alliance_treaties", "starts_on", "DATE NULL"},
+		{"alliance_treaties", "ends_on", "DATE NULL"},
+		{"alliance_treaties", "resolved_by_nation_id", "CHAR(36) NULL"},
+		{"alliance_treaties", "resolved_at", "TIMESTAMP(6) NULL"},
 		{"trade_shipments", "order_id", "CHAR(36) NULL"},
 		{"trade_shipments", "seller_nation_id", "CHAR(36) NOT NULL"},
 		{"trade_shipments", "buyer_nation_id", "CHAR(36) NOT NULL"},
@@ -110,17 +127,27 @@ func main() {
 		`ALTER TABLE trade_shipments MODIFY estimated_arrival_at TIMESTAMP(6) NOT NULL`,
 		`ALTER TABLE trade_shipments MODIFY delivered_at TIMESTAMP(6) NULL`,
 		`ALTER TABLE trade_shipments MODIFY status ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'`,
+		`ALTER TABLE alliance_treaties MODIFY treaty_type VARCHAR(16) NOT NULL`,
+		`ALTER TABLE alliance_treaties MODIFY status ENUM('proposed','active','rejected','cancelled','expired') NOT NULL DEFAULT 'proposed'`,
 	} {
 		if _, err = db.Exec(q); err != nil {
 			log.Fatal(err)
 		}
 	}
 	bootstrap := []string{
+		`UPDATE alliance_roles r JOIN (SELECT alliance_id,MAX(rank_order) mx FROM alliance_roles GROUP BY alliance_id) x ON x.alliance_id=r.alliance_id AND x.mx=r.rank_order SET r.default_key='leader',r.can_view_bank=1,r.can_deposit_bank=1,r.can_withdraw_bank=1,r.can_accept_applicants=1,r.can_remove_members=1,r.can_edit_details=1,r.can_manage_roles=1,r.can_promote_members=1,r.can_view_audit_log=1`,
+		`UPDATE alliance_roles r JOIN (SELECT alliance_id,MIN(rank_order) mn FROM alliance_roles WHERE default_key IS NULL GROUP BY alliance_id) x ON x.alliance_id=r.alliance_id AND x.mn=r.rank_order SET r.default_key='member',r.can_deposit_bank=1`,
+		`INSERT INTO alliance_roles(id,alliance_id,title,rank_order,default_key,can_deposit_bank) SELECT UUID(),a.id,'Applicant',0,'applicant',0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_roles r WHERE r.alliance_id=a.id AND r.default_key='applicant')`,
+		`INSERT INTO alliance_tax_brackets(id,alliance_id,name,is_default,cash_rate,resource_rate) SELECT UUID(),a.id,'Default',1,a.tax_rate,0 FROM alliances a WHERE NOT EXISTS(SELECT 1 FROM alliance_tax_brackets b WHERE b.alliance_id=a.id AND b.is_default=1)`,
+		`UPDATE alliance_treaties SET proposed_by_alliance_id=alliance_a_id WHERE proposed_by_alliance_id IS NULL`,
+		`UPDATE alliance_treaties t JOIN alliances a ON a.id=t.proposed_by_alliance_id SET t.proposed_by_nation_id=a.founder_nation_id WHERE t.proposed_by_nation_id IS NULL`,
 		`UPDATE market_orders SET status='cancelled' WHERE status IN('open','pending') AND escrow_cash=0 AND escrow_goods=0`,
 		`INSERT IGNORE INTO nation_economic_strategy(nation_id) SELECT id FROM nations`,
 		`INSERT IGNORE INTO province_economies(city_id,latitude,longitude) SELECT c.id,CASE n.continent WHEN 'Africa' THEN 5 WHEN 'Asia' THEN 34 WHEN 'Europe' THEN 50 WHEN 'North America' THEN 40 WHEN 'South America' THEN -15 WHEN 'Oceania' THEN -25 ELSE -75 END,CASE n.continent WHEN 'Africa' THEN 20 WHEN 'Asia' THEN 100 WHEN 'Europe' THEN 15 WHEN 'North America' THEN -100 WHEN 'South America' THEN -60 WHEN 'Oceania' THEN 135 ELSE 0 END FROM cities c JOIN nations n ON n.id=c.nation_id`,
 		`INSERT IGNORE INTO province_deposits(city_id,resource,richness) SELECT c.id,r.resource,CASE r.resource WHEN 'foodstuffs' THEN 1.15 WHEN 'timber' THEN IF(n.continent IN('South America','North America'),1.35,.85) WHEN 'fibers' THEN IF(n.continent IN('Asia','Africa'),1.3,.8) WHEN 'basic_metals' THEN IF(n.continent IN('Africa','South America'),1.3,.9) WHEN 'energy' THEN IF(n.continent IN('Asia','North America'),1.25,.85) ELSE IF(n.continent IN('Africa','Oceania'),1.25,.75) END FROM cities c JOIN nations n ON n.id=c.nation_id CROSS JOIN (SELECT 'foodstuffs' resource UNION ALL SELECT 'timber' UNION ALL SELECT 'fibers' UNION ALL SELECT 'basic_metals' UNION ALL SELECT 'energy' UNION ALL SELECT 'strategic_minerals') r`,
 		`INSERT IGNORE INTO nation_stockpiles(nation_id,commodity,amount) SELECT n.id,r.commodity,CASE WHEN r.commodity IN('foodstuffs','timber','fibers','basic_metals','energy') THEN 500 ELSE 0 END FROM nations n CROSS JOIN (SELECT 'foodstuffs' commodity UNION ALL SELECT 'timber' UNION ALL SELECT 'fibers' UNION ALL SELECT 'basic_metals' UNION ALL SELECT 'energy' UNION ALL SELECT 'strategic_minerals' UNION ALL SELECT 'textiles' UNION ALL SELECT 'processed_foods' UNION ALL SELECT 'construction_materials' UNION ALL SELECT 'basic_goods' UNION ALL SELECT 'consumer_goods' UNION ALL SELECT 'military_equipment' UNION ALL SELECT 'luxury_goods') r`,
+		`UPDATE nation_stockpiles SET amount=GREATEST(amount,CASE commodity WHEN 'construction_materials' THEN 75 WHEN 'processed_foods' THEN 100 WHEN 'basic_goods' THEN 75 ELSE amount END)`,
+		`INSERT INTO production_quotas(nation_id,commodity,priority) SELECT n.id,q.commodity,q.priority FROM nations n CROSS JOIN (SELECT 'processed_foods' commodity,35 priority UNION ALL SELECT 'construction_materials',45 UNION ALL SELECT 'basic_goods',20) q WHERE NOT EXISTS(SELECT 1 FROM production_quotas x WHERE x.nation_id=n.id)`,
 	}
 	for _, q := range bootstrap {
 		if _, err = db.Exec(q); err != nil {
