@@ -49,6 +49,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		strategy, strategyErr := a.loadStrategy(ctx, nid)
 		strategyResult := strategicResult{IncomeMultiplier: 1, PopulationMultiplier: 1, HappinessMultiplier: 1, Production: map[string]float64{}}
 		if strategyErr == nil {
+			applyProvincialOperatingConditions(&strategy, result)
 			strategyResult = calculateStrategy(strategy)
 		}
 		crisisModifiers := a.loadCrisisModifiers(ctx, nid)

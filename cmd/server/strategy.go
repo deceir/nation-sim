@@ -70,21 +70,22 @@ func commodityName(key string) string {
 }
 
 type provinceStrategy struct {
-	ID, Name, Specialization string
-	Infra, Development       float64 // Development is retained only for legacy test/data compatibility.
-	Deposits                 map[string]float64
-	Upgrades                 map[string]int
-	UpgradeQuotes            map[string]int64
-	InfrastructureQuotes     map[string]int64
-	UpgradeCap               int // Per-category hard cap retained for API compatibility.
-	UpgradeCapacity          int
-	UpgradesUsed             int
-	NextUpgradeCapacityAt    int
-	CivicCapacity            int
-	CivicUsed                int
-	Institutions             map[string]int
-	IsCapital                bool
-	Population               float64
+	ID, Name, Specialization       string
+	Infra, Development             float64 // Development is retained only for legacy test/data compatibility.
+	Deposits                       map[string]float64
+	Upgrades                       map[string]int
+	UpgradeQuotes                  map[string]int64
+	InfrastructureQuotes           map[string]int64
+	UpgradeCap                     int // Per-category hard cap retained for API compatibility.
+	UpgradeCapacity                int
+	UpgradesUsed                   int
+	NextUpgradeCapacityAt          int
+	CivicCapacity                  int
+	CivicUsed                      int
+	Institutions                   map[string]int
+	IsCapital                      bool
+	Population                     float64
+	EmploymentRate, Disease, Crime float64
 }
 type strategicInput struct {
 	Gear                  string
@@ -106,6 +107,7 @@ type strategicResult struct {
 	CommerceMultiplier   float64                       `json:"commerceMultiplier"`
 	MilitaryMultiplier   float64                       `json:"militaryMultiplier"`
 	ProvinceProduction   map[string]map[string]float64 `json:"provinceProduction"`
+	ProvinceFactors      map[string]map[string]float64 `json:"provinceFactors"`
 }
 
 func calculateStrategy(in strategicInput) strategicResult {
@@ -113,7 +115,7 @@ func calculateStrategy(in strategicInput) strategicResult {
 	if g.Name == "" {
 		g = gears["balanced"]
 	}
-	r := strategicResult{Production: map[string]float64{}, ProvinceProduction: map[string]map[string]float64{}, IncomeMultiplier: g.Commerce, PopulationMultiplier: g.Population, HappinessMultiplier: g.Happiness, ExtractionMultiplier: g.Extraction, IndustryMultiplier: g.Industry, CommerceMultiplier: g.Commerce, MilitaryMultiplier: g.Military}
+	r := strategicResult{Production: map[string]float64{}, ProvinceProduction: map[string]map[string]float64{}, ProvinceFactors: map[string]map[string]float64{}, IncomeMultiplier: g.Commerce, PopulationMultiplier: g.Population, HappinessMultiplier: g.Happiness, ExtractionMultiplier: g.Extraction, IndustryMultiplier: g.Industry, CommerceMultiplier: g.Commerce, MilitaryMultiplier: g.Military}
 	if in.Projects["resource_survey"] {
 		r.ExtractionMultiplier *= 1.12
 	}
@@ -136,6 +138,15 @@ func calculateStrategy(in strategicInput) strategicResult {
 	knowledge := 1 + in.Education*.0025 + in.Technology*.004
 	for _, p := range in.Provinces {
 		out := map[string]float64{}
+		employment := p.EmploymentRate
+		if employment <= 0 {
+			employment = 72
+		}
+		workforceFactor := clamp(1+(employment-72)*.006, .72, 1.12)
+		healthFactor := clamp(1-p.Disease*.90, .70, 1)
+		securityFactor := clamp(1-p.Crime*.55, .78, 1)
+		operationalFactor := clamp(workforceFactor*healthFactor*securityFactor, .60, 1.12)
+		r.ProvinceFactors[p.ID] = map[string]float64{"employmentRate": employment, "workforceFactor": workforceFactor, "diseaseRate": p.Disease, "healthFactor": healthFactor, "crimeRate": p.Crime, "securityFactor": securityFactor, "operationalFactor": operationalFactor}
 		agriculture := provinceUpgradeEffect(p.Upgrades["agriculture"])
 		extraction := provinceUpgradeEffect(p.Upgrades["extraction"])
 		light := provinceUpgradeEffect(p.Upgrades["light_industry"])
@@ -171,11 +182,11 @@ func calculateStrategy(in strategicInput) strategicResult {
 			if resource == "foodstuffs" || resource == "fibers" {
 				agricultureBoost += agriculture * .03
 			}
-			v := p.Infra * .10 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment
+			v := p.Infra * .10 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment * operationalFactor
 			out[resource] += v
 			r.Production[resource] += v
 		}
-		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment
+		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment * operationalFactor
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 			quotaTotal += math.Max(0, in.Quotas[k])
@@ -234,6 +245,20 @@ func calculateStrategy(in strategicInput) strategicResult {
 		r.PopulationMultiplier *= 1.08
 	}
 	return r
+}
+
+func applyProvincialOperatingConditions(in *strategicInput, economy NationResult) {
+	byID := make(map[string]CityResult, len(economy.Cities))
+	for _, city := range economy.Cities {
+		byID[city.ID] = city
+	}
+	for index := range in.Provinces {
+		if city, ok := byID[in.Provinces[index].ID]; ok {
+			in.Provinces[index].EmploymentRate = city.EmploymentRate
+			in.Provinces[index].Disease = city.Disease
+			in.Provinces[index].Crime = city.Crime
+		}
+	}
 }
 
 func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, error) {
@@ -341,6 +366,11 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		problem(w, 500, "Economic strategy unavailable. Restart migrations if this database predates the redesign.")
 		return
 	}
+	var economicResult NationResult
+	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
+		economicResult = calculateEconomy(economicNation)
+		applyProvincialOperatingConditions(&in, economicResult)
+	}
 	result := calculateStrategy(in)
 	applyCrisisTurnModifiers(&result, a.loadCrisisModifiers(r.Context(), nid))
 	var political float64
@@ -383,7 +413,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 	sort.Strings(keys)
 	for _, key := range keys {
 		spec := provinceUpgradeSpecs[key]
-		upgradeList = append(upgradeList, map[string]any{"key": key, "name": spec.Name, "description": spec.Description, "baseCost": spec.BaseCost})
+		upgradeList = append(upgradeList, map[string]any{"key": key, "name": spec.Name, "description": spec.Description, "baseCost": spec.BaseCost, "hardCap": spec.HardCap})
 	}
 	institutionList := []map[string]any{}
 	keys = keys[:0]
@@ -405,8 +435,8 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 	}
 	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥25,000,000 × N^2.55 × Gear × Policy"}
 	provinceCivicMetrics := map[string]any{}
-	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
-		for _, city := range calculateEconomy(economicNation).Cities {
+	if len(economicResult.Cities) > 0 {
+		for _, city := range economicResult.Cities {
 			provinceCivicMetrics[city.ID] = map[string]any{"employmentRate": city.EmploymentRate, "taxCollectionMultiplier": city.TaxCollectionMultiplier, "disease": city.Disease, "crime": city.Crime, "dailyUpkeep": city.CivicUpkeep}
 		}
 	}

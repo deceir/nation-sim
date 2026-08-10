@@ -641,3 +641,23 @@ CREATE TABLE IF NOT EXISTS crisis_modifiers (
   CONSTRAINT fk_crisis_modifier_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   CONSTRAINT fk_crisis_modifier_daily FOREIGN KEY(daily_crisis_id) REFERENCES daily_crises(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS changelog_posts (
+  id CHAR(36) PRIMARY KEY,
+  author_user_id CHAR(36) NULL,
+  author_nation_id CHAR(36) NULL,
+  author_name VARCHAR(100) NOT NULL,
+  title VARCHAR(180) NOT NULL,
+  body MEDIUMTEXT NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  INDEX idx_changelog_posts_created(created_at,id),
+  CONSTRAINT fk_changelog_author_user FOREIGN KEY(author_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_changelog_author_nation FOREIGN KEY(author_nation_id) REFERENCES nations(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS changelog_reads (
+  user_id CHAR(36) PRIMARY KEY,
+  last_viewed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_changelog_reads_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB;

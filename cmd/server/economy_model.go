@@ -12,7 +12,7 @@ type EconomyConfig struct {
 
 const yenScale int64 = 100
 
-var balance = EconomyConfig{24, 90, 50, 2800, .001, .018, .0012, .55, .0025, 32}
+var balance = EconomyConfig{24, 90, 50, 500, .001, .018, .0012, .55, .0025, 32}
 
 // startingNationPopulation uses the same model as the hourly turn so a newly
 // founded nation never presents a temporary placeholder population.
@@ -45,18 +45,18 @@ type BuildingSpec struct {
 
 var buildings = map[string]BuildingSpec{
 	"renewable_plant":   {Name: "Municipal Utility Grid", Category: "utilities", Description: "Public generation supports power-intensive civic and commercial institutions.", Cost: 42000, Power: -90, Pollution: .5, DailyUpkeep: 1500, Costs: map[string]float64{"construction_materials": 30, "basic_metals": 20, "energy": 10}, MinTech: 8, MaxPerProvince: 2},
-	"bank":              {Name: "Commercial Bank", Category: "commerce", Description: "Formal credit and payment services expand taxable commerce and improve revenue collection.", Cost: 22000, Commerce: 5, Employment: .8, TaxCollection: 2.5, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 14, "basic_goods": 8}, MaxPerProvince: 2},
-	"shopping_mall":     {Name: "Commercial Arcade", Category: "commerce", Description: "A large retail district creates jobs and concentrates consumer spending in the formal economy.", Cost: 28000, Power: 8, Commerce: 9, Pollution: 1, Employment: 2, TaxCollection: 1, DailyUpkeep: 1200, Costs: map[string]float64{"construction_materials": 20, "consumer_goods": 8}, MaxPerProvince: 2},
-	"marketplace":       {Name: "Municipal Marketplace", Category: "commerce", Description: "A regulated market creates accessible work and brings informal trade into the taxable economy.", Cost: 18000, Commerce: 4, Employment: 1.8, TaxCollection: 1, DailyUpkeep: 700, Costs: map[string]float64{"timber": 12, "construction_materials": 10}, MaxPerProvince: 3},
-	"trade_exchange":    {Name: "Provincial Trade Exchange", Category: "commerce", Description: "A formal exchange concentrates wholesale trade, finance, and professional employment.", Cost: 34000, Commerce: 8, Employment: 1.3, TaxCollection: 2, DailyUpkeep: 1400, Costs: map[string]float64{"construction_materials": 24, "consumer_goods": 8}, MinTech: 5, MaxPerProvince: 2},
-	"transit_authority": {Name: "Public Transit Authority", Category: "commerce", Description: "Reliable transport connects residents to workplaces and widens the effective labor market.", Cost: 27000, Employment: 2.4, Happiness: .4, DailyUpkeep: 1300, Costs: map[string]float64{"construction_materials": 22, "basic_metals": 14, "energy": 8}, MaxPerProvince: 2},
-	"municipal_office":  {Name: "Revenue Administration Office", Category: "government", Description: "Professional assessors and records offices improve compliance and reduce uncollected taxes.", Cost: 20000, Employment: .5, TaxCollection: 3.5, DailyUpkeep: 1100, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 2},
-	"hospital":          {Name: "Provincial Hospital", Category: "services", Description: "Public medical capacity suppresses disease, supports workforce participation, and improves local wellbeing.", Cost: 26000, Happiness: 1.5, DiseaseReduction: .012, Employment: .5, DailyUpkeep: 1600, Costs: map[string]float64{"construction_materials": 20, "processed_foods": 10, "basic_goods": 10}, MaxPerProvince: 3},
-	"police_station":    {Name: "Civic Police Station", Category: "services", Description: "Local policing reduces crime losses and improves the reliability of commercial activity.", Cost: 17000, CrimeReduction: .012, TaxCollection: .5, DailyUpkeep: 950, Costs: map[string]float64{"construction_materials": 10, "basic_goods": 8}, MaxPerProvince: 3},
-	"school":            {Name: "Public School System", Category: "education", Description: "Schools raise national Education over time and provide a small local employment benefit.", Cost: 16000, Education: .7, Happiness: .4, Employment: .3, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 3},
-	"university":        {Name: "Provincial University", Category: "education", Description: "Higher education accelerates national Education and supports a skilled service economy.", Cost: 38000, Education: 1.6, Employment: .7, Commerce: 2, DailyUpkeep: 1800, Costs: map[string]float64{"construction_materials": 28, "consumer_goods": 10}, MinTech: 4, MaxPerProvince: 2},
+	"bank":              {Name: "Commercial Bank", Category: "commerce", Description: "Formal credit and payment services expand taxable commerce and improve revenue collection.", Cost: 22000, Commerce: 5, Employment: 1.2, TaxCollection: 2.5, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 14, "basic_goods": 8}, MaxPerProvince: 3},
+	"shopping_mall":     {Name: "Commercial Arcade", Category: "commerce", Description: "A large retail district creates jobs and concentrates consumer spending in the formal economy.", Cost: 28000, Power: 8, Commerce: 9, Pollution: 1, Employment: 2.5, TaxCollection: 1, DailyUpkeep: 1200, Costs: map[string]float64{"construction_materials": 20, "consumer_goods": 8}, MaxPerProvince: 4},
+	"marketplace":       {Name: "Municipal Marketplace", Category: "commerce", Description: "A regulated market creates accessible work and brings informal trade into the taxable economy.", Cost: 18000, Commerce: 4, Employment: 2.8, TaxCollection: 1, DailyUpkeep: 700, Costs: map[string]float64{"timber": 12, "construction_materials": 10}, MaxPerProvince: 4},
+	"trade_exchange":    {Name: "Provincial Trade Exchange", Category: "commerce", Description: "A formal exchange concentrates wholesale trade, finance, and professional employment.", Cost: 34000, Commerce: 8, Employment: 2, TaxCollection: 2, DailyUpkeep: 1400, Costs: map[string]float64{"construction_materials": 24, "consumer_goods": 8}, MinTech: 5, MaxPerProvince: 3},
+	"transit_authority": {Name: "Public Transit Authority", Category: "commerce", Description: "Reliable transport connects residents to workplaces and widens the effective labor market.", Cost: 27000, Employment: 3.5, Happiness: .4, DailyUpkeep: 1300, Costs: map[string]float64{"construction_materials": 22, "basic_metals": 14, "energy": 8}, MaxPerProvince: 3},
+	"municipal_office":  {Name: "Revenue Administration Office", Category: "government", Description: "Professional assessors and records offices improve compliance and reduce uncollected taxes.", Cost: 20000, Employment: 1, TaxCollection: 3.5, DailyUpkeep: 1100, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 3},
+	"hospital":          {Name: "Provincial Hospital", Category: "services", Description: "Scalable medical coverage offsets disease created by dense extraction and industry.", Cost: 26000, Happiness: 1.5, DiseaseReduction: .008, Employment: .7, DailyUpkeep: 1600, Costs: map[string]float64{"construction_materials": 20, "processed_foods": 10, "basic_goods": 10}, MaxPerProvince: 8},
+	"police_station":    {Name: "Civic Police Station", Category: "services", Description: "Scalable public security offsets crime associated with larger commercial and industrial economies.", Cost: 17000, CrimeReduction: .009, TaxCollection: .5, Employment: .5, DailyUpkeep: 950, Costs: map[string]float64{"construction_materials": 10, "basic_goods": 8}, MaxPerProvince: 8},
+	"school":            {Name: "Public School System", Category: "education", Description: "Scalable schooling raises national Education and gradually improves workforce quality.", Cost: 16000, Education: .7, Happiness: .4, Employment: .5, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 8},
+	"university":        {Name: "Provincial University", Category: "education", Description: "Higher education accelerates national Education and supports a skilled service economy.", Cost: 38000, Education: 1.6, Employment: 1, Commerce: 2, DailyUpkeep: 1800, Costs: map[string]float64{"construction_materials": 28, "consumer_goods": 10}, MinTech: 4, MaxPerProvince: 3},
 	"park":              {Name: "Public Commons", Category: "services", Description: "Maintained civic space improves Satisfaction and slightly reduces local pollution.", Cost: 12000, Happiness: 1.1, Pollution: -1, DailyUpkeep: 450, Costs: map[string]float64{"timber": 8, "basic_goods": 4}, MaxPerProvince: 3},
-	"recycling_center":  {Name: "Municipal Recovery Works", Category: "utilities", Description: "Public recovery facilities reduce pollution produced by dense provincial development.", Cost: 21000, Pollution: -5, Happiness: .5, Employment: .4, DailyUpkeep: 800, Costs: map[string]float64{"construction_materials": 14, "basic_metals": 8}, MaxPerProvince: 2},
+	"recycling_center":  {Name: "Municipal Recovery Works", Category: "utilities", Description: "Scalable recovery facilities reduce pollution produced by dense provincial development.", Cost: 21000, Pollution: -5, Happiness: .5, Employment: .6, DailyUpkeep: 800, Costs: map[string]float64{"construction_materials": 14, "basic_metals": 8}, MaxPerProvince: 8},
 }
 
 type ProjectSpec struct {
@@ -218,6 +218,10 @@ func calculateEconomy(n ModelNation) NationResult {
 			r.Used += q
 		}
 		agriculture := provinceUpgradeEffect(c.Upgrades["agriculture"])
+		extraction := provinceUpgradeEffect(c.Upgrades["extraction"])
+		lightIndustry := provinceUpgradeEffect(c.Upgrades["light_industry"])
+		heavyIndustry := provinceUpgradeEffect(c.Upgrades["heavy_industry"])
+		militaryIndustry := provinceUpgradeEffect(c.Upgrades["military_industry"])
 		commerceUpgrade := provinceUpgradeEffect(c.Upgrades["commerce"])
 		civil := provinceUpgradeEffect(c.Upgrades["civil"])
 		r.BasePopulation = c.Infra * balance.PopulationPerInfra * (1 + agriculture*.006 + civil*.009)
@@ -226,7 +230,10 @@ func calculateEconomy(n ModelNation) NationResult {
 		if density > 1 {
 			r.DensityMultiplier = clamp(1-(density-1)*.08, .70, 1)
 		}
-		powerCapacity, powerUse, commerce, pollution := 0.0, 0.0, 0.0, c.Pollution
+		productionPollution := agriculture*.10 + extraction*.55 + lightIndustry*.35 + heavyIndustry*.80 + militaryIndustry*.65
+		productionDisease := agriculture*.0008 + extraction*.0007 + lightIndustry*.0005 + heavyIndustry*.0008 + militaryIndustry*.0006
+		productionCrime := commerceUpgrade*.0008 + lightIndustry*.0003 + heavyIndustry*.0004 + militaryIndustry*.0003
+		powerCapacity, powerUse, commerce, pollution := 0.0, 0.0, 0.0, productionPollution
 		diseaseReduction, crimeReduction, localHappiness, employmentBonus, taxCollection := 0.0, 0.0, civil*.55, 0.0, 0.0
 		educationBuildings += civil * .12
 		for key, q := range c.Buildings {
@@ -274,8 +281,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.Projects["public_health_sanitation"] {
 			healthReduction = .01
 		}
-		r.Disease = clamp(.012+r.Pollution*.0007-n.Education*.00008-diseaseReduction-healthReduction, 0, .30)
-		r.Crime = clamp(.04-n.Education*.0003+(50-n.Happiness)*.0004-crimeReduction, 0, .30)
+		r.Disease = clamp(.012+r.Pollution*.0007+productionDisease-n.Education*.00008-diseaseReduction-healthReduction, 0, .30)
+		r.Crime = clamp(.04+productionCrime-n.Education*.0003+(50-n.Happiness)*.0004-crimeReduction-employmentBonus*.0008, 0, .30)
 		if n.LongTermProjects["public_health_program"] {
 			r.Disease *= .75
 		}
@@ -293,7 +300,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.LongTermProjects["national_education_act"] {
 			r.CitizenIncome *= 1.04
 		}
-		r.EmploymentRate = clamp(n.EmploymentRate+employmentBonus, 25, 98)
+		educationEmployment := clamp((n.Education-40)*.08, -2, 4)
+		r.EmploymentRate = clamp(n.EmploymentRate+educationEmployment+employmentBonus, 25, 98)
 		r.EmploymentMultiplier = r.EmploymentRate / 72
 		r.TaxCollectionMultiplier = 1 + taxCollection/100
 		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018) * r.EmploymentMultiplier * r.TaxCollectionMultiplier
@@ -306,7 +314,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
 		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
 		out.DailyInfrastructureUpkeep += r.InfrastructureUpkeep

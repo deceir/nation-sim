@@ -10,6 +10,7 @@ import (
 type provinceUpgradeSpec struct {
 	Name, Description string
 	BaseCost          float64
+	HardCap           int
 }
 
 type provinceDevelopmentBalance struct {
@@ -29,13 +30,13 @@ var provinceDevelopment = provinceDevelopmentBalance{
 const provinceUpgradeLevelHardCap = 15
 
 var provinceUpgradeSpecs = map[string]provinceUpgradeSpec{
-	"agriculture":       {"Agricultural & Food", "Improves food and fiber output while supporting the local population base.", 20000},
-	"extraction":        {"Extraction Efficiency", "Raises output from the Province's natural deposits.", 26000},
-	"light_industry":    {"Light Industry", "Improves textiles, processed foods, and basic-goods production.", 30000},
-	"heavy_industry":    {"Heavy Industry", "Improves construction materials, consumer goods, and advanced commodities.", 45000},
-	"commerce":          {"Commercial & Trade", "Raises this Province's citizen income and tax contribution.", 28000},
-	"civil":             {"Civil & Quality of Life", "Supports effective population, Happiness, and long-term social capacity.", 24000},
-	"military_industry": {"Military-Industrial", "Improves military-equipment production in this Province.", 50000},
+	"agriculture":       {"Agricultural & Food", "Improves food and fiber output and population capacity, but intensive production adds disease and pollution pressure.", 20000, 15},
+	"extraction":        {"Extraction Efficiency", "Raises all natural-deposit output while adding substantial pollution and disease pressure.", 26000, 15},
+	"light_industry":    {"Light Industry", "Improves textiles, processed foods, and basic goods while adding moderate pollution and disease pressure.", 30000, 15},
+	"heavy_industry":    {"Heavy Industry", "Improves construction materials, consumer goods, and luxury goods; it creates the strongest pollution and disease pressure.", 45000, 15},
+	"commerce":          {"Commercial & Trade", "Raises citizen tax income and employment potential, with growing crime pressure in a larger commercial economy.", 28000, 15},
+	"civil":             {"Civil & Quality of Life", "Supports effective population, Happiness, Education, and long-term social capacity.", 24000, 15},
+	"military_industry": {"Military-Industrial", "Improves military-equipment production while adding pollution, disease, and crime pressure.", 50000, 15},
 }
 
 func provinceUpgradeCost(spec provinceUpgradeSpec, level int, infra float64) int64 {
@@ -158,7 +159,7 @@ func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user)
 		problem(w, http.StatusBadRequest, "Unknown Province upgrade action.")
 		return
 	}
-	if level >= provinceUpgradeLevelHardCap {
+	if level >= spec.HardCap {
 		problem(w, http.StatusConflict, "This Province upgrade has reached its hard cap.")
 		return
 	}

@@ -80,6 +80,33 @@ func TestCivicInstitutionsIncreaseEmploymentAndTaxRevenue(t *testing.T) {
 	}
 }
 
+func TestStarterProvinceProducesRoughlyTwoMillionDailyTax(t *testing.T) {
+	result := calculateEconomy(ModelNation{TaxRate: 25, Happiness: 65, Education: 40, EmploymentRate: 72, Technology: 20, Cities: []ModelCity{{Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}})
+	if result.DailyTax < 1750000 || result.DailyTax > 2400000 {
+		t.Fatalf("starter daily tax = %.0f, want roughly 2 million", result.DailyTax)
+	}
+}
+
+func TestManagedProvinceCanReachNinetyPercentEmployment(t *testing.T) {
+	result := calculateEconomy(ModelNation{TaxRate: 25, Happiness: 60, Education: 55, EmploymentRate: 72, Cities: []ModelCity{{Infra: 300, Land: 400, Buildings: map[string]int{"marketplace": 3, "transit_authority": 2, "shopping_mall": 2}, Upgrades: map[string]int{}}}})
+	if result.Cities[0].EmploymentRate < 90 {
+		t.Fatalf("well-managed employment = %.1f%%, want at least 90%%", result.Cities[0].EmploymentRate)
+	}
+}
+
+func TestIndustrialUpgradesCreateManageableHealthAndSecurityPressure(t *testing.T) {
+	base := ModelNation{TaxRate: 25, Happiness: 55, Education: 45, EmploymentRate: 72, Cities: []ModelCity{{Infra: 400, Land: 500, Buildings: map[string]int{}, Upgrades: map[string]int{"extraction": 8, "heavy_industry": 8, "commerce": 8}}}}
+	strained := calculateEconomy(base)
+	base.Cities[0].Buildings = map[string]int{"hospital": 2, "police_station": 2, "recycling_center": 2}
+	managed := calculateEconomy(base)
+	if strained.Cities[0].Disease <= 0 || strained.Cities[0].Crime <= 0 {
+		t.Fatal("production investment should create disease and crime pressure")
+	}
+	if managed.Cities[0].Disease >= strained.Cities[0].Disease || managed.Cities[0].Crime >= strained.Cities[0].Crime {
+		t.Fatal("health, security, and recovery institutions should mitigate production pressure")
+	}
+}
+
 func TestCivicInstitutionCapacityHasProvincialMinimum(t *testing.T) {
 	if got := civicInstitutionCapacity(100); got != 5 {
 		t.Fatalf("starter Province should have five Civic Institution slots, got %d", got)

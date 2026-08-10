@@ -65,3 +65,19 @@ func TestProvincialInvestmentIncreasesStrategicOutput(t *testing.T) {
 		t.Fatal("provincial upgrades did not increase the relevant outputs")
 	}
 }
+
+func TestProvincialOperatingConditionsAffectActualProduction(t *testing.T) {
+	province := provinceStrategy{ID: "p", Infra: 300, Specialization: "extraction", EmploymentRate: 72, Disease: .08, Crime: .10, Deposits: map[string]float64{"basic_metals": 1}, Upgrades: map[string]int{"extraction": 6}}
+	input := strategicInput{Gear: "balanced", Policies: map[string]bool{}, Education: 40, Technology: 5, Provinces: []provinceStrategy{province}, Quotas: map[string]float64{}}
+	strained := calculateStrategy(input)
+	input.Provinces[0].EmploymentRate = 92
+	input.Provinces[0].Disease = .01
+	input.Provinces[0].Crime = .02
+	managed := calculateStrategy(input)
+	if managed.Production["basic_metals"] <= strained.Production["basic_metals"] {
+		t.Fatal("better employment, health, and security should increase actual production")
+	}
+	if managed.ProvinceFactors["p"]["operationalFactor"] <= strained.ProvinceFactors["p"]["operationalFactor"] {
+		t.Fatal("production factor breakdown should reflect provincial management")
+	}
+}

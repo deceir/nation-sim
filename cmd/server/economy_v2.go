@@ -32,6 +32,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	result := calculateEconomy(n)
 	if strategy, e := a.loadStrategy(r.Context(), nid); e == nil {
+		applyProvincialOperatingConditions(&strategy, result)
 		strategic := calculateStrategy(strategy)
 		crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
 		applyCrisisTurnModifiers(&strategic, crisisModifiers)
