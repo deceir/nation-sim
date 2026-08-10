@@ -99,6 +99,11 @@ func main() {
 		{"alliance_bank_transactions", "batch_id", "CHAR(36) NULL"},
 		{"crisis_options", "effect_payload", "JSON NULL"},
 	}
+	// Moderation is a first-class notification category. Existing databases need
+	// an explicit enum expansion; fresh databases receive it from schema.sql.
+	if _, err = db.Exec(`ALTER TABLE notifications MODIFY category ENUM('economic','war','market','game','moderation') NOT NULL`); err != nil {
+		log.Printf("notification category migration: %v", err)
+	}
 	for _, u := range upgrades {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
 			log.Fatal(err)

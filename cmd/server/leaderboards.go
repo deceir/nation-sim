@@ -62,7 +62,7 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 	filters := leaderboardParameters(r.URL.Query())
 	continent, search := filters.Continent, "%"+filters.Search+"%"
 	var total int
-	countQuery := `SELECT COUNT(*) FROM nations n WHERE (?='' OR n.continent=?) AND (?='' OR n.name LIKE ?) AND (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)>=? AND (?=0 OR (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)<=?)`
+	countQuery := `SELECT COUNT(*) FROM nations n WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.continent=?) AND (?='' OR n.name LIKE ?) AND (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)>=? AND (?=0 OR (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)<=?)`
 	if err := a.db.QueryRowContext(r.Context(), countQuery, continent, continent, filters.Search, search, filters.MinProvinces, filters.MaxProvinces, filters.MaxProvinces).Scan(&total); err != nil {
 		problem(w, 500, "Leaderboards are temporarily unavailable.")
 		return
@@ -85,7 +85,7 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 				SELECT nation_id,resource,CAST(escrow_goods AS SIGNED) FROM market_orders WHERE side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')
 			) holdings GROUP BY nation_id
 		) m ON m.nation_id=n.id
-		WHERE (?='' OR n.continent=?) AND (?='' OR n.name LIKE ?) AND (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)>=? AND (?=0 OR (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)<=?)
+		WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.continent=?) AND (?='' OR n.name LIKE ?) AND (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)>=? AND (?=0 OR (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)<=?)
 		ORDER BY %s %s,n.name ASC LIMIT ? OFFSET ?`, orderColumn, strings.ToUpper(filters.Order))
 	rows, err := a.db.QueryContext(r.Context(), query, continent, continent, filters.Search, search, filters.MinProvinces, filters.MaxProvinces, filters.MaxProvinces, filters.PageSize, (filters.Page-1)*filters.PageSize)
 	if err != nil {

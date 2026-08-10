@@ -560,6 +560,17 @@ CREATE TABLE IF NOT EXISTS notifications (
   CONSTRAINT fk_notifications_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS user_bans (
+  user_id CHAR(36) PRIMARY KEY,
+  banned_by_user_id CHAR(36) NOT NULL,
+  reason VARCHAR(1000) NOT NULL DEFAULT '',
+  expires_at TIMESTAMP(6) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  INDEX idx_user_bans_active(expires_at),
+  CONSTRAINT fk_user_bans_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_bans_actor FOREIGN KEY(banned_by_user_id) REFERENCES users(id)
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS crisis_templates (
   id VARCHAR(80) PRIMARY KEY,
   internal_name VARCHAR(100) NOT NULL UNIQUE,

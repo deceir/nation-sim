@@ -60,7 +60,7 @@ func (a *app) uploadNationFlag(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) nationFlag(w http.ResponseWriter, r *http.Request, _ user) {
 	var name, mime string
 	var data []byte
-	if err := a.db.QueryRowContext(r.Context(), `SELECT name,COALESCE(flag_image,''),COALESCE(flag_mime,'') FROM nations WHERE id=?`, r.PathValue("id")).Scan(&name, &data, &mime); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT n.name,COALESCE(n.flag_image,''),COALESCE(n.flag_mime,'') FROM nations n WHERE n.id=? AND NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW()))`, r.PathValue("id")).Scan(&name, &data, &mime); err != nil {
 		problem(w, http.StatusNotFound, "Nation not found.")
 		return
 	}

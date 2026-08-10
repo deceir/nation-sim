@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"net/http"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	q := strings.TrimSpace(r.URL.Query().Get("search"))
 	q = strings.ReplaceAll(strings.ReplaceAll(q, "\\", "\\\\"), "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
-	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,a.id,a.name ORDER BY n.population DESC,n.name LIMIT 100`, q, q, q, q)
+	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,a.id,a.name ORDER BY n.population DESC,n.name LIMIT 100`, q, q, q, q)
 	if e != nil {
 		problem(w, 500, "Nation directory unavailable.")
 		return
@@ -59,6 +60,16 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 	var locationLat, locationLng *float64
 	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.owner_id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE id=n.capital_city_id AND nation_id=n.id),(SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at ASC,id ASC LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(ar.title,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()),n.location_lat,n.location_lng FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id LEFT JOIN alliance_roles ar ON ar.id=am.role_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,n.owner_id,n.capital_city_id,n.location_lat,n.location_lng,a.id,a.name,ar.title`, r.PathValue("id")).Scan(&id, &ownerID, &name, &leader, &government, &continent, &motto, &userType, &population, &created, &cityCount, &capital, &allianceID, &allianceName, &allianceRole, &lastActive, &guardianUntil, &locationLat, &locationLng)
 	if e != nil {
+		var bannedReason string
+		var bannedUntil sql.NullTime
+		if a.db.QueryRowContext(r.Context(), `SELECT b.reason,b.expires_at FROM nations n JOIN user_bans b ON b.user_id=n.owner_id WHERE n.id=? AND (b.expires_at IS NULL OR b.expires_at>NOW())`, r.PathValue("id")).Scan(&bannedReason, &bannedUntil) == nil {
+			until := "indefinitely"
+			if bannedUntil.Valid {
+				until = bannedUntil.Time.Format("2006-01-02")
+			}
+			problem(w, http.StatusGone, "This nation is unavailable because its user is banned until "+until+".")
+			return
+		}
 		problem(w, 404, "Nation not found.")
 		return
 	}

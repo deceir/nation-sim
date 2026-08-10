@@ -119,6 +119,10 @@ func main() {
 	mux.HandleFunc("GET /api/notifications", a.auth(a.notifications))
 	mux.HandleFunc("PATCH /api/notifications/read", a.auth(a.readNotifications))
 	mux.HandleFunc("POST /api/dev/notifications", a.auth(a.broadcastGameNotification))
+	mux.HandleFunc("POST /api/nations/{id}/report", a.auth(a.reportNation))
+	mux.HandleFunc("GET /api/dev/bans", a.auth(a.devBans))
+	mux.HandleFunc("POST /api/dev/bans", a.auth(a.banUser))
+	mux.HandleFunc("DELETE /api/dev/bans/{userID}", a.auth(a.unbanUser))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.worldStats)
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
@@ -244,6 +248,10 @@ func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) 
 }
 
 func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
+	if reason, until, banned := a.activeBan(r.Context(), u.ID); banned {
+		write(w, 200, map[string]any{"user": u, "nation": nil, "banned": true, "banReason": reason, "banExpiresAt": until})
+		return
+	}
 	var n struct {
 		ID, Name, Motto, Currency, LeaderName, Government, Continent, UserType, AllianceID, AllianceName, AllianceRole, EconomicGear string
 		Treasury, Population                                                                                                         int64
@@ -415,6 +423,14 @@ func (a *app) auth(next handler) http.HandlerFunc {
 		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.theme_preference FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email, &u.ThemePreference)
 		if e != nil {
 			problem(w, 401, "Session expired.")
+			return
+		}
+		if _, until, banned := a.activeBan(r.Context(), u.ID); banned && r.URL.Path != "/api/me" {
+			untilText := " indefinitely"
+			if until != nil {
+				untilText = " until " + until.Format("2006-01-02")
+			}
+			problem(w, http.StatusForbidden, "This account is banned"+untilText+".")
 			return
 		}
 		a.db.Exec(r.Context(), `UPDATE sessions SET last_action_at=NOW() WHERE token_hash=?`, digest(c.Value))
