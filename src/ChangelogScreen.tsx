@@ -34,9 +34,9 @@ export default function ChangelogScreen(){
   {error&&<p className="error notice">{error}</p>}
   <section className="changelog-feed" aria-busy={loading}>
    {loading&&!data?<div className="panel changelog-empty">Loading changelog…</div>:data?.posts.length?data.posts.map(post=><article className="changelog-entry" key={post.ID}>
-    <header><div><time>{new Date(post.CreatedAt).toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})}</time><h2>{post.Title}</h2></div>{post.CanEdit&&<button type="button" className="changelog-edit" onClick={()=>beginEdit(post)}><Edit3/> Edit post</button>}</header>
+    <header><div><time>{new Date(post.CreatedAt).toLocaleDateString(undefined,{year:'numeric',month:'long',day:'numeric'})}</time><h2>{post.Title}</h2><span className="changelog-byline">Posted by <b>{post.AuthorName}</b></span></div>{post.CanEdit&&<button type="button" className="changelog-edit" onClick={()=>beginEdit(post)}><Edit3/> Edit post</button>}</header>
     <div className="changelog-content" dangerouslySetInnerHTML={{__html:richText(post.Body)}}/>
-    <footer><span>Posted by <b>{post.AuthorName}</b></span><time>{new Date(post.CreatedAt).toLocaleString()}</time>{post.UpdatedAt!==post.CreatedAt&&<em>Edited {new Date(post.UpdatedAt).toLocaleString()}</em>}</footer>
+    <footer><time>{new Date(post.CreatedAt).toLocaleString()}</time>{post.UpdatedAt!==post.CreatedAt&&<em>Edited {new Date(post.UpdatedAt).toLocaleString()}</em>}</footer>
    </article>):<div className="panel changelog-empty">No changelog entries have been published yet.</div>}
   </section>
   {!!data&&data.pages>1&&<nav className="changelog-pagination" aria-label="Changelog pages"><button disabled={page<=1} onClick={()=>setPage(page-1)}>Previous</button><span>Page {page} of {data.pages}</span><button disabled={page>=data.pages} onClick={()=>setPage(page+1)}>Next</button></nav>}

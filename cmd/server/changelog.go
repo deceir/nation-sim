@@ -27,9 +27,9 @@ func validateChangelogPost(title, body string) (string, string, string) {
 }
 
 func (a *app) changelogAuthor(r *http.Request, userID string) (string, string, bool) {
-	var nationID, nationName, userType string
-	err := a.db.QueryRowContext(r.Context(), `SELECT id,name,user_type FROM nations WHERE owner_id=?`, userID).Scan(&nationID, &nationName, &userType)
-	return nationID, nationName, err == nil && userType == "DEV"
+	var nationID, leaderName, userType string
+	err := a.db.QueryRowContext(r.Context(), `SELECT id,leader_name,user_type FROM nations WHERE owner_id=?`, userID).Scan(&nationID, &leaderName, &userType)
+	return nationID, leaderName, err == nil && userType == "DEV"
 }
 
 func (a *app) changelog(w http.ResponseWriter, r *http.Request, u user) {
@@ -61,7 +61,7 @@ func (a *app) changelog(w http.ResponseWriter, r *http.Request, u user) {
 	if page > pages {
 		page = pages
 	}
-	rows, err := a.db.QueryContext(r.Context(), `SELECT id,author_user_id,author_nation_id,author_name,title,body,created_at,updated_at FROM changelog_posts ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`, pageSize, (page-1)*pageSize)
+	rows, err := a.db.QueryContext(r.Context(), `SELECT p.id,p.author_user_id,p.author_nation_id,COALESCE(n.leader_name,p.author_name),p.title,p.body,p.created_at,p.updated_at FROM changelog_posts p LEFT JOIN nations n ON n.id=p.author_nation_id ORDER BY p.created_at DESC,p.id DESC LIMIT ? OFFSET ?`, pageSize, (page-1)*pageSize)
 	if err != nil {
 		problem(w, 500, "Could not load the changelog.")
 		return
@@ -93,7 +93,7 @@ func (a *app) changelog(w http.ResponseWriter, r *http.Request, u user) {
 }
 
 func (a *app) createChangelogPost(w http.ResponseWriter, r *http.Request, u user) {
-	nationID, nationName, allowed := a.changelogAuthor(r, u.ID)
+	nationID, leaderName, allowed := a.changelogAuthor(r, u.ID)
 	if !allowed {
 		problem(w, 403, "Only DEV nations can publish changelog posts.")
 		return
@@ -108,7 +108,7 @@ func (a *app) createChangelogPost(w http.ResponseWriter, r *http.Request, u user
 		return
 	}
 	id := uuid()
-	if _, err := a.db.ExecContext(r.Context(), `INSERT INTO changelog_posts(id,author_user_id,author_nation_id,author_name,title,body) VALUES(?,?,?,?,?,?)`, id, u.ID, nationID, nationName, title, body); err != nil {
+	if _, err := a.db.ExecContext(r.Context(), `INSERT INTO changelog_posts(id,author_user_id,author_nation_id,author_name,title,body) VALUES(?,?,?,?,?,?)`, id, u.ID, nationID, leaderName, title, body); err != nil {
 		problem(w, 500, "Could not publish the changelog post.")
 		return
 	}
