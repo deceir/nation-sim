@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+func (a *app) projectedGDPForOwner(ctx context.Context, ownerID string) (int64, string, error) {
+	nation, nationID, _, err := a.loadEconomicNationContext(ctx, ownerID)
+	if err != nil {
+		return 0, nationID, err
+	}
+	result := calculateEconomy(nation)
+	multiplier := 1.0
+	if strategy, strategyErr := a.loadStrategy(ctx, nationID); strategyErr == nil {
+		strategic := calculateStrategy(strategy)
+		applyCrisisTurnModifiers(&strategic, a.loadCrisisModifiers(ctx, nationID))
+		multiplier = strategic.IncomeMultiplier
+	}
+	return int64(math.Floor(result.DailyTax * multiplier)), nationID, nil
+}
+
 func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	n, nid, cash, err := a.loadEconomicNationContext(r.Context(), u.ID)
 	if err != nil {
@@ -254,6 +269,59 @@ func (a *app) buildImprovement(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	write(w, 201, map[string]any{"ok": true})
+}
+
+func (a *app) deconstructImprovement(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ CityID, Building string }
+	if !decode(w, r, &in) {
+		return
+	}
+	spec, ok := buildings[in.Building]
+	if !ok {
+		problem(w, 400, "Unknown Civic Institution.")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, 500, "Could not begin deconstruction.")
+		return
+	}
+	defer tx.Rollback()
+	var nationID string
+	var quantity int
+	if err = tx.QueryRowContext(r.Context(), `SELECT n.id,i.quantity FROM city_improvements i JOIN cities c ON c.id=i.city_id JOIN nations n ON n.id=c.nation_id WHERE n.owner_id=? AND c.id=? AND i.building_type=? FOR UPDATE`, u.ID, in.CityID, in.Building).Scan(&nationID, &quantity); err != nil || quantity < 1 {
+		problem(w, 404, "That Province does not have this Civic Institution.")
+		return
+	}
+	if quantity == 1 {
+		_, err = tx.ExecContext(r.Context(), `DELETE FROM city_improvements WHERE city_id=? AND building_type=?`, in.CityID, in.Building)
+	} else {
+		_, err = tx.ExecContext(r.Context(), `UPDATE city_improvements SET quantity=quantity-1 WHERE city_id=? AND building_type=?`, in.CityID, in.Building)
+	}
+	if err != nil {
+		problem(w, 500, "Civic Institution could not be deconstructed.")
+		return
+	}
+	refunds := institutionResourceRefunds(spec)
+	for commodity, refund := range refunds {
+		if _, err = tx.ExecContext(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?) ON DUPLICATE KEY UPDATE amount=amount+VALUES(amount)`, nationID, commodity, refund); err != nil {
+			problem(w, 500, "Resource refund could not be completed.")
+			return
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, 500, "Civic Institution could not be deconstructed.")
+		return
+	}
+	write(w, 200, map[string]any{"ok": true, "resourcesRefunded": refunds, "treasuryRefunded": 0})
+}
+
+func institutionResourceRefunds(spec BuildingSpec) map[string]float64 {
+	refunds := make(map[string]float64, len(spec.Costs))
+	for commodity, originalCost := range spec.Costs {
+		refunds[commodity] = originalCost * 0.75
+	}
+	return refunds
 }
 
 func (a *app) completeProject(w http.ResponseWriter, r *http.Request, u user) {

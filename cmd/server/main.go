@@ -94,6 +94,7 @@ func main() {
 	mux.HandleFunc("GET /api/economy", a.auth(a.economyDashboard))
 	mux.HandleFunc("POST /api/economy/development", a.auth(a.buyDevelopment))
 	mux.HandleFunc("POST /api/economy/improvements", a.auth(a.buildImprovement))
+	mux.HandleFunc("POST /api/economy/improvements/deconstruct", a.auth(a.deconstructImprovement))
 	mux.HandleFunc("PATCH /api/economy/policy", a.auth(a.economicPolicy))
 	mux.HandleFunc("POST /api/economy/projects", a.auth(a.completeProject))
 	mux.HandleFunc("PATCH /api/economy/luxury-consumption", a.auth(a.setLuxuryConsumptionRate))

@@ -65,6 +65,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		// while the nation still moves toward it gradually each hourly turn.
 		newHappy := calculateHourlyHappiness(n.Happiness, result.HappinessTarget, strategyResult.HappinessMultiplier)
 		newEducation := clamp(n.Education+result.EducationChange/balance.TurnsPerDay, 0, 100)
+		dailyGDP := int64(math.Floor(result.DailyTax * strategyResult.IncomeMultiplier))
 		tx, e := a.db.BeginTx(ctx, nil)
 		if e != nil {
 			continue
@@ -95,7 +96,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.Rollback()
 			continue
 		}
-		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), nid)
+		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,gdp=? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), dailyGDP, nid)
 		if e != nil {
 			tx.Rollback()
 			continue

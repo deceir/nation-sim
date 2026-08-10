@@ -32,6 +32,7 @@ func main() {
 		{"nations", "capital_city_id", "CHAR(36) NULL"},
 		{"nations", "technology_progress", "DECIMAL(8,4) NOT NULL DEFAULT 0"},
 		{"nations", "employment_rate", "DECIMAL(5,2) NOT NULL DEFAULT 72.00"},
+		{"nations", "gdp", "BIGINT NOT NULL DEFAULT 0"},
 		{"nations", "tax_rate", "DECIMAL(5,2) NOT NULL DEFAULT 25.00"},
 		{"nations", "doctrine", "VARCHAR(30) NOT NULL DEFAULT 'Balanced'"},
 		{"cities", "total_invested", "BIGINT NOT NULL DEFAULT 0"},

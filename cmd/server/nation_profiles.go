@@ -51,13 +51,13 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 }
 
 func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
-	var id, name, leader, government, continent, motto, capital, userType, allianceID, allianceName string
+	var id, ownerID, name, leader, government, continent, motto, capital, userType, allianceID, allianceName string
 	var cityCount int
 	var population int64
 	var created time.Time
 	var lastActive, guardianUntil *time.Time
 	var locationLat, locationLng *float64
-	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE id=n.capital_city_id AND nation_id=n.id),(SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at ASC,id ASC LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()),n.location_lat,n.location_lng FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,n.owner_id,n.capital_city_id,n.location_lat,n.location_lng,a.id,a.name`, r.PathValue("id")).Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive, &guardianUntil, &locationLat, &locationLng)
+	e := a.db.QueryRow(r.Context(), `SELECT n.id,n.owner_id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,count(DISTINCT c.id),COALESCE((SELECT name FROM cities WHERE id=n.capital_city_id AND nation_id=n.id),(SELECT name FROM cities WHERE nation_id=n.id ORDER BY created_at ASC,id ASC LIMIT 1),''),COALESCE(a.id,''),COALESCE(a.name,''),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id),(SELECT MAX(g.expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=NOW() AND g.expires_at>NOW()),n.location_lat,n.location_lng FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE n.id=? GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,n.owner_id,n.capital_city_id,n.location_lat,n.location_lng,a.id,a.name`, r.PathValue("id")).Scan(&id, &ownerID, &name, &leader, &government, &continent, &motto, &userType, &population, &created, &cityCount, &capital, &allianceID, &allianceName, &lastActive, &guardianUntil, &locationLat, &locationLng)
 	if e != nil {
 		problem(w, 404, "Nation not found.")
 		return
@@ -78,5 +78,9 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	military := loadMilitaryOverview(r.Context(), a.db, id)
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "military": military, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
+	gdp, _, gdpErr := a.projectedGDPForOwner(r.Context(), ownerID)
+	if gdpErr == nil {
+		a.db.ExecContext(r.Context(), `UPDATE nations SET gdp=? WHERE id=?`, gdp, id)
+	}
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "gdp": gdp, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "military": military, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
 }

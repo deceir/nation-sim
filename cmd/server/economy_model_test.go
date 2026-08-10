@@ -82,3 +82,17 @@ func TestCivicInstitutionCapacityHasProvincialMinimum(t *testing.T) {
 		t.Fatal("Infrastructure should expand Civic Institution capacity")
 	}
 }
+
+func TestInstitutionDeconstructionRefundsSeventyFivePercentOfResources(t *testing.T) {
+	spec := buildings["hospital"]
+	refunds := institutionResourceRefunds(spec)
+	if len(refunds) == 0 {
+		t.Fatal("hospital should have resource construction costs to refund")
+	}
+	for resource, originalCost := range spec.Costs {
+		want := originalCost * 0.75
+		if got := refunds[resource]; got != want {
+			t.Fatalf("%s refund = %v, want %v", resource, got, want)
+		}
+	}
+}

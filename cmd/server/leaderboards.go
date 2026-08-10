@@ -16,6 +16,7 @@ type leaderboardQuery struct {
 
 var leaderboardMetrics = map[string]string{
 	"population": "n.population",
+	"gdp":        "n.gdp",
 	"provinces":  "province_count",
 	"soldiers":   "soldiers",
 	"tanks":      "tanks",
@@ -67,7 +68,7 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 		return
 	}
 	orderColumn := leaderboardMetrics[filters.Metric]
-	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) province_count,COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
+	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,n.gdp,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) province_count,COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
 		FROM nations n
 		LEFT JOIN alliance_members am ON am.nation_id=n.id
 		LEFT JOIN alliances a ON a.id=am.alliance_id
@@ -96,12 +97,12 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 	position := (filters.Page-1)*filters.PageSize + 1
 	for rows.Next() {
 		var id, name, leader, continentName, allianceID, allianceName string
-		var population, soldiers, tanks, ships, jets, drones int64
+		var population, gdp, soldiers, tanks, ships, jets, drones int64
 		var provinces int
-		if rows.Scan(&id, &name, &leader, &continentName, &population, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones) != nil {
+		if rows.Scan(&id, &name, &leader, &continentName, &population, &gdp, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones) != nil {
 			continue
 		}
-		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones})
+		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "gdp": gdp, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones})
 		position++
 	}
 	write(w, 200, map[string]any{"metric": filters.Metric, "order": filters.Order, "page": filters.Page, "pageSize": filters.PageSize, "total": total, "items": items})

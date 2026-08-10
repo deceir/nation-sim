@@ -19,3 +19,10 @@ func TestLeaderboardParametersUseSafeDefaults(t *testing.T) {
 		t.Fatalf("unexpected leaderboard defaults: %#v", got)
 	}
 }
+
+func TestLeaderboardParametersAcceptGDP(t *testing.T) {
+	got := leaderboardParameters(url.Values{"metric": {"gdp"}})
+	if got.Metric != "gdp" || leaderboardMetrics[got.Metric] != "n.gdp" {
+		t.Fatalf("GDP leaderboard metric was not accepted: %#v", got)
+	}
+}

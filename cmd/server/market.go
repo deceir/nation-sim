@@ -432,27 +432,27 @@ func (a *app) rejectMarketOrder(w http.ResponseWriter, r *http.Request, u user) 
 }
 
 func (a *app) shipmentsForNation(ctx context.Context, nationID string) ([]map[string]any, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT s.id,s.resource,s.quantity,s.unit_price,s.goods_value,s.shipping_fee,s.distance_modifier,s.risk_percent,s.turns_total,s.turns_remaining,s.delay_count,s.origin_lat,s.origin_lng,s.destination_lat,s.destination_lng,s.departed_at,s.estimated_arrival_at,s.delivered_at,s.status,seller.name,buyer.name,seller.continent,buyer.continent FROM trade_shipments s JOIN nations seller ON seller.id=s.seller_nation_id JOIN nations buyer ON buyer.id=s.buyer_nation_id WHERE s.seller_nation_id=? OR s.buyer_nation_id=? ORDER BY s.departed_at DESC LIMIT 100`, nationID, nationID)
+	rows, err := a.db.QueryContext(ctx, `SELECT s.id,s.resource,s.quantity,s.unit_price,s.goods_value,s.shipping_fee,s.distance_modifier,s.risk_percent,s.turns_total,s.turns_remaining,s.delay_count,s.origin_lat,s.origin_lng,s.destination_lat,s.destination_lng,s.departed_at,s.estimated_arrival_at,s.delivered_at,s.status,seller.id,seller.name,buyer.id,buyer.name,seller.continent,buyer.continent FROM trade_shipments s JOIN nations seller ON seller.id=s.seller_nation_id JOIN nations buyer ON buyer.id=s.buyer_nation_id WHERE s.seller_nation_id=? OR s.buyer_nation_id=? ORDER BY s.departed_at DESC LIMIT 100`, nationID, nationID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, resource, status, seller, buyer, sellerContinent, buyerContinent string
+		var id, resource, status, sellerID, seller, buyerID, buyer, sellerContinent, buyerContinent string
 		var quantity, distance, risk, oLat, oLng, dLat, dLng float64
 		var price, value, fee int64
 		var total, remaining, delays int
 		var departed, eta time.Time
 		var delivered *time.Time
-		if rows.Scan(&id, &resource, &quantity, &price, &value, &fee, &distance, &risk, &total, &remaining, &delays, &oLat, &oLng, &dLat, &dLng, &departed, &eta, &delivered, &status, &seller, &buyer, &sellerContinent, &buyerContinent) != nil {
+		if rows.Scan(&id, &resource, &quantity, &price, &value, &fee, &distance, &risk, &total, &remaining, &delays, &oLat, &oLng, &dLat, &dLng, &departed, &eta, &delivered, &status, &sellerID, &seller, &buyerID, &buyer, &sellerContinent, &buyerContinent) != nil {
 			continue
 		}
 		progress := math.Max(0, math.Min(1, float64(total-remaining)/float64(max(1, total))))
 		if status == "delivered" {
 			progress = 1
 		}
-		out = append(out, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": price, "goodsValue": value, "shippingFee": fee, "distanceModifier": distance, "riskPercent": risk, "turnsTotal": total, "turnsRemaining": remaining, "delayCount": delays, "originLat": oLat, "originLng": oLng, "destinationLat": dLat, "destinationLng": dLng, "departedAt": departed, "estimatedArrivalAt": eta, "deliveredAt": delivered, "status": status, "seller": seller, "buyer": buyer, "sellerContinent": sellerContinent, "buyerContinent": buyerContinent, "progress": progress})
+		out = append(out, map[string]any{"id": id, "resource": resource, "quantity": quantity, "unitPrice": price, "goodsValue": value, "shippingFee": fee, "distanceModifier": distance, "riskPercent": risk, "turnsTotal": total, "turnsRemaining": remaining, "delayCount": delays, "originLat": oLat, "originLng": oLng, "destinationLat": dLat, "destinationLng": dLng, "departedAt": departed, "estimatedArrivalAt": eta, "deliveredAt": delivered, "status": status, "sellerID": sellerID, "seller": seller, "buyerID": buyerID, "buyer": buyer, "sellerContinent": sellerContinent, "buyerContinent": buyerContinent, "progress": progress})
 	}
 	return out, rows.Err()
 }
