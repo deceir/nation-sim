@@ -612,7 +612,9 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 			tx.ExecContext(ctx, `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo) VALUES(?,?,?,'tax',?,?,?)`, uuid(), allianceID, nid, commodity, int64(math.Ceil(tax)), fmt.Sprintf("%.2f%% resource tax for %s", resourceTaxRate, allianceName))
 		}
 	}
-	if len(produced) > 0 || foodNeed > 0 {
+	var turnRevenueNotifications bool
+	tx.QueryRowContext(ctx, `SELECT u.turn_revenue_notifications FROM users u JOIN nations n ON n.owner_id=u.id WHERE n.id=?`, nid).Scan(&turnRevenueNotifications)
+	if turnRevenueNotifications && (len(produced) > 0 || foodNeed > 0) {
 		message := fmt.Sprintf("Population upkeep consumed %.2f Foodstuffs.", foodConsumed)
 		if len(produced) > 0 {
 			message = "Last turn you produced: " + strings.Join(produced, ", ") + ". " + message

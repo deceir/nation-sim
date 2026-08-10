@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(320) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   theme_preference ENUM('dark','light') NOT NULL DEFAULT 'dark',
+  turn_revenue_notifications BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS sessions (

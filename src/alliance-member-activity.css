@@ -1,6 +1,7 @@
 .member-table{
   grid-template-columns:minmax(170px,1.25fr) 90px 125px 120px 110px 90px 135px minmax(150px,1fr)!important;
 }
+.member-nation-link{display:flex;align-items:baseline;gap:6px;white-space:nowrap}.member-nation-link small{color:var(--muted);font-size:.9em;font-weight:400}
 
 .member-last-active{
   color:var(--muted);

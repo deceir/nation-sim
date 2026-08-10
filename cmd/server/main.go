@@ -45,7 +45,10 @@ func (t *transaction) Rollback(context.Context) error { return t.Tx.Rollback() }
 func (t *transaction) Commit(context.Context) error   { return t.Tx.Commit() }
 
 type app struct{ db *database }
-type user struct{ ID, Email, ThemePreference string }
+type user struct {
+	ID, Email, ThemePreference string
+	TurnRevenueNotifications   bool
+}
 
 func main() {
 	dsn := env("DATABASE_URL", "diplomatia:diplomatia@tcp(localhost:3306)/diplomatia?parseTime=true&multiStatements=true")
@@ -227,15 +230,18 @@ func (a *app) logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 func (a *app) userSettings(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Theme string }
+	var in struct {
+		Theme                    string
+		TurnRevenueNotifications *bool
+	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if in.Theme != "dark" && in.Theme != "light" {
+	if in.Theme != "" && in.Theme != "dark" && in.Theme != "light" {
 		problem(w, 400, "Theme must be dark or light.")
 		return
 	}
-	if _, e := a.db.ExecContext(r.Context(), `UPDATE users SET theme_preference=? WHERE id=?`, in.Theme, u.ID); e != nil {
+	if _, e := a.db.ExecContext(r.Context(), `UPDATE users SET theme_preference=CASE WHEN ?='' THEN theme_preference ELSE ? END,turn_revenue_notifications=COALESCE(?,turn_revenue_notifications) WHERE id=?`, in.Theme, in.Theme, in.TurnRevenueNotifications, u.ID); e != nil {
 		problem(w, 500, "Settings could not be saved.")
 		return
 	}
@@ -350,7 +356,8 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 201, map[string]any{"id": nid, "guardianDays": 30})
 }
 func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Motto, Government string }
+	const nameChangeCost int64 = 500000
+	var in struct{ Motto, Government, NationName, LeaderName string }
 	if !decode(w, r, &in) {
 		return
 	}
@@ -359,12 +366,56 @@ func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 400, "Invalid nation profile.")
 		return
 	}
-	_, e := a.db.Exec(r.Context(), `UPDATE nations SET motto=?,government_type=?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, u.ID)
-	if e != nil {
+	in.NationName = strings.TrimSpace(in.NationName)
+	in.LeaderName = strings.TrimSpace(in.LeaderName)
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, 500, "Could not save settings.")
+		return
+	}
+	defer tx.Rollback()
+	var currentName, currentLeader string
+	var treasury int64
+	if err = tx.QueryRowContext(r.Context(), `SELECT name,leader_name,treasury FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&currentName, &currentLeader, &treasury); err != nil {
+		problem(w, 404, "Nation not found.")
+		return
+	}
+	if in.NationName == "" {
+		in.NationName = currentName
+	}
+	if in.LeaderName == "" {
+		in.LeaderName = currentLeader
+	}
+	if len(in.NationName) < 3 || len(in.NationName) > 100 || len(in.LeaderName) < 2 || len(in.LeaderName) > 100 {
+		problem(w, 400, "Nation names must be 3–100 characters and leader names 2–100 characters.")
+		return
+	}
+	changes := int64(0)
+	if in.NationName != currentName {
+		changes++
+	}
+	if in.LeaderName != currentLeader {
+		changes++
+	}
+	cost := changes * nameChangeCost
+	if treasury < cost {
+		problem(w, 400, "Insufficient Treasury. Name changes cost ¥500,000 each.")
+		return
+	}
+	_, err = tx.ExecContext(r.Context(), `UPDATE nations SET motto=?,government_type=?,name=?,leader_name=?,treasury=treasury-?,currency_name='Yen' WHERE owner_id=?`, in.Motto, in.Government, in.NationName, in.LeaderName, cost, u.ID)
+	if err != nil {
+		if mysqlError, ok := err.(*mysql.MySQLError); ok && mysqlError.Number == 1062 {
+			problem(w, 400, "That nation or leader name is already in use.")
+			return
+		}
 		problem(w, 400, "Could not save settings.")
 		return
 	}
-	write(w, 200, map[string]bool{"ok": true})
+	if err = tx.Commit(); err != nil {
+		problem(w, 500, "Could not save settings.")
+		return
+	}
+	write(w, 200, map[string]any{"ok": true, "nameChangeCost": cost})
 }
 func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct{ Kind, DefenderID string }
@@ -420,7 +471,7 @@ func (a *app) auth(next handler) http.HandlerFunc {
 			return
 		}
 		var u user
-		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.theme_preference FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email, &u.ThemePreference)
+		e = a.db.QueryRow(r.Context(), `SELECT u.id,u.email,u.theme_preference,u.turn_revenue_notifications FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>now()`, digest(c.Value)).Scan(&u.ID, &u.Email, &u.ThemePreference, &u.TurnRevenueNotifications)
 		if e != nil {
 			problem(w, 401, "Session expired.")
 			return

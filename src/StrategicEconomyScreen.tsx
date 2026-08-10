@@ -10,7 +10,22 @@ function GearGlyph({gear}:{gear:string}){const Icon=gear==='agrarian'?Tractor:ge
 export default function StrategicEconomyScreen(){
  const[data,setData]=useState<any>(),[error,setError]=useState(''),[activeTab,setActiveTab]=useState<'economy'|'provinces'>('economy'),[selectedProvinceID,setSelectedProvinceID]=useState(''),[quotas,setQuotas]=useState<Record<string,number>>({}),[selectedGear,setSelectedGear]=useState(''),[policyDraft,setPolicyDraft]=useState<string[]>([]),[provinceName,setProvinceName]=useState(''),[renaming,setRenaming]=useState(''),[renameDraft,setRenameDraft]=useState('');
  const load=()=>api('/strategy').then(x=>{setData(x);setSelectedGear(x.gear);setPolicyDraft(x.policies.filter((p:any)=>p.active).map((p:any)=>p.key));setQuotas(Object.fromEntries(goods.map(k=>[k,Number(x.quotas[k]||0)])))}).catch(e=>setError(e.message));
- useEffect(()=>{void load()},[]);const act=async(path:string,body:object,method='PATCH')=>{try{setError('');await api(path,body,method);await load();return true}catch(e){setError((e as Error).message);return false}};
+ useEffect(()=>{void load()},[]);
+ const confirmationFor=(path:string,body:any,method:string)=>{
+  if(method==='POST'&&path==='/cities')return `Found ${body.name}? This spends ¥${Number(data?.expansion?.cashCost||0).toLocaleString()}, ${Number(data?.expansion?.constructionMaterials||0).toLocaleString()} Construction Materials, and applies temporary Happiness strain.`;
+  if(path==='/economy/development')return `Invest in ${body.amount} Infrastructure? This spends ¥${Number(data?.provinces?.find((province:any)=>province.ID===body.cityID)?.InfrastructureQuotes?.[String(body.amount)]||0).toLocaleString()} from the Treasury.`;
+  if(method==='POST'&&path==='/economy/improvements'){
+   const institution=data?.civicInstitutions?.find((item:any)=>item.key===body.building);
+   if(institution){const resources=Object.entries(institution.resourceCosts||{}).map(([key,value])=>`${Number(value).toLocaleString()} t ${labels[key]||key}`).join(', ');return `Build ${institution.name}? This spends ¥${Number(institution.cashCost||0).toLocaleString()}${resources?` and ${resources}`:''}, and adds ¥${Number(institution.dailyUpkeep||0).toLocaleString()} to daily civic upkeep.`}
+  }
+  if(method==='POST'&&path==='/strategy/province/upgrade'){
+   const province=data?.provinces?.find((item:any)=>item.ID===body.provinceID),upgrade=data?.provinceUpgradeTypes?.find((item:any)=>item.key===body.upgrade);
+   if(body.action==='downgrade')return `Lower ${upgrade?.name||'this upgrade'} in ${province?.Name||'this Province'}? Downgrades are immediate and return no resources or Treasury.`;
+   return `Raise ${upgrade?.name||'this upgrade'} in ${province?.Name||'this Province'}? This spends ¥${Number(province?.UpgradeQuotes?.[body.upgrade]||0).toLocaleString()} from the Treasury.`;
+  }
+  return '';
+ };
+ const act=async(path:string,body:object,method='PATCH')=>{const confirmation=confirmationFor(path,body,method);if(confirmation&&!window.confirm(confirmation))return false;try{setError('');await api(path,body,method);await load();return true}catch(e){setError((e as Error).message);return false}};
  if(!data)return <section className="panel wide">Mapping the national economy…</section>;const total=Object.values(quotas).reduce((a,b)=>a+b,0),active:string[]=data.policies.filter((x:any)=>x.active).map((x:any)=>x.key),policyChanged=[...active].sort().join('|')!==[...policyDraft].sort().join('|'),newPolicies=policyDraft.filter(k=>!active.includes(k)),policyCost=newPolicies.reduce((sum,k)=>sum+Number(data.policies.find((p:any)=>p.key===k)?.cost||0),0),p=data.provinces.find((province:any)=>province.ID===selectedProvinceID)||data.provinces[0];
  const setQuota=(key:string,value:number)=>setQuotas({...quotas,[key]:Math.max(0,Math.min(100,Number.isFinite(value)?value:0))});const distributeEvenly=()=>{const share=Math.floor(10000/goods.length)/100;setQuotas(Object.fromEntries(goods.map((k,i)=>[k,i===goods.length-1?100-share*(goods.length-1):share])))};const togglePolicy=(key:string)=>{setError('');if(policyDraft.includes(key)){setPolicyDraft(policyDraft.filter(k=>k!==key));return}if(policyDraft.length>=2){setError('Choose no more than two social policies.');return}setPolicyDraft([...policyDraft,key])};
  const found=async()=>{if(!provinceName.trim()){setError('Enter a name for the new Province.');return}if(await act('/cities',{name:provinceName.trim()},'POST'))setProvinceName('')};

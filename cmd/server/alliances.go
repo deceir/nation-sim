@@ -129,17 +129,17 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 404, "Alliance not found.")
 		return
 	}
-	memberRows, _ := a.db.QueryContext(r.Context(), `SELECT n.id,n.name,n.user_type,r.id,r.title,r.rank_order,m.cash_contributed,m.resources_contributed,m.joined_at,n.population,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id) FROM alliance_members m JOIN nations n ON n.id=m.nation_id JOIN alliance_roles r ON r.id=m.role_id WHERE m.alliance_id=? ORDER BY r.rank_order DESC,n.name`, id)
+	memberRows, _ := a.db.QueryContext(r.Context(), `SELECT n.id,n.name,n.leader_name,n.user_type,r.id,r.title,r.rank_order,m.cash_contributed,m.resources_contributed,m.joined_at,n.population,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),(SELECT MAX(s.last_action_at) FROM sessions s WHERE s.user_id=n.owner_id) FROM alliance_members m JOIN nations n ON n.id=m.nation_id JOIN alliance_roles r ON r.id=m.role_id WHERE m.alliance_id=? ORDER BY r.rank_order DESC,n.name`, id)
 	members := []map[string]any{}
 	for memberRows.Next() {
-		var nid, name, userType, roleID, role string
+		var nid, name, leaderName, userType, roleID, role string
 		var rank, provinces int
 		var cash, res int64
 		var population int64
 		var joined time.Time
 		var lastActive *time.Time
-		memberRows.Scan(&nid, &name, &userType, &roleID, &role, &rank, &cash, &res, &joined, &population, &provinces, &lastActive)
-		members = append(members, map[string]any{"nationID": nid, "name": name, "userType": userType, "roleID": roleID, "role": role, "rank": rank, "cashContributed": cash, "resourcesContributed": res, "joinedAt": joined, "population": population, "provinces": provinces, "seniorityDays": int(time.Since(joined).Hours() / 24), "lastActiveAt": lastActive})
+		memberRows.Scan(&nid, &name, &leaderName, &userType, &roleID, &role, &rank, &cash, &res, &joined, &population, &provinces, &lastActive)
+		members = append(members, map[string]any{"nationID": nid, "name": name, "leaderName": leaderName, "userType": userType, "roleID": roleID, "role": role, "rank": rank, "cashContributed": cash, "resourcesContributed": res, "joinedAt": joined, "population": population, "provinces": provinces, "seniorityDays": int(time.Since(joined).Hours() / 24), "lastActiveAt": lastActive})
 	}
 	memberRows.Close()
 	p, e := a.alliancePermission(r.Context(), u.ID, id)

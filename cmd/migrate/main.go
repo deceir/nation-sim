@@ -23,6 +23,7 @@ func main() {
 	upgrades := []struct{ table, column, definition string }{
 		{"sessions", "last_action_at", "TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"},
 		{"users", "theme_preference", "ENUM('dark','light') NOT NULL DEFAULT 'dark'"},
+		{"users", "turn_revenue_notifications", "BOOLEAN NOT NULL DEFAULT FALSE"},
 		{"nations", "leader_name", "VARCHAR(100) NOT NULL DEFAULT 'Unknown Leader'"},
 		{"nations", "government_type", "VARCHAR(60) NOT NULL DEFAULT 'Presidential Republic'"},
 		{"nations", "continent", "VARCHAR(30) NOT NULL DEFAULT 'Asia'"},
