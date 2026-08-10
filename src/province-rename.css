@@ -1,0 +1,14 @@
+.province-identity{flex:1;min-width:0}
+.province-name-row{display:flex;align-items:center;gap:9px;min-height:38px}
+.province-name-row h3{margin:4px 0;overflow-wrap:anywhere}
+.province-rename-trigger{display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border:1px solid transparent;background:transparent;color:#89958f;font-size:10px;letter-spacing:.04em;cursor:pointer}
+.province-rename-trigger:hover{border-color:#4c5953;color:#d6b66f;background:#1b211e}
+.province-rename-editor{display:flex;align-items:center;gap:5px;margin-top:5px;max-width:430px}
+.province-rename-editor input{min-width:0;flex:1;padding:8px 10px;border:1px solid #d6b66f;background:#111613;color:#e4e9e6;font:22px 'Libre Caslon Display'}
+.province-rename-editor button{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid #46534d;background:#202823;color:#aab5af;cursor:pointer}
+.province-rename-editor button.save{border-color:#8d7849;color:#d6b66f}
+.province-rename-editor button:disabled{opacity:.4;cursor:not-allowed}
+[data-theme="light"] .province-rename-trigger:hover{background:#f0ede5;border-color:#ccc6ba;color:#8a682c}
+[data-theme="light"] .province-rename-editor input{background:#fff;color:#26302c;border-color:#a9823c}
+[data-theme="light"] .province-rename-editor button{background:#f3f0e8;color:#4c5651;border-color:#ccc6ba}
+@media(max-width:600px){.province-head{align-items:flex-start}.province-rename-editor{max-width:none}.province-rename-trigger{padding:4px}.province-name-row{align-items:flex-start;flex-direction:column;gap:1px}}

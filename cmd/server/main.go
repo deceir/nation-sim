@@ -87,6 +87,7 @@ func main() {
 	mux.HandleFunc("POST /api/nation/location", a.auth(a.resetNationLocation))
 	mux.HandleFunc("GET /api/cities", a.auth(a.cities))
 	mux.HandleFunc("POST /api/cities", a.auth(a.createCity))
+	mux.HandleFunc("PATCH /api/cities/{id}", a.auth(a.renameCity))
 	mux.HandleFunc("POST /api/cities/invest", a.auth(a.investCity))
 	mux.HandleFunc("POST /api/cities/expand", a.auth(a.expandCity))
 	mux.HandleFunc("GET /api/income", a.auth(a.income))
@@ -292,6 +293,10 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	_, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?);`, cid, nid, p.Capital)
 	if err != nil {
 		problem(w, 400, "Could not create capital.")
+		return
+	}
+	if _, err = tx.Exec(r.Context(), `UPDATE nations SET capital_city_id=? WHERE id=?`, cid, nid); err != nil {
+		problem(w, 500, "Could not designate the capital Province.")
 		return
 	}
 	tx.Exec(r.Context(), `INSERT INTO nation_economic_strategy(nation_id) VALUES(?)`, nid)

@@ -61,6 +61,7 @@ func init() {
 
 type ModelCity struct {
 	ID, Name                                                     string
+	IsCapital                                                    bool
 	Infra, Land, Population, Commerce, Pollution, Disease, Crime float64
 	Buildings                                                    map[string]int
 	Upgrades                                                     map[string]int
@@ -77,6 +78,7 @@ type ModelNation struct {
 
 type CityResult struct {
 	ID, Name            string             `json:"id"`
+	IsCapital           bool               `json:"isCapital"`
 	Slots, Used         int                `json:"slots"`
 	BasePopulation      float64            `json:"basePopulation"`
 	EffectivePopulation float64            `json:"effectivePopulation"`
@@ -167,7 +169,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		commerceCap = math.Max(commerceCap, 110)
 	}
 	for _, c := range n.Cities {
-		r := CityResult{ID: c.ID, Name: c.Name, Production: map[string]float64{}, Contributors: map[string]float64{}}
+		r := CityResult{ID: c.ID, Name: c.Name, IsCapital: c.IsCapital, Production: map[string]float64{}, Contributors: map[string]float64{}}
 		r.Slots = int(math.Floor(c.Infra / balance.InfraPerSlot))
 		if r.Slots < 1 {
 			r.Slots = 1

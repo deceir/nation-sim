@@ -76,7 +76,11 @@ type provinceStrategy struct {
 	Upgrades                 map[string]int
 	UpgradeQuotes            map[string]int64
 	InfrastructureQuotes     map[string]int64
-	UpgradeCap               int
+	UpgradeCap               int // Per-category hard cap retained for API compatibility.
+	UpgradeCapacity          int
+	UpgradesUsed             int
+	NextUpgradeCapacityAt    int
+	IsCapital                bool
 	Population               float64
 }
 type strategicInput struct {
@@ -268,7 +272,7 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Quotas[k] = v
 	}
 	rows.Close()
-	rows, e = a.db.QueryContext(ctx, `SELECT c.id,c.name,p.specialization,c.infrastructure,c.local_population FROM cities c JOIN province_economies p ON p.city_id=c.id WHERE c.nation_id=?`, nid)
+	rows, e = a.db.QueryContext(ctx, `SELECT c.id,c.name,p.specialization,c.infrastructure,c.local_population,COALESCE(c.id=n.capital_city_id,0) FROM cities c JOIN province_economies p ON p.city_id=c.id JOIN nations n ON n.id=c.nation_id WHERE c.nation_id=? ORDER BY COALESCE(c.id=n.capital_city_id,0) DESC,c.created_at ASC,c.id ASC`, nid)
 	if e != nil {
 		return in, e
 	}
@@ -278,13 +282,16 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		p.Upgrades = map[string]int{}
 		p.UpgradeQuotes = map[string]int64{}
 		p.InfrastructureQuotes = map[string]int64{}
-		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Population)
+		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Population, &p.IsCapital)
 		in.Provinces = append(in.Provinces, p)
 	}
 	rows.Close()
 	for i := range in.Provinces {
 		in.Provinces[i].Upgrades = loadProvinceUpgrades(ctx, a.db, in.Provinces[i].ID)
-		in.Provinces[i].UpgradeCap = provinceUpgradeCap(in.Provinces[i].Infra)
+		in.Provinces[i].UpgradeCap = provinceUpgradeLevelHardCap
+		in.Provinces[i].UpgradeCapacity = provinceUpgradeCapacity(in.Provinces[i].Infra)
+		in.Provinces[i].UpgradesUsed = provinceUpgradesUsed(in.Provinces[i].Upgrades)
+		in.Provinces[i].NextUpgradeCapacityAt = nextProvinceUpgradeCapacityAt(in.Provinces[i].Infra)
 		for key, spec := range provinceUpgradeSpecs {
 			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, in.Provinces[i].Upgrades[key], in.Provinces[i].Infra)
 			if in.LongTermProjects["infrastructure_bank"] {
@@ -371,7 +378,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 			nextProvinceAt = next
 		}
 	}
-	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥22,500,000 × N^2.6 × Gear × Policy"}
+	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥25,000,000 × N^2.55 × Gear × Policy"}
 	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
 }
 

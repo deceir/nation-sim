@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -43,6 +44,58 @@ func TestCrisisCatalogContainsTwoHundredFiftyValidTemplates(t *testing.T) {
 		}
 		if strings.Contains(strings.ToLower(template.Briefing+options[0].EffectText+options[1].EffectText+options[2].EffectText), "no penalt") {
 			t.Fatalf("template %q contains retired no-penalty phrasing", template.ID)
+		}
+	}
+}
+
+func TestCrisisCatalogResponseMechanicsStayDiverse(t *testing.T) {
+	var catalog crisisCatalog
+	if err := json.Unmarshal(crisisCatalogJSON, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	firstSignatures := map[string]bool{}
+	secondSignatures := map[string]bool{}
+	effectTypes := map[string]bool{}
+	signature := func(option crisisCatalogOption) string {
+		var builder strings.Builder
+		for _, effect := range option.Effects {
+			fmt.Fprintf(&builder, "%s:%s:%g|", effect.Type, effect.Target, effect.Value)
+			effectTypes[effect.Type] = true
+		}
+		return builder.String()
+	}
+	for _, template := range catalog.Templates {
+		first := signature(template.Options[0])
+		second := signature(template.Options[1])
+		signature(template.Options[2])
+		for index, option := range template.Options[:2] {
+			hasBenefit, hasCost := false, false
+			seenTargets := map[string]bool{}
+			for _, effect := range option.Effects {
+				hasBenefit = hasBenefit || effect.Value > 0
+				hasCost = hasCost || effect.Value < 0
+				key := effect.Type + ":" + effect.Target
+				if seenTargets[key] {
+					t.Fatalf("template %q response %d repeats effect %q", template.ID, index+1, key)
+				}
+				seenTargets[key] = true
+			}
+			if !hasBenefit || !hasCost {
+				t.Fatalf("template %q response %d lacks a meaningful benefit/cost tradeoff", template.ID, index+1)
+			}
+		}
+		if first == second {
+			t.Fatalf("template %q offers mechanically identical primary responses", template.ID)
+		}
+		firstSignatures[first] = true
+		secondSignatures[second] = true
+	}
+	if len(firstSignatures) < 50 || len(secondSignatures) < 50 {
+		t.Fatalf("response catalog collapsed to too few mechanics: first=%d second=%d", len(firstSignatures), len(secondSignatures))
+	}
+	for _, kind := range []string{"cash_grant", "resource_grant", "cash_income_pct", "production_pct", "happiness_pct", "population_growth_pct", "upkeep_reduction_pct", "none"} {
+		if !effectTypes[kind] {
+			t.Fatalf("response catalog never uses effect type %q", kind)
 		}
 	}
 }

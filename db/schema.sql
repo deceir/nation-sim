@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS nations (
 	location_lat DECIMAL(9,6) NULL,
 	location_lng DECIMAL(9,6) NULL,
 	user_type ENUM('PLAYER','DEV','BOT') NOT NULL DEFAULT 'PLAYER',
+  capital_city_id CHAR(36) NULL,
   motto VARCHAR(120) NOT NULL DEFAULT '',
   currency_name VARCHAR(30) NOT NULL DEFAULT 'Yen',
   treasury BIGINT NOT NULL DEFAULT 10000000,

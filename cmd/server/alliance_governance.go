@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -168,10 +170,30 @@ func (a *app) removeAllianceMember(w http.ResponseWriter, r *http.Request, u use
 	write(w, 200, map[string]bool{"ok": true})
 }
 
+type flexibleFloat float64
+
+func (f *flexibleFloat) UnmarshalJSON(data []byte) error {
+	var number float64
+	if err := json.Unmarshal(data, &number); err == nil {
+		*f = flexibleFloat(number)
+		return nil
+	}
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	number, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil {
+		return err
+	}
+	*f = flexibleFloat(number)
+	return nil
+}
+
 type taxBracketInput struct {
 	Name, NationID         string
 	MinimumProvinces       int
-	CashRate, ResourceRate float64
+	CashRate, ResourceRate flexibleFloat
 }
 
 func validBracket(in taxBracketInput) bool {
@@ -185,11 +207,14 @@ func (a *app) createAllianceTaxBracket(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	var in taxBracketInput
-	if !decode(w, r, &in) || !validBracket(in) {
+	if !decode(w, r, &in) {
+		return
+	}
+	if !validBracket(in) {
 		problem(w, 400, "Invalid tax bracket.")
 		return
 	}
-	_, e = a.db.ExecContext(r.Context(), `INSERT INTO alliance_tax_brackets(id,alliance_id,name,minimum_provinces,cash_rate,resource_rate) VALUES(?,?,?,0,?,?)`, uuid(), aid, strings.TrimSpace(in.Name), in.CashRate, in.ResourceRate)
+	_, e = a.db.ExecContext(r.Context(), `INSERT INTO alliance_tax_brackets(id,alliance_id,name,minimum_provinces,cash_rate,resource_rate) VALUES(?,?,?,0,?,?)`, uuid(), aid, strings.TrimSpace(in.Name), float64(in.CashRate), float64(in.ResourceRate))
 	if e != nil {
 		problem(w, 409, "Tax bracket could not be created.")
 		return
@@ -204,7 +229,10 @@ func (a *app) updateAllianceTaxBracket(w http.ResponseWriter, r *http.Request, u
 		return
 	}
 	var in taxBracketInput
-	if !decode(w, r, &in) || !validBracket(in) {
+	if !decode(w, r, &in) {
+		return
+	}
+	if !validBracket(in) {
 		problem(w, 400, "Invalid tax bracket.")
 		return
 	}
@@ -213,7 +241,7 @@ func (a *app) updateAllianceTaxBracket(w http.ResponseWriter, r *http.Request, u
 		problem(w, 404, "Tax bracket not found.")
 		return
 	}
-	_, e = a.db.ExecContext(r.Context(), `UPDATE alliance_tax_brackets SET name=?,role_id=NULL,nation_id=NULL,minimum_provinces=0,cash_rate=?,resource_rate=? WHERE id=? AND alliance_id=?`, strings.TrimSpace(in.Name), in.CashRate, in.ResourceRate, bid, aid)
+	_, e = a.db.ExecContext(r.Context(), `UPDATE alliance_tax_brackets SET name=?,role_id=NULL,nation_id=NULL,minimum_provinces=0,cash_rate=?,resource_rate=? WHERE id=? AND alliance_id=?`, strings.TrimSpace(in.Name), float64(in.CashRate), float64(in.ResourceRate), bid, aid)
 	if e != nil {
 		problem(w, 409, "Tax bracket could not be updated.")
 		return

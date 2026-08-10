@@ -21,7 +21,7 @@ func TestNewNationEconomyHasRewardingRunway(t *testing.T) {
 func TestProgressionCostsHaveDistinctTimeHorizons(t *testing.T) {
 	secondCash, secondMaterials, _ := provinceFoundingCosts(1, "balanced", map[string]bool{})
 	thirdCash, thirdMaterials, _ := provinceFoundingCosts(2, "balanced", map[string]bool{})
-	if secondCash != 22500000 || secondMaterials != 40 {
+	if secondCash != 25000000 || secondMaterials != 40 {
 		t.Fatalf("unexpected second Province runway: %d / %.0f", secondCash, secondMaterials)
 	}
 	if thirdCash < secondCash*5 || thirdMaterials < secondMaterials*4 {

@@ -77,7 +77,7 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 	if err != nil {
 		return n, id, cash, err
 	}
-	rows, err := a.db.QueryContext(ctx, `SELECT id,name,infrastructure,land,local_population,commerce_percent,pollution,disease_rate,crime_rate FROM cities WHERE nation_id=? ORDER BY created_at`, id)
+	rows, err := a.db.QueryContext(ctx, `SELECT c.id,c.name,c.infrastructure,c.land,c.local_population,c.commerce_percent,c.pollution,c.disease_rate,c.crime_rate,COALESCE(c.id=n.capital_city_id,0) FROM cities c JOIN nations n ON n.id=c.nation_id WHERE c.nation_id=? ORDER BY COALESCE(c.id=n.capital_city_id,0) DESC,c.created_at ASC,c.id ASC`, id)
 	if err != nil {
 		return n, id, cash, err
 	}
@@ -86,7 +86,7 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 		var c ModelCity
 		c.Buildings = map[string]int{}
 		c.Upgrades = map[string]int{}
-		if err = rows.Scan(&c.ID, &c.Name, &c.Infra, &c.Land, &c.Population, &c.Commerce, &c.Pollution, &c.Disease, &c.Crime); err != nil {
+		if err = rows.Scan(&c.ID, &c.Name, &c.Infra, &c.Land, &c.Population, &c.Commerce, &c.Pollution, &c.Disease, &c.Crime, &c.IsCapital); err != nil {
 			return n, id, cash, err
 		}
 		n.Cities = append(n.Cities, c)

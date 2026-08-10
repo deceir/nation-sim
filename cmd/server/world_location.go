@@ -84,7 +84,7 @@ func (a *app) resetNationLocation(w http.ResponseWriter, r *http.Request, u user
 		return
 	}
 	// The capital anchors the nation's geographic position for future mechanics.
-	tx.ExecContext(r.Context(), `UPDATE province_economies p JOIN cities c ON c.id=p.city_id SET p.latitude=?,p.longitude=? WHERE c.nation_id=? AND c.created_at=(SELECT first_created FROM (SELECT MIN(created_at) first_created FROM cities WHERE nation_id=?) x)`, in.Latitude, in.Longitude, nid, nid)
+	tx.ExecContext(r.Context(), `UPDATE province_economies p JOIN nations n ON n.capital_city_id=p.city_id SET p.latitude=?,p.longitude=? WHERE n.id=?`, in.Latitude, in.Longitude, nid)
 	if cost > 0 {
 		tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'location_reset',?,?)`, uuid(), nid, -cost, "Reset national location to "+continent)
 	}
