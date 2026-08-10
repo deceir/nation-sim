@@ -80,6 +80,9 @@ type provinceStrategy struct {
 	UpgradeCapacity          int
 	UpgradesUsed             int
 	NextUpgradeCapacityAt    int
+	CivicCapacity            int
+	CivicUsed                int
+	Institutions             map[string]int
 	IsCapital                bool
 	Population               float64
 }
@@ -280,6 +283,7 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		var p provinceStrategy
 		p.Deposits = map[string]float64{}
 		p.Upgrades = map[string]int{}
+		p.Institutions = map[string]int{}
 		p.UpgradeQuotes = map[string]int64{}
 		p.InfrastructureQuotes = map[string]int64{}
 		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Population, &p.IsCapital)
@@ -292,6 +296,7 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Provinces[i].UpgradeCapacity = provinceUpgradeCapacity(in.Provinces[i].Infra)
 		in.Provinces[i].UpgradesUsed = provinceUpgradesUsed(in.Provinces[i].Upgrades)
 		in.Provinces[i].NextUpgradeCapacityAt = nextProvinceUpgradeCapacityAt(in.Provinces[i].Infra)
+		in.Provinces[i].CivicCapacity = civicInstitutionCapacity(in.Provinces[i].Infra)
 		for key, spec := range provinceUpgradeSpecs {
 			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, in.Provinces[i].Upgrades[key], in.Provinces[i].Infra)
 			if in.LongTermProjects["infrastructure_bank"] {
@@ -312,6 +317,16 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 			in.Provinces[i].Deposits[k] = v
 		}
 		ds.Close()
+		institutionRows, _ := a.db.QueryContext(ctx, `SELECT building_type,quantity FROM city_improvements WHERE city_id=?`, in.Provinces[i].ID)
+		for institutionRows.Next() {
+			var key string
+			var quantity int
+			if institutionRows.Scan(&key, &quantity) == nil {
+				in.Provinces[i].Institutions[key] = quantity
+				in.Provinces[i].CivicUsed += quantity
+			}
+		}
+		institutionRows.Close()
 	}
 	return in, nil
 }
@@ -370,6 +385,16 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		spec := provinceUpgradeSpecs[key]
 		upgradeList = append(upgradeList, map[string]any{"key": key, "name": spec.Name, "description": spec.Description, "baseCost": spec.BaseCost})
 	}
+	institutionList := []map[string]any{}
+	keys = keys[:0]
+	for key := range buildings {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		spec := buildings[key]
+		institutionList = append(institutionList, map[string]any{"key": key, "name": spec.Name, "category": spec.Category, "description": spec.Description, "cashCost": int64(spec.Cost), "resourceCosts": spec.Costs, "dailyUpkeep": spec.DailyUpkeep, "commerce": spec.Commerce, "education": spec.Education, "happiness": spec.Happiness, "pollution": spec.Pollution, "crimeReduction": spec.CrimeReduction, "diseaseReduction": spec.DiseaseReduction, "employment": spec.Employment, "taxCollection": spec.TaxCollection, "minTech": spec.MinTech, "maxPerProvince": spec.MaxPerProvince})
+	}
 	cashCost, materialCost, strain := provinceFoundingCosts(len(in.Provinces), in.Gear, in.Policies)
 	var lastProvince time.Time
 	var nextProvinceAt any
@@ -379,7 +404,13 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		}
 	}
 	expansion := map[string]any{"provinceCount": len(in.Provinces), "cashCost": cashCost, "constructionMaterials": materialCost, "happinessStrain": strain, "nextProvinceAt": nextProvinceAt, "gearModifier": expansionGearModifier(in.Gear), "policyModifier": expansionPolicyModifier(in.Policies), "formula": "¥25,000,000 × N^2.55 × Gear × Policy"}
-	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
+	provinceCivicMetrics := map[string]any{}
+	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
+		for _, city := range calculateEconomy(economicNation).Cities {
+			provinceCivicMetrics[city.ID] = map[string]any{"employmentRate": city.EmploymentRate, "taxCollectionMultiplier": city.TaxCollectionMultiplier, "disease": city.Disease, "crime": city.Crime, "dailyUpkeep": city.CivicUpkeep}
+		}
+	}
+	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "technology": in.Technology, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "civicInstitutions": institutionList, "provinceCivicMetrics": provinceCivicMetrics, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
 }
 
 func (a *app) setGear(w http.ResponseWriter, r *http.Request, u user) {

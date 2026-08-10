@@ -256,6 +256,9 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	n.Military = loadMilitaryOverview(r.Context(), a.db, n.ID)
+	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
+		n.EmploymentRate = calculateEconomy(economicNation).EffectiveEmploymentRate
+	}
 	write(w, 200, map[string]any{"user": u, "nation": n})
 }
 func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {

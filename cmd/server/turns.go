@@ -53,7 +53,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		}
 		crisisModifiers := a.loadCrisisModifiers(ctx, nid)
 		applyCrisisTurnModifiers(&strategyResult, crisisModifiers)
-		cash := int64(math.Floor(result.NetDailyCash / balance.TurnsPerDay * strategyResult.IncomeMultiplier))
+		cash := int64(math.Floor((result.DailyTax*strategyResult.IncomeMultiplier - result.DailyUpkeep) / balance.TurnsPerDay))
 		cash += int64(math.Floor(result.DailyUpkeep / balance.TurnsPerDay * crisisModifiers.UpkeepReductionPct / 100))
 		allianceID, allianceName, allianceRate, _ := applicableAllianceTax(ctx, a.db, nid)
 		allianceTax := int64(0)
@@ -118,7 +118,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `UPDATE nations SET technology=LEAST(100,technology+FLOOR(technology_progress+?)),technology_progress=MOD(technology_progress+?,1) WHERE id=?`, gain, gain, nid)
 		}
 		breakdown, _ := json.Marshal(result)
-		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax/balance.TurnsPerDay)+luxuryIncome, int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
+		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax*strategyResult.IncomeMultiplier/balance.TurnsPerDay)+luxuryIncome, int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
 		if e != nil {
 			tx.Rollback()
 			continue

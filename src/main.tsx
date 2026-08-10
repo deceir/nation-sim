@@ -11,6 +11,7 @@ import CrisisScreen from'./CrisisScreen';
 import'./notifications.css';
 import'./province-development.css';
 import'./province-rename.css';
+import'./civic-institutions.css';
 import WorldLocationPicker,{type WorldLocation}from'./WorldLocationPicker';
 import'./world-location.css';
 import MarketScreen from'./MarketScreen';

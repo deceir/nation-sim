@@ -21,7 +21,10 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
 		applyCrisisTurnModifiers(&strategic, crisisModifiers)
 		result.DailyTax *= strategic.IncomeMultiplier
-		result.DailyUpkeep *= 1 - crisisModifiers.UpkeepReductionPct/100
+		upkeepMultiplier := 1 - crisisModifiers.UpkeepReductionPct/100
+		result.DailyUpkeep *= upkeepMultiplier
+		result.DailyInfrastructureUpkeep *= upkeepMultiplier
+		result.DailyCivicUpkeep *= upkeepMultiplier
 		result.NetDailyCash = result.DailyTax - result.DailyUpkeep
 		for i := range result.Cities {
 			result.Cities[i].TaxRevenue *= strategic.IncomeMultiplier
@@ -49,7 +52,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		s := buildings[k]
-		types = append(types, map[string]any{"key": k, "name": s.Name, "category": s.Category, "cost": int64(s.Cost), "power": s.Power, "pollution": s.Pollution, "commerce": s.Commerce, "minTech": s.MinTech})
+		types = append(types, map[string]any{"key": k, "name": s.Name, "category": s.Category, "description": s.Description, "cost": int64(s.Cost), "costs": s.Costs, "dailyUpkeep": s.DailyUpkeep, "power": s.Power, "pollution": s.Pollution, "commerce": s.Commerce, "education": s.Education, "happiness": s.Happiness, "crimeReduction": s.CrimeReduction, "diseaseReduction": s.DiseaseReduction, "employment": s.Employment, "taxCollection": s.TaxCollection, "minTech": s.MinTech, "maxPerProvince": s.MaxPerProvince})
 	}
 	projectKeys := make([]string, 0, len(beginnerProjects))
 	for k := range beginnerProjects {
@@ -73,7 +76,7 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 	n.LongTermProjects = map[string]bool{}
 	var id string
 	var cash int64
-	err := a.db.QueryRowContext(ctx, `SELECT id,tax_rate,happiness,education,technology,doctrine,treasury FROM nations WHERE owner_id=?`, owner).Scan(&id, &n.TaxRate, &n.Happiness, &n.Education, &n.Technology, &n.Doctrine, &cash)
+	err := a.db.QueryRowContext(ctx, `SELECT id,tax_rate,happiness,education,employment_rate,technology,doctrine,treasury FROM nations WHERE owner_id=?`, owner).Scan(&id, &n.TaxRate, &n.Happiness, &n.Education, &n.EmploymentRate, &n.Technology, &n.Doctrine, &cash)
 	if err != nil {
 		return n, id, cash, err
 	}
@@ -200,21 +203,25 @@ func (a *app) buildImprovement(w http.ResponseWriter, r *http.Request, u user) {
 	var nid string
 	var cash int64
 	var infra float64
-	var tech, used int
-	e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,n.technology,c.infrastructure,COALESCE((SELECT SUM(quantity) FROM city_improvements WHERE city_id=c.id),0) FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, u.ID, in.CityID).Scan(&nid, &cash, &tech, &infra, &used)
+	var tech, used, current int
+	e = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,n.technology,c.infrastructure,COALESCE((SELECT SUM(quantity) FROM city_improvements WHERE city_id=c.id),0),COALESCE((SELECT quantity FROM city_improvements WHERE city_id=c.id AND building_type=?),0) FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, in.Building, u.ID, in.CityID).Scan(&nid, &cash, &tech, &infra, &used, &current)
 	if e != nil {
 		problem(w, 404, "City not found.")
 		return
 	}
-	if used >= max(1, int(infra/50)) {
-		problem(w, 409, "Buy more infrastructure to unlock another improvement slot.")
+	if used >= civicInstitutionCapacity(infra) {
+		problem(w, 409, "Increase this Province's Infrastructure to unlock another Civic Institution slot.")
+		return
+	}
+	if spec.MaxPerProvince > 0 && current >= spec.MaxPerProvince {
+		problem(w, 409, "This Province has reached the limit for that institution.")
 		return
 	}
 	if tech < spec.MinTech {
 		problem(w, 409, "Technology level is too low for this improvement.")
 		return
 	}
-	if spec.Category == "power" {
+	if in.Building == "renewable_plant" {
 		var has int
 		tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_projects WHERE nation_id=? AND project_type='basic_power_grid'`, nid).Scan(&has)
 		if has > 0 {
@@ -225,11 +232,23 @@ func (a *app) buildImprovement(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "Insufficient treasury.")
 		return
 	}
+	for commodity, cost := range spec.Costs {
+		var available float64
+		if err := tx.QueryRowContext(r.Context(), `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity=? FOR UPDATE`, nid, commodity).Scan(&available); err != nil || available+1e-9 < cost {
+			problem(w, 409, "Insufficient "+commodityName(commodity)+".")
+			return
+		}
+	}
 	_, e = tx.ExecContext(r.Context(), `INSERT INTO city_improvements(id,city_id,building_type,quantity) VALUES(?,?,?,1) ON DUPLICATE KEY UPDATE quantity=quantity+1`, uuid(), in.CityID, in.Building)
 	if e != nil {
 		return
 	}
 	tx.ExecContext(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, int64(spec.Cost), nid)
+	for commodity, cost := range spec.Costs {
+		if _, e = tx.ExecContext(r.Context(), `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity=?`, cost, nid, commodity); e != nil {
+			return
+		}
+	}
 	tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'improvement',?,?)`, uuid(), nid, -int64(spec.Cost), "Built "+spec.Name)
 	if e = tx.Commit(); e != nil {
 		return

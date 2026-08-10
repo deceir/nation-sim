@@ -57,3 +57,28 @@ func TestBeginnerProjectsApplyPermanentEconomicEffects(t *testing.T) {
 		t.Fatal("Public Health project did not reduce disease")
 	}
 }
+
+func TestCivicInstitutionsIncreaseEmploymentAndTaxRevenue(t *testing.T) {
+	base := ModelNation{TaxRate: 25, Happiness: 55, Education: 45, EmploymentRate: 72, Cities: []ModelCity{{Infra: 100, Land: 150, Buildings: map[string]int{}}}}
+	without := calculateEconomy(base)
+	base.Cities[0].Buildings = map[string]int{"marketplace": 1, "bank": 1}
+	with := calculateEconomy(base)
+	if with.Cities[0].EmploymentRate <= without.Cities[0].EmploymentRate {
+		t.Fatal("employment-focused Civic Institutions did not improve employment")
+	}
+	if with.Cities[0].TaxCollectionMultiplier <= without.Cities[0].TaxCollectionMultiplier || with.DailyTax <= without.DailyTax {
+		t.Fatal("commerce institutions did not improve tax collection and revenue")
+	}
+	if with.DailyCivicUpkeep <= 0 || with.NetDailyCash >= with.DailyTax {
+		t.Fatal("Civic Institutions must carry visible upkeep")
+	}
+}
+
+func TestCivicInstitutionCapacityHasProvincialMinimum(t *testing.T) {
+	if got := civicInstitutionCapacity(100); got != 5 {
+		t.Fatalf("starter Province should have five Civic Institution slots, got %d", got)
+	}
+	if civicInstitutionCapacity(300) <= civicInstitutionCapacity(100) {
+		t.Fatal("Infrastructure should expand Civic Institution capacity")
+	}
+}

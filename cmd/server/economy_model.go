@@ -15,22 +15,28 @@ const yenScale int64 = 100
 var balance = EconomyConfig{24, 90, 50, 2800, .001, .018, .0012, .55, .0025, 32}
 
 type BuildingSpec struct {
-	Name, Category                                         string
+	Name, Category, Description                            string
 	Cost, Power, Pollution, Commerce                       float64
 	Education, Happiness, CrimeReduction, DiseaseReduction float64
-	MinTech                                                int
+	Employment, TaxCollection, DailyUpkeep                 float64
+	Costs                                                  map[string]float64
+	MinTech, MaxPerProvince                                int
 }
 
 var buildings = map[string]BuildingSpec{
-	"renewable_plant":  {Name: "Renewable power park", Category: "power", Cost: 42000, Power: -90, Pollution: .5, MinTech: 8},
-	"bank":             {Name: "Commercial bank", Category: "commerce", Cost: 22000, Power: 5, Commerce: 8},
-	"shopping_mall":    {Name: "Shopping mall", Category: "commerce", Cost: 28000, Power: 8, Commerce: 11, Pollution: 1},
-	"hospital":         {Name: "Hospital", Category: "civil", Cost: 26000, Power: 8, Happiness: 1.5, DiseaseReduction: .012},
-	"police_station":   {Name: "Police station", Category: "civil", Cost: 17000, Power: 4, CrimeReduction: .012},
-	"school":           {Name: "School system", Category: "civil", Cost: 16000, Power: 3, Education: .7, Happiness: .4},
-	"university":       {Name: "University", Category: "civil", Cost: 38000, Power: 9, Education: 1.6, MinTech: 4},
-	"recycling_center": {Name: "Recycling center", Category: "civil", Cost: 21000, Power: 5, Pollution: -5, Happiness: .5},
-	"park":             {Name: "Public park", Category: "civil", Cost: 12000, Happiness: 1.1, Pollution: -1},
+	"renewable_plant":   {Name: "Municipal Utility Grid", Category: "utilities", Description: "Public generation supports power-intensive civic and commercial institutions.", Cost: 42000, Power: -90, Pollution: .5, DailyUpkeep: 1500, Costs: map[string]float64{"construction_materials": 30, "basic_metals": 20, "energy": 10}, MinTech: 8, MaxPerProvince: 2},
+	"bank":              {Name: "Commercial Bank", Category: "commerce", Description: "Formal credit and payment services expand taxable commerce and improve revenue collection.", Cost: 22000, Commerce: 5, Employment: .8, TaxCollection: 2.5, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 14, "basic_goods": 8}, MaxPerProvince: 2},
+	"shopping_mall":     {Name: "Commercial Arcade", Category: "commerce", Description: "A large retail district creates jobs and concentrates consumer spending in the formal economy.", Cost: 28000, Power: 8, Commerce: 9, Pollution: 1, Employment: 2, TaxCollection: 1, DailyUpkeep: 1200, Costs: map[string]float64{"construction_materials": 20, "consumer_goods": 8}, MaxPerProvince: 2},
+	"marketplace":       {Name: "Municipal Marketplace", Category: "commerce", Description: "A regulated market creates accessible work and brings informal trade into the taxable economy.", Cost: 18000, Commerce: 4, Employment: 1.8, TaxCollection: 1, DailyUpkeep: 700, Costs: map[string]float64{"timber": 12, "construction_materials": 10}, MaxPerProvince: 3},
+	"trade_exchange":    {Name: "Provincial Trade Exchange", Category: "commerce", Description: "A formal exchange concentrates wholesale trade, finance, and professional employment.", Cost: 34000, Commerce: 8, Employment: 1.3, TaxCollection: 2, DailyUpkeep: 1400, Costs: map[string]float64{"construction_materials": 24, "consumer_goods": 8}, MinTech: 5, MaxPerProvince: 2},
+	"transit_authority": {Name: "Public Transit Authority", Category: "commerce", Description: "Reliable transport connects residents to workplaces and widens the effective labor market.", Cost: 27000, Employment: 2.4, Happiness: .4, DailyUpkeep: 1300, Costs: map[string]float64{"construction_materials": 22, "basic_metals": 14, "energy": 8}, MaxPerProvince: 2},
+	"municipal_office":  {Name: "Revenue Administration Office", Category: "government", Description: "Professional assessors and records offices improve compliance and reduce uncollected taxes.", Cost: 20000, Employment: .5, TaxCollection: 3.5, DailyUpkeep: 1100, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 2},
+	"hospital":          {Name: "Provincial Hospital", Category: "services", Description: "Public medical capacity suppresses disease, supports workforce participation, and improves local wellbeing.", Cost: 26000, Happiness: 1.5, DiseaseReduction: .012, Employment: .5, DailyUpkeep: 1600, Costs: map[string]float64{"construction_materials": 20, "processed_foods": 10, "basic_goods": 10}, MaxPerProvince: 3},
+	"police_station":    {Name: "Civic Police Station", Category: "services", Description: "Local policing reduces crime losses and improves the reliability of commercial activity.", Cost: 17000, CrimeReduction: .012, TaxCollection: .5, DailyUpkeep: 950, Costs: map[string]float64{"construction_materials": 10, "basic_goods": 8}, MaxPerProvince: 3},
+	"school":            {Name: "Public School System", Category: "education", Description: "Schools raise national Education over time and provide a small local employment benefit.", Cost: 16000, Education: .7, Happiness: .4, Employment: .3, DailyUpkeep: 900, Costs: map[string]float64{"construction_materials": 12, "basic_goods": 10}, MaxPerProvince: 3},
+	"university":        {Name: "Provincial University", Category: "education", Description: "Higher education accelerates national Education and supports a skilled service economy.", Cost: 38000, Education: 1.6, Employment: .7, Commerce: 2, DailyUpkeep: 1800, Costs: map[string]float64{"construction_materials": 28, "consumer_goods": 10}, MinTech: 4, MaxPerProvince: 2},
+	"park":              {Name: "Public Commons", Category: "services", Description: "Maintained civic space improves Satisfaction and slightly reduces local pollution.", Cost: 12000, Happiness: 1.1, Pollution: -1, DailyUpkeep: 450, Costs: map[string]float64{"timber": 8, "basic_goods": 4}, MaxPerProvince: 3},
+	"recycling_center":  {Name: "Municipal Recovery Works", Category: "utilities", Description: "Public recovery facilities reduce pollution produced by dense provincial development.", Cost: 21000, Pollution: -5, Happiness: .5, Employment: .4, DailyUpkeep: 800, Costs: map[string]float64{"construction_materials": 14, "basic_metals": 8}, MaxPerProvince: 2},
 }
 
 type ProjectSpec struct {
@@ -51,6 +57,7 @@ var beginnerProjects = map[string]ProjectSpec{
 func init() {
 	for key, spec := range buildings {
 		spec.Cost *= float64(yenScale)
+		spec.DailyUpkeep *= float64(yenScale)
 		buildings[key] = spec
 	}
 	for key, project := range beginnerProjects {
@@ -68,49 +75,62 @@ type ModelCity struct {
 }
 
 type ModelNation struct {
-	TaxRate, Happiness, Education float64
-	Technology                    int
-	Doctrine                      string
-	Projects                      map[string]bool
-	LongTermProjects              map[string]bool
-	Cities                        []ModelCity
+	TaxRate, Happiness, Education, EmploymentRate float64
+	Technology                                    int
+	Doctrine                                      string
+	Projects                                      map[string]bool
+	LongTermProjects                              map[string]bool
+	Cities                                        []ModelCity
 }
 
 type CityResult struct {
-	ID, Name            string             `json:"id"`
-	IsCapital           bool               `json:"isCapital"`
-	Slots, Used         int                `json:"slots"`
-	BasePopulation      float64            `json:"basePopulation"`
-	EffectivePopulation float64            `json:"effectivePopulation"`
-	DensityMultiplier   float64            `json:"densityMultiplier"`
-	Commerce            float64            `json:"commerce"`
-	PowerCapacity       float64            `json:"powerCapacity"`
-	PowerUsage          float64            `json:"powerUsage"`
-	PowerMultiplier     float64            `json:"powerMultiplier"`
-	Pollution           float64            `json:"pollution"`
-	Disease             float64            `json:"disease"`
-	Crime               float64            `json:"crime"`
-	CitizenIncome       float64            `json:"citizenIncome"`
-	TaxRevenue          float64            `json:"taxRevenue"`
-	Upkeep              float64            `json:"upkeep"`
-	Production          map[string]float64 `json:"production"`
-	Contributors        map[string]float64 `json:"contributors"`
+	ID, Name                string             `json:"id"`
+	IsCapital               bool               `json:"isCapital"`
+	Slots, Used             int                `json:"slots"`
+	BasePopulation          float64            `json:"basePopulation"`
+	EffectivePopulation     float64            `json:"effectivePopulation"`
+	DensityMultiplier       float64            `json:"densityMultiplier"`
+	Commerce                float64            `json:"commerce"`
+	PowerCapacity           float64            `json:"powerCapacity"`
+	PowerUsage              float64            `json:"powerUsage"`
+	PowerMultiplier         float64            `json:"powerMultiplier"`
+	Pollution               float64            `json:"pollution"`
+	Disease                 float64            `json:"disease"`
+	Crime                   float64            `json:"crime"`
+	CitizenIncome           float64            `json:"citizenIncome"`
+	EmploymentRate          float64            `json:"employmentRate"`
+	EmploymentMultiplier    float64            `json:"employmentMultiplier"`
+	TaxCollectionMultiplier float64            `json:"taxCollectionMultiplier"`
+	TaxRevenue              float64            `json:"taxRevenue"`
+	InfrastructureUpkeep    float64            `json:"infrastructureUpkeep"`
+	CivicUpkeep             float64            `json:"civicUpkeep"`
+	Upkeep                  float64            `json:"upkeep"`
+	Production              map[string]float64 `json:"production"`
+	Contributors            map[string]float64 `json:"contributors"`
 }
 
 type NationResult struct {
-	Cities                []CityResult       `json:"cities"`
-	DailyTax              float64            `json:"dailyTax"`
-	DailyUpkeep           float64            `json:"dailyUpkeep"`
-	NetDailyCash          float64            `json:"netDailyCash"`
-	Population            float64            `json:"population"`
-	HappinessTarget       float64            `json:"happinessTarget"`
-	EducationChange       float64            `json:"educationChange"`
-	Production            map[string]float64 `json:"production"`
-	Contributors          map[string]float64 `json:"contributors"`
-	DailyFoodConsumption  float64            `json:"dailyFoodConsumption"`
-	HourlyFoodConsumption float64            `json:"hourlyFoodConsumption"`
-	DailyFoodProduction   float64            `json:"dailyFoodProduction"`
-	NetDailyFood          float64            `json:"netDailyFood"`
+	Cities                           []CityResult       `json:"cities"`
+	DailyTax                         float64            `json:"dailyTax"`
+	DailyUpkeep                      float64            `json:"dailyUpkeep"`
+	DailyInfrastructureUpkeep        float64            `json:"dailyInfrastructureUpkeep"`
+	DailyCivicUpkeep                 float64            `json:"dailyCivicUpkeep"`
+	NetDailyCash                     float64            `json:"netDailyCash"`
+	Population                       float64            `json:"population"`
+	HappinessTarget                  float64            `json:"happinessTarget"`
+	EducationChange                  float64            `json:"educationChange"`
+	Production                       map[string]float64 `json:"production"`
+	Contributors                     map[string]float64 `json:"contributors"`
+	DailyFoodConsumption             float64            `json:"dailyFoodConsumption"`
+	HourlyFoodConsumption            float64            `json:"hourlyFoodConsumption"`
+	DailyFoodProduction              float64            `json:"dailyFoodProduction"`
+	NetDailyFood                     float64            `json:"netDailyFood"`
+	EffectiveEmploymentRate          float64            `json:"effectiveEmploymentRate"`
+	EffectiveTaxCollectionMultiplier float64            `json:"effectiveTaxCollectionMultiplier"`
+}
+
+func civicInstitutionCapacity(infrastructure float64) int {
+	return 5 + int(math.Floor(math.Max(0, infrastructure-100)/100))
 }
 
 func infraUnitCost(current float64, tech int) float64 {
@@ -155,7 +175,10 @@ func clamp(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 
 func calculateEconomy(n ModelNation) NationResult {
 	out := NationResult{Production: map[string]float64{}, Contributors: map[string]float64{}}
-	weightedLocal, totalBase, educationBuildings := 0.0, 0.0, 0.0
+	if n.EmploymentRate <= 0 {
+		n.EmploymentRate = 72
+	}
+	weightedLocal, weightedEmployment, weightedTaxCollection, totalBase, educationBuildings := 0.0, 0.0, 0.0, 0.0, 0.0
 	doctrineIncome, doctrineHappiness, commerceCap := 1.0, 0.0, 100.0
 	switch n.Doctrine {
 	case "Capitalist":
@@ -170,10 +193,7 @@ func calculateEconomy(n ModelNation) NationResult {
 	}
 	for _, c := range n.Cities {
 		r := CityResult{ID: c.ID, Name: c.Name, IsCapital: c.IsCapital, Production: map[string]float64{}, Contributors: map[string]float64{}}
-		r.Slots = int(math.Floor(c.Infra / balance.InfraPerSlot))
-		if r.Slots < 1 {
-			r.Slots = 1
-		}
+		r.Slots = civicInstitutionCapacity(c.Infra)
 		for _, q := range c.Buildings {
 			r.Used += q
 		}
@@ -187,7 +207,7 @@ func calculateEconomy(n ModelNation) NationResult {
 			r.DensityMultiplier = clamp(1-(density-1)*.08, .70, 1)
 		}
 		powerCapacity, powerUse, commerce, pollution := 0.0, 0.0, 0.0, c.Pollution
-		diseaseReduction, crimeReduction, localHappiness := 0.0, 0.0, civil*.55
+		diseaseReduction, crimeReduction, localHappiness, employmentBonus, taxCollection := 0.0, 0.0, civil*.55, 0.0, 0.0
 		educationBuildings += civil * .12
 		for key, q := range c.Buildings {
 			s, ok := buildings[key]
@@ -206,6 +226,9 @@ func calculateEconomy(n ModelNation) NationResult {
 			diseaseReduction += s.DiseaseReduction * v
 			crimeReduction += s.CrimeReduction * v
 			localHappiness += s.Happiness * v
+			employmentBonus += s.Employment * v
+			taxCollection += s.TaxCollection * v
+			r.CivicUpkeep += s.DailyUpkeep * v
 		}
 		r.PowerCapacity, r.PowerUsage = powerCapacity, powerUse
 		r.PowerMultiplier = 1
@@ -250,7 +273,10 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.LongTermProjects["national_education_act"] {
 			r.CitizenIncome *= 1.04
 		}
-		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018)
+		r.EmploymentRate = clamp(n.EmploymentRate+employmentBonus, 25, 98)
+		r.EmploymentMultiplier = r.EmploymentRate / 72
+		r.TaxCollectionMultiplier = 1 + taxCollection/100
+		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018) * r.EmploymentMultiplier * r.TaxCollectionMultiplier
 		if n.LongTermProjects["tax_modernization"] {
 			r.TaxRevenue *= 1.08
 		}
@@ -258,12 +284,17 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.Projects["civil_engineering_corps"] {
 			upkeepModifier = .96
 		}
-		r.Upkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
+		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
+		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
+		out.DailyInfrastructureUpkeep += r.InfrastructureUpkeep
+		out.DailyCivicUpkeep += r.CivicUpkeep
 		out.Population += r.EffectivePopulation
 		totalBase += r.BasePopulation
+		weightedEmployment += r.EmploymentRate * r.EffectivePopulation
+		weightedTaxCollection += r.TaxCollectionMultiplier * r.EffectivePopulation
 		pollutionPenalty := .18
 		if n.Projects["public_health_sanitation"] {
 			pollutionPenalty = .14
@@ -299,8 +330,12 @@ func calculateEconomy(n ModelNation) NationResult {
 		out.HappinessTarget = clamp(out.HappinessTarget+4, 0, 100)
 	}
 	out.NetDailyCash = out.DailyTax - out.DailyUpkeep
+	if out.Population > 0 {
+		out.EffectiveEmploymentRate = weightedEmployment / out.Population
+		out.EffectiveTaxCollectionMultiplier = weightedTaxCollection / out.Population
+	}
 	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen
 	out.HourlyFoodConsumption = out.DailyFoodConsumption / balance.TurnsPerDay
-	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget}
+	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "effectiveEmploymentRate": out.EffectiveEmploymentRate, "taxCollectionMultiplier": out.EffectiveTaxCollectionMultiplier, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget}
 	return out
 }
