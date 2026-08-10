@@ -36,7 +36,7 @@ func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) 
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 	search = strings.ReplaceAll(strings.ReplaceAll(search, "\\", "\\\\"), "%", "\\%")
 	search = strings.ReplaceAll(search, "_", "\\_")
-	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.tax_rate,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) members,(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id) population,(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) provinces FROM alliances a WHERE (?='' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') ORDER BY population DESC,a.name ASC LIMIT 100`, search, search)
+	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) members,(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id) population,(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) provinces FROM alliances a WHERE (?='' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') ORDER BY population DESC,a.name ASC LIMIT 100`, search, search)
 	if e != nil {
 		problem(w, 500, "Alliances unavailable.")
 		return
@@ -46,11 +46,10 @@ func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) 
 	for rows.Next() {
 		var id, name, description, emblem, policy string
 		var members, provinces int
-		var tax float64
 		var pop int64
 		var createdAt time.Time
-		rows.Scan(&id, &name, &description, &emblem, &policy, &tax, &createdAt, &members, &pop, &provinces)
-		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "taxRate": tax, "createdAt": createdAt, "members": members, "population": pop, "provinces": provinces})
+		rows.Scan(&id, &name, &description, &emblem, &policy, &createdAt, &members, &pop, &provinces)
+		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "createdAt": createdAt, "members": members, "population": pop, "provinces": provinces})
 	}
 	var membership map[string]any
 	nid, _ := a.nationID(r.Context(), u.ID)
@@ -123,10 +122,9 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 	id := r.PathValue("id")
 	var out struct {
 		ID, Name, Description, EmblemURL, CommunityURL, JoinPolicy string
-		TaxRate                                                    float64
 		CreatedAt                                                  time.Time
 	}
-	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,tax_rate,created_at FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.TaxRate, &out.CreatedAt)
+	e := a.db.QueryRowContext(r.Context(), `SELECT id,name,description,emblem_url,community_url,join_policy,created_at FROM alliances WHERE id=?`, id).Scan(&out.ID, &out.Name, &out.Description, &out.EmblemURL, &out.CommunityURL, &out.JoinPolicy, &out.CreatedAt)
 	if e != nil {
 		problem(w, 404, "Alliance not found.")
 		return
@@ -173,7 +171,7 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		rows.Close()
 	}
 	taxHistory := []map[string]any{}
-	if isMember {
+	if isMember && p.Tax {
 		rows, _ := a.db.QueryContext(r.Context(), `SELECT t.resource,t.amount,t.memo,t.created_at,COALESCE(n.name,'System') FROM alliance_bank_transactions t LEFT JOIN nations n ON n.id=t.actor_nation_id WHERE t.alliance_id=? AND t.kind='tax' ORDER BY t.created_at DESC LIMIT 100`, id)
 		if rows != nil {
 			for rows.Next() {
@@ -226,46 +224,48 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 		roleRows.Close()
 	}
 	brackets := []map[string]any{}
-	bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,b.cash_rate,b.resource_rate,(SELECT COUNT(*) FROM alliance_tax_assignments x WHERE x.bracket_id=b.id) FROM alliance_tax_brackets b WHERE b.alliance_id=? ORDER BY b.is_default DESC,b.name`, id)
-	if bracketRows != nil {
-		for bracketRows.Next() {
-			var bid, name string
-			var def bool
-			var assignedCount int
-			var cashRate, resourceRate float64
-			bracketRows.Scan(&bid, &name, &def, &cashRate, &resourceRate, &assignedCount)
-			brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "cashRate": cashRate, "resourceRate": resourceRate, "assignedCount": assignedCount})
+	if isMember && p.Tax {
+		bracketRows, _ := a.db.QueryContext(r.Context(), `SELECT b.id,b.name,b.is_default,b.cash_rate,b.resource_rate,(SELECT COUNT(*) FROM alliance_tax_assignments x WHERE x.bracket_id=b.id) FROM alliance_tax_brackets b WHERE b.alliance_id=? ORDER BY b.is_default DESC,b.name`, id)
+		if bracketRows != nil {
+			for bracketRows.Next() {
+				var bid, name string
+				var def bool
+				var assignedCount int
+				var cashRate, resourceRate float64
+				bracketRows.Scan(&bid, &name, &def, &cashRate, &resourceRate, &assignedCount)
+				brackets = append(brackets, map[string]any{"id": bid, "name": name, "isDefault": def, "cashRate": cashRate, "resourceRate": resourceRate, "assignedCount": assignedCount})
+			}
+			bracketRows.Close()
 		}
-		bracketRows.Close()
-	}
-	defaultBracketID, defaultBracketName := "", "Default"
-	for _, bracket := range brackets {
-		if bracket["isDefault"].(bool) {
-			defaultBracketID, defaultBracketName = bracket["id"].(string), bracket["name"].(string)
-			break
+		defaultBracketID, defaultBracketName := "", "Default"
+		for _, bracket := range brackets {
+			if bracket["isDefault"].(bool) {
+				defaultBracketID, defaultBracketName = bracket["id"].(string), bracket["name"].(string)
+				break
+			}
 		}
-	}
-	assignments := map[string][2]string{}
-	assignmentRows, _ := a.db.QueryContext(r.Context(), `SELECT x.nation_id,b.id,b.name FROM alliance_tax_assignments x JOIN alliance_tax_brackets b ON b.id=x.bracket_id AND b.alliance_id=x.alliance_id WHERE x.alliance_id=?`, id)
-	if assignmentRows != nil {
-		for assignmentRows.Next() {
-			var nationID, bracketID, bracketName string
-			assignmentRows.Scan(&nationID, &bracketID, &bracketName)
-			assignments[nationID] = [2]string{bracketID, bracketName}
+		assignments := map[string][2]string{}
+		assignmentRows, _ := a.db.QueryContext(r.Context(), `SELECT x.nation_id,b.id,b.name FROM alliance_tax_assignments x JOIN alliance_tax_brackets b ON b.id=x.bracket_id AND b.alliance_id=x.alliance_id WHERE x.alliance_id=?`, id)
+		if assignmentRows != nil {
+			for assignmentRows.Next() {
+				var nationID, bracketID, bracketName string
+				assignmentRows.Scan(&nationID, &bracketID, &bracketName)
+				assignments[nationID] = [2]string{bracketID, bracketName}
+			}
+			assignmentRows.Close()
 		}
-		assignmentRows.Close()
-	}
-	for _, bracket := range brackets {
-		if bracket["isDefault"].(bool) {
-			bracket["assignedCount"] = len(members) - len(assignments)
+		for _, bracket := range brackets {
+			if bracket["isDefault"].(bool) {
+				bracket["assignedCount"] = len(members) - len(assignments)
+			}
 		}
-	}
-	for _, member := range members {
-		assignment, ok := assignments[member["nationID"].(string)]
-		if !ok {
-			assignment = [2]string{defaultBracketID, defaultBracketName}
+		for _, member := range members {
+			assignment, ok := assignments[member["nationID"].(string)]
+			if !ok {
+				assignment = [2]string{defaultBracketID, defaultBracketName}
+			}
+			member["taxBracketID"], member["taxBracketName"] = assignment[0], assignment[1]
 		}
-		member["taxBracketID"], member["taxBracketName"] = assignment[0], assignment[1]
 	}
 	activeTreaties, pendingTreaties := a.allianceTreaties(r.Context(), id, isMember && p.War)
 	military := map[string]int64{"soldiers": 0, "tanks": 0, "ships": 0, "jets": 0, "drones": 0}
