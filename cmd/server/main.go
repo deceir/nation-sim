@@ -386,8 +386,8 @@ func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
 	if in.LeaderName == "" {
 		in.LeaderName = currentLeader
 	}
-	if len(in.NationName) < 3 || len(in.NationName) > 100 || len(in.LeaderName) < 2 || len(in.LeaderName) > 100 {
-		problem(w, 400, "Nation names must be 3–100 characters and leader names 2–100 characters.")
+	if len(in.NationName) < 3 || len(in.NationName) > 100 || len(in.LeaderName) < 2 || len(in.LeaderName) > 100 || !validRomanName(in.NationName) || !validRomanName(in.LeaderName) {
+		problem(w, 400, "Nation and leader names must use Roman letters and standard name punctuation only.")
 		return
 	}
 	changes := int64(0)

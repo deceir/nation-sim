@@ -12,6 +12,23 @@ var continents = map[string]bool{"Africa": true, "Asia": true, "Europe": true, "
 
 type foundingProfile struct{ LeaderName, NationName, Capital, Government, Continent string }
 
+// validRomanName keeps public nation, leader, and Alliance identities readable
+// throughout the shared world UI while allowing ordinary Western name punctuation.
+func validRomanName(value string) bool {
+	value = strings.TrimSpace(value)
+	hasLetter := false
+	for _, character := range value {
+		switch {
+		case character >= 'A' && character <= 'Z', character >= 'a' && character <= 'z':
+			hasLetter = true
+		case strings.ContainsRune(" .,'&()-", character):
+		default:
+			return false
+		}
+	}
+	return hasLetter
+}
+
 func nationUserType(name string) string {
 	if strings.EqualFold(strings.TrimSpace(name), "Japan") {
 		return "DEV"
@@ -24,7 +41,7 @@ func validateFoundingProfile(p foundingProfile) (foundingProfile, bool) {
 	p.NationName = strings.TrimSpace(p.NationName)
 	var validCapital bool
 	p.Capital, validCapital = normalizeProvinceName(p.Capital)
-	if len(p.LeaderName) < 2 || len(p.LeaderName) > 100 || len(p.NationName) < 3 || len(p.NationName) > 100 || !validCapital || !governmentTypes[p.Government] || !continents[p.Continent] {
+	if len(p.LeaderName) < 2 || len(p.LeaderName) > 100 || len(p.NationName) < 3 || len(p.NationName) > 100 || !validRomanName(p.LeaderName) || !validRomanName(p.NationName) || !validCapital || !governmentTypes[p.Government] || !continents[p.Continent] {
 		return p, false
 	}
 	return p, true

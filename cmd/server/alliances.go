@@ -74,8 +74,8 @@ func (a *app) createAlliance(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	in.Description = strings.TrimSpace(in.Description)
-	if len(in.Name) < 3 || len(in.Name) > 80 || len(in.Description) > 1000 || !validOptionalURL(in.EmblemURL) || !validOptionalURL(in.CommunityURL) {
-		problem(w, 400, "Invalid Alliance profile.")
+	if len(in.Name) < 3 || len(in.Name) > 80 || !validRomanName(in.Name) || len(in.Description) > 1000 || !validOptionalURL(in.EmblemURL) || !validOptionalURL(in.CommunityURL) {
+		problem(w, 400, "Alliance names must use Roman letters and standard name punctuation only.")
 		return
 	}
 	if !map[string]bool{"open": true, "apply": true, "invite_only": true}[in.JoinPolicy] {
