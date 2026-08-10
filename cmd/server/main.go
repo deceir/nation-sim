@@ -80,10 +80,12 @@ func main() {
 	mux.HandleFunc("PATCH /api/user/settings", a.auth(a.userSettings))
 	mux.HandleFunc("POST /api/nations", a.auth(a.createNation))
 	mux.HandleFunc("GET /api/nations", a.auth(a.nationDirectory))
+	mux.HandleFunc("GET /api/nations/{id}/flag", a.auth(a.nationFlag))
 	mux.HandleFunc("GET /api/leaderboards", a.auth(a.leaderboards))
 	mux.HandleFunc("GET /api/nations/{id}", a.auth(a.nationProfile))
 	mux.HandleFunc("GET /api/nations/{id}/trades", a.auth(a.nationTradeHistory))
 	mux.HandleFunc("PATCH /api/nation/settings", a.auth(a.settings))
+	mux.HandleFunc("POST /api/nation/flag", a.auth(a.uploadNationFlag))
 	mux.HandleFunc("POST /api/nation/location", a.auth(a.resetNationLocation))
 	mux.HandleFunc("GET /api/cities", a.auth(a.cities))
 	mux.HandleFunc("POST /api/cities", a.auth(a.createCity))
@@ -131,6 +133,8 @@ func main() {
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
 	mux.HandleFunc("GET /api/alliances", a.auth(a.allianceDirectory))
 	mux.HandleFunc("POST /api/alliances", a.auth(a.createAlliance))
+	mux.HandleFunc("GET /api/alliances/{id}/flag", a.auth(a.allianceFlag))
+	mux.HandleFunc("POST /api/alliances/{id}/flag", a.auth(a.uploadAllianceFlag))
 	mux.HandleFunc("GET /api/alliances/{id}", a.auth(a.allianceDetail))
 	mux.HandleFunc("PATCH /api/alliances/{id}", a.auth(a.updateAlliance))
 	mux.HandleFunc("POST /api/alliances/{id}/apply", a.auth(a.applyAlliance))
@@ -290,11 +294,12 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 	defer tx.Rollback(r.Context())
 	nid, cid, gid := uuid(), uuid(), uuid()
 	userType := nationUserType(p.NationName)
-	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,location_lat,location_lng,currency_name,user_type) VALUES(?,?,?,?,?,?,?,?, 'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, in.Latitude, in.Longitude, userType); err != nil {
+	initialPopulation := startingNationPopulation()
+	if _, err = tx.Exec(r.Context(), `INSERT INTO nations(id,owner_id,name,leader_name,government_type,continent,location_lat,location_lng,population,currency_name,user_type) VALUES(?,?,?,?,?,?,?,?,?,'Yen',?)`, nid, u.ID, p.NationName, p.LeaderName, p.Government, p.Continent, in.Latitude, in.Longitude, initialPopulation, userType); err != nil {
 		problem(w, 409, "That nation or leader name is already taken, or this account already has a nation.")
 		return
 	}
-	_, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?);`, cid, nid, p.Capital)
+	_, err = tx.Exec(r.Context(), `INSERT INTO cities(id,nation_id,name,local_population) VALUES(?,?,?,?);`, cid, nid, p.Capital, initialPopulation)
 	if err != nil {
 		problem(w, 400, "Could not create capital.")
 		return

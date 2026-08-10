@@ -1,6 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Libre+Caslon+Display&display=swap');
 @import './my-nation-cleanup.css';
 @import './public-nation-economy.css';
+@import './nation-flags.css';
 @import './national-indicators.css';
 @import './legal-and-dev.css';
 @import './legal-modal.css';

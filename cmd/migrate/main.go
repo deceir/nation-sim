@@ -35,12 +35,18 @@ func main() {
 		{"nations", "gdp", "BIGINT NOT NULL DEFAULT 0"},
 		{"nations", "tax_rate", "DECIMAL(5,2) NOT NULL DEFAULT 25.00"},
 		{"nations", "doctrine", "VARCHAR(30) NOT NULL DEFAULT 'Balanced'"},
+		{"nations", "flag_image", "LONGBLOB NULL"},
+		{"nations", "flag_mime", "VARCHAR(40) NOT NULL DEFAULT ''"},
+		{"nations", "flag_updated_at", "TIMESTAMP(6) NULL"},
+		{"alliances", "flag_image", "LONGBLOB NULL"},
+		{"alliances", "flag_mime", "VARCHAR(40) NOT NULL DEFAULT ''"},
+		{"alliances", "flag_updated_at", "TIMESTAMP(6) NULL"},
 		{"cities", "total_invested", "BIGINT NOT NULL DEFAULT 0"},
 		{"cities", "improvement_slots", "INT NOT NULL DEFAULT 2"},
 		{"cities", "population_capacity", "BIGINT NOT NULL DEFAULT 100000"},
 		{"cities", "created_at", "TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)"},
 		{"cities", "land", "INT NOT NULL DEFAULT 150"},
-		{"cities", "local_population", "BIGINT NOT NULL DEFAULT 9000"},
+		{"cities", "local_population", "BIGINT NOT NULL DEFAULT 10631"},
 		{"cities", "commerce_percent", "DECIMAL(7,3) NOT NULL DEFAULT 0"},
 		{"cities", "power_capacity", "DECIMAL(12,3) NOT NULL DEFAULT 0"},
 		{"cities", "power_usage", "DECIMAL(12,3) NOT NULL DEFAULT 0"},
@@ -97,6 +103,14 @@ func main() {
 		if err = ensureColumn(db, u.table, u.column, u.definition); err != nil {
 			log.Fatal(err)
 		}
+	}
+	// Keep future inserts made by maintenance tools and the bot feeder aligned
+	// with the same effective population presented by a fresh capital Province.
+	if _, err = db.Exec(`ALTER TABLE nations MODIFY COLUMN population BIGINT NOT NULL DEFAULT 10631`); err != nil {
+		log.Fatal(err)
+	}
+	if _, err = db.Exec(`ALTER TABLE cities MODIFY COLUMN local_population BIGINT NOT NULL DEFAULT 10631`); err != nil {
+		log.Fatal(err)
 	}
 	legacyNationColumns := []string{"coal", "steel", "food", "iron", "oil", "bauxite", "aluminum", "gasoline", "munitions", "uranium", "lead_resource"}
 	for _, column := range legacyNationColumns {

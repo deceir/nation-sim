@@ -36,6 +36,9 @@
 [data-theme="dark"] .strategy-hero{padding:23px;background:linear-gradient(105deg,#171e26,#1c232c);border-color:#343c45;box-shadow:inset 0 1px #ffffff05}
 [data-theme="dark"] .strategy-hero h2{font-size:34px}
 [data-theme="dark"] .strategy-hero>div:last-child b{color:var(--gold);font-size:32px}
+[data-theme="dark"] .strategy-page .strategy-hero,[data-theme="dark"] .province-strategy-card{background:linear-gradient(120deg,#101c28,#111b25);border-color:#2c3d4b}
+[data-theme="dark"] .strategy-page .strategy-hero h2{font-size:27px}
+[data-theme="dark"] .strategy-page .strategy-hero>div:last-child b{font-size:28px}
 [data-theme="dark"] .gear-grid{gap:9px}
 [data-theme="dark"] .gear-card,[data-theme="dark"] .policy-card{padding:18px;background:linear-gradient(145deg,#151c23,#12181e);border-color:#333b44;border-radius:0}
 [data-theme="dark"] .gear-card:hover,[data-theme="dark"] .policy-card:hover{background:#1a222b;border-color:#59616a}

@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Bell,CheckCheck,Coins,ShieldAlert,ShoppingCart,Sparkles} from 'lucide-react';
 
 const categories=[['all','All activity'],['economic','Economic'],['war','War'],['market','Market'],['game','Game']] as const;
@@ -10,9 +10,10 @@ function NotificationPager({page,total,setPage}:{page:number;total:number;setPag
 
 export default function NotificationsScreen(){
  const[category,setCategory]=useState('all'),[page,setPage]=useState(1),[data,setData]=useState<any>({items:[],unread:0}),[error,setError]=useState(''),[busy,setBusy]=useState(false);
- const load=async(next=category)=>{try{setError('');setData(await request('/notifications'+(next==='all'?'':`?type=${next}`)))}catch(e){setError((e as Error).message)}};
- useEffect(()=>{setPage(1);void load(category)},[category]);
  const changed=()=>window.dispatchEvent(new Event('diplomatia:notifications'));
+ const opened=useRef(false);
+ const load=async(next=category,markRead=false)=>{try{setError('');if(markRead){await request('/notifications/read',{all:true,category:''});changed()}setData(await request('/notifications'+(next==='all'?'':`?type=${next}`)))}catch(e){setError((e as Error).message)}};
+ useEffect(()=>{setPage(1);const markRead=!opened.current;opened.current=true;void load(category,markRead)},[category]);
  const markOne=async(id:string,read:boolean)=>{if(read)return;try{await request('/notifications/read',{id});setData((d:any)=>({...d,unread:Math.max(0,d.unread-1),items:d.items.map((x:any)=>x.id===id?{...x,readAt:new Date().toISOString()}:x)}));changed()}catch(e){setError((e as Error).message)}};
  const markAll=async()=>{setBusy(true);try{await request('/notifications/read',{all:true,category:category==='all'?'':category});await load(category);changed()}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
  const items=data.items||[],visible=items.slice((page-1)*10,page*10);

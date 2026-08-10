@@ -14,6 +14,26 @@ const yenScale int64 = 100
 
 var balance = EconomyConfig{24, 90, 50, 2800, .001, .018, .0012, .55, .0025, 32}
 
+// startingNationPopulation uses the same model as the hourly turn so a newly
+// founded nation never presents a temporary placeholder population.
+func startingNationPopulation() int64 {
+	result := calculateEconomy(ModelNation{
+		TaxRate:        25,
+		Happiness:      65,
+		Education:      40,
+		EmploymentRate: 72,
+		Technology:     20,
+		Doctrine:       "Balanced",
+		Cities: []ModelCity{{
+			Infra:     100,
+			Land:      150,
+			Buildings: map[string]int{},
+			Upgrades:  map[string]int{},
+		}},
+	})
+	return int64(result.Population)
+}
+
 type BuildingSpec struct {
 	Name, Category, Description                            string
 	Cost, Power, Pollution, Commerce                       float64

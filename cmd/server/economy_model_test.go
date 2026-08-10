@@ -15,6 +15,12 @@ func TestInfrastructurePricingCompoundsAndBulkDiscounts(t *testing.T) {
 	}
 }
 
+func TestStartingNationPopulationMatchesEconomicModel(t *testing.T) {
+	if got := startingNationPopulation(); got != 10631 {
+		t.Fatalf("starting nation population = %d, want 10631", got)
+	}
+}
+
 func TestEconomyIsDeterministicAndPowerConstrainsImprovements(t *testing.T) {
 	n := ModelNation{TaxRate: 25, Happiness: 55, Education: 45, Technology: 8, Cities: []ModelCity{{ID: "a", Name: "Capital", Infra: 200, Land: 250, Buildings: map[string]int{"shopping_mall": 2}}}}
 	a, b := calculateEconomy(n), calculateEconomy(n)

@@ -15,13 +15,13 @@ func (a *app) worldStats(w http.ResponseWriter, r *http.Request) {
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(DISTINCT user_id) FROM sessions WHERE last_action_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)`).Scan(&active24)
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM alliances`).Scan(&alliances)
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*),COALESCE(SUM(status='delivered'),0),COALESCE(SUM(status IN('in_transit','delayed')),0),COALESCE(SUM(delay_count>0),0) FROM trade_shipments`).Scan(&totalTrades, &completedTrades, &activeShipments, &delayedTrades)
-	military := map[string]int64{"soldiers": 0, "tanks": 0, "jets": 0, "drones": 0}
+	military := map[string]int64{"soldiers": 0, "tanks": 0, "ships": 0, "jets": 0, "drones": 0}
 	rows, militaryErr := a.db.QueryContext(r.Context(), `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (
-		SELECT unit_type,quantity FROM military_inventory WHERE unit_type IN('soldiers','tanks','jets','drones')
+		SELECT unit_type,quantity FROM military_inventory WHERE unit_type IN('soldiers','tanks','ships','jets','drones')
 		UNION ALL
-		SELECT resource,escrow_goods FROM market_orders WHERE side='sell' AND status IN('open','pending') AND resource IN('tanks','jets','drones')
+		SELECT resource,escrow_goods FROM market_orders WHERE side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')
 		UNION ALL
-		SELECT resource,quantity FROM trade_shipments WHERE status IN('in_transit','delayed') AND resource IN('tanks','jets','drones')
+		SELECT resource,quantity FROM trade_shipments WHERE status IN('in_transit','delayed') AND resource IN('tanks','ships','jets','drones')
 	) world_military GROUP BY unit_type`)
 	if militaryErr == nil {
 		defer rows.Close()
