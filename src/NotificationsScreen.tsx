@@ -1,8 +1,8 @@
 import {useEffect,useRef,useState} from 'react';
-import {Bell,CheckCheck,Coins,ShieldAlert,ShoppingCart,Sparkles} from 'lucide-react';
+import {Bell,CheckCheck,Coins,Gavel,ShieldAlert,ShoppingCart,Sparkles} from 'lucide-react';
 
-const categories=[['all','All activity'],['economic','Economic'],['war','War'],['market','Market'],['game','Game']] as const;
-const categoryMeta:Record<string,{label:string;icon:typeof Bell}>={economic:{label:'Economic',icon:Coins},war:{label:'War',icon:ShieldAlert},market:{label:'Market',icon:ShoppingCart},game:{label:'Game',icon:Sparkles}};
+const categories=[['all','All activity'],['economic','Economic'],['war','War'],['market','Market'],['game','Game'],['moderation','Moderation']] as const;
+const categoryMeta:Record<string,{label:string;icon:typeof Bell}>={economic:{label:'Economic',icon:Coins},war:{label:'War',icon:ShieldAlert},market:{label:'Market',icon:ShoppingCart},game:{label:'Game',icon:Sparkles},moderation:{label:'Moderation',icon:Gavel}};
 const request=async(path:string,body?:object)=>{const r=await fetch('/api'+path,{method:body?'PATCH':'GET',credentials:'include',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const text=await r.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{throw Error(`Invalid server response (${r.status}).`)}if(!r.ok)throw Error(data.error||'Request failed');return data};
 const relative=(raw:string)=>{const seconds=Math.max(0,Math.floor((Date.now()-new Date(raw).getTime())/1000));if(seconds<60)return'Less than a minute ago';const minutes=Math.floor(seconds/60);if(minutes<60)return`${minutes} ${minutes===1?'minute':'minutes'} ago`;const hours=Math.floor(minutes/60);if(hours<24)return`${hours} ${hours===1?'hour':'hours'} ago`;const days=Math.floor(hours/24);return`${days} ${days===1?'day':'days'} ago`};
 
