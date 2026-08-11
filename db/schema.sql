@@ -661,3 +661,11 @@ CREATE TABLE IF NOT EXISTS changelog_reads (
   last_viewed_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   CONSTRAINT fk_changelog_reads_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS world_resource_snapshots (
+  recorded_at TIMESTAMP(6) NOT NULL,
+  resource VARCHAR(40) NOT NULL,
+  total DECIMAL(30,3) NOT NULL DEFAULT 0,
+  PRIMARY KEY(recorded_at,resource),
+  INDEX idx_world_resource_history(resource,recorded_at)
+) ENGINE=InnoDB;

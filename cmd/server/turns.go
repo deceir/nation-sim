@@ -178,6 +178,9 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	a.processTradeShipments(ctx, turn)
 	a.processLongTermProjects(ctx)
 	a.processMatureVentures(ctx)
+	if err := a.captureWorldResourceSnapshot(ctx, turn); err != nil {
+		log.Printf("world resource snapshot failed: %v", err)
+	}
 	log.Printf("hourly economic turn processed %d nations", processed)
 }
 

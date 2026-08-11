@@ -82,6 +82,9 @@ func main() {
 	if err = a.ensureDailyCrises(context.Background()); err != nil {
 		log.Fatal(err)
 	}
+	if err = a.captureWorldResourceSnapshot(context.Background(), time.Now().UTC().Truncate(time.Hour)); err != nil {
+		log.Printf("initial world resource snapshot failed: %v", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", a.register)
 	mux.HandleFunc("POST /api/auth/login", a.login)
@@ -139,6 +142,7 @@ func main() {
 	mux.HandleFunc("DELETE /api/dev/bans/{userID}", a.auth(a.unbanUser))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.worldStats)
+	mux.HandleFunc("GET /api/world/resources", a.auth(a.worldResourceHistory))
 	mux.HandleFunc("GET /api/market", a.auth(a.market))
 	mux.HandleFunc("POST /api/market/orders", a.auth(a.placeOrder))
 	mux.HandleFunc("POST /api/market/orders/{id}/accept", a.auth(a.acceptMarketOrder))
