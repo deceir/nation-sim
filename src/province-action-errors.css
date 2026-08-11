@@ -1,0 +1,74 @@
+.province-action-error {
+  position: fixed;
+  right: clamp(16px, 2vw, 32px);
+  bottom: clamp(16px, 2vw, 28px);
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px;
+  width: min(430px, calc(100vw - 32px));
+  margin: 0;
+  padding: 14px 17px;
+  border: 1px solid #c65d5d;
+  border-left: 4px solid #d96a6a;
+  background: #211719;
+  box-shadow: 0 16px 38px #0008;
+}
+
+.province-action-error > div {
+  display: grid;
+  gap: 4px;
+}
+
+.province-action-error b,
+.province-action-error span {
+  display: block;
+}
+
+.province-action-error button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f0c0c0;
+  cursor: pointer;
+}
+
+.province-action-error button svg {
+  width: 16px;
+}
+
+.province-action-error b {
+  color: #f0c0c0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.province-action-error span {
+  color: #f4dddd;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+[data-theme="light"] .province-action-error {
+  background: #fff3f2;
+  box-shadow: 0 12px 30px #62333333;
+}
+
+[data-theme="light"] .province-action-error b,
+[data-theme="light"] .province-action-error span {
+  color: #7e2929;
+}
+
+@media (max-width: 700px) {
+  .province-action-error {
+    right: 16px;
+    bottom: 16px;
+  }
+}

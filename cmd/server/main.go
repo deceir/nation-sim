@@ -58,6 +58,14 @@ func main() {
 	}
 	config.ParseTime = true
 	config.MultiStatements = true
+	config.Loc = time.UTC
+	if config.Params == nil {
+		config.Params = map[string]string{}
+	}
+	// Daily gameplay rules use CURRENT_DATE() extensively. Setting the session
+	// timezone in the DSN applies UTC to every pooled MySQL connection instead
+	// of relying on the database host's local timezone.
+	config.Params["time_zone"] = "'+00:00'"
 	raw, err := sql.Open("mysql", config.FormatDSN())
 	if err != nil {
 		log.Fatal(err)
@@ -271,6 +279,7 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		CreatedAt                                                                                                                    time.Time
 		LocationLat, LocationLng                                                                                                     *float64
 		Military                                                                                                                     []militaryOverviewItem
+		NationalDetails                                                                                                              nationalDetails
 	}
 	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(ar.title,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced'),n.location_lat,n.location_lng FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id LEFT JOIN alliance_roles ar ON ar.id=am.role_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.AllianceRole, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear, &n.LocationLat, &n.LocationLng)
 	if err != nil {
@@ -279,7 +288,9 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	n.Military = loadMilitaryOverview(r.Context(), a.db, n.ID)
 	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
-		n.EmploymentRate = calculateEconomy(economicNation).EffectiveEmploymentRate
+		result := calculateEconomy(economicNation)
+		n.EmploymentRate = result.EffectiveEmploymentRate
+		n.NationalDetails = buildNationalDetails(economicNation, result)
 	}
 	write(w, 200, map[string]any{"user": u, "nation": n})
 }

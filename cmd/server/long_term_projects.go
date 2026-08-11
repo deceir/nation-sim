@@ -21,6 +21,8 @@ type longTermProject struct {
 	PopulationGrowth, EffectivePopulation                        float64
 }
 
+const longTermProjectCashPercent int64 = 60
+
 func specialization(id, name, target string, cash, turns int64, boost float64, costs map[string]float64) longTermProject {
 	return longTermProject{ID: id, Name: name, Category: "specialization", Description: "+" + formatPercent(boost) + " permanent " + commodityName(target) + " production.", Target: target, Exclusivity: target, Cash: cash, Turns: turns, ProductionBoost: boost, Costs: costs}
 }
@@ -69,25 +71,19 @@ func init() {
 	} {
 		add(p)
 	}
-	// Commodity requirements should reinforce trade and preparation without
-	// eclipsing the multi-million-Yen gate by several months. Specialization
-	// projects remain deliberately powerful because limited slots are their
-	// primary long-run opportunity cost.
-	primary := map[string]bool{"foodstuffs": true, "timber": true, "fibers": true, "basic_metals": true, "energy": true, "strategic_minerals": true}
-	advanced := map[string]bool{"consumer_goods": true, "luxury_goods": true, "military_equipment": true}
+	// Commodity requirements remain the trade and preparation gate. Treasury
+	// costs are reduced by 40% so the cash side does not overwhelm those inputs.
+	// Construction time and every resource requirement remain unchanged.
 	for id, p := range longTermProjects {
-		p.Cash *= yenScale
+		p.Cash = p.Cash * yenScale * longTermProjectCashPercent / 100
 		for commodity, amount := range p.Costs {
 			p.Costs[commodity] = math.Ceil(amount*.12/10) * 10
 		}
 		if p.Category == "specialization" {
-			switch {
-			case primary[p.Target]:
-				p.ProductionBoost = 1.00
-			case advanced[p.Target]:
+			if p.Target == "luxury_goods" {
 				p.ProductionBoost = .80
-			default:
-				p.ProductionBoost = .90
+			} else {
+				p.ProductionBoost = 1.50
 			}
 			p.Description = "+" + formatPercent(p.ProductionBoost) + " permanent " + commodityName(p.Target) + " production."
 		}
@@ -98,7 +94,7 @@ func init() {
 func fmtInt(v int64) string       { return strconv.FormatInt(v, 10) }
 func fmtDecimal(v float64) string { return strconv.FormatFloat(v, 'f', 1, 64) }
 func longTermProjectSlots(infra float64, provinces int) int {
-	return 2 + int(infra/1200) + max(0, provinces-1)/2
+	return 3 + int(infra/1000) + max(0, provinces-1)/2
 }
 func longTermProjectUsesSlot(projectID string) bool {
 	project, exists := longTermProjects[projectID]

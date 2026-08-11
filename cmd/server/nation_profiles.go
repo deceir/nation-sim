@@ -106,9 +106,13 @@ func (a *app) nationProfile(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	military := loadMilitaryOverview(r.Context(), a.db, id)
+	var details nationalDetails
+	if economicNation, _, _, detailsErr := a.loadEconomicNationContext(r.Context(), ownerID); detailsErr == nil {
+		details = buildNationalDetails(economicNation, calculateEconomy(economicNation))
+	}
 	gdp, _, gdpErr := a.projectedGDPForOwner(r.Context(), ownerID)
 	if gdpErr == nil {
 		a.db.ExecContext(r.Context(), `UPDATE nations SET gdp=? WHERE id=?`, gdp, id)
 	}
-	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "gdp": gdp, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "military": military, "allianceID": allianceID, "allianceName": allianceName, "allianceRole": allianceRole, "locationLat": locationLat, "locationLng": locationLng})
+	write(w, 200, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "gdp": gdp, "capital": capital, "cityCount": cityCount, "createdAt": created, "lastActiveAt": lastActive, "guardianUntil": guardianUntil, "economicGear": gear, "provinceSetup": provinceSetup, "military": military, "nationalDetails": details, "allianceID": allianceID, "allianceName": allianceName, "allianceRole": allianceRole, "locationLat": locationLat, "locationLng": locationLng})
 }
