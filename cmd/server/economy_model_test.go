@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestInfrastructurePricingCompoundsAndBulkDiscounts(t *testing.T) {
 	low := infraPurchaseCost(100, 50, 0)
@@ -84,6 +87,32 @@ func TestStarterProvinceProducesRoughlyTwoMillionDailyTax(t *testing.T) {
 	result := calculateEconomy(ModelNation{TaxRate: 25, Happiness: 65, Education: 40, EmploymentRate: 72, Technology: 20, Cities: []ModelCity{{Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}})
 	if result.DailyTax < 1750000 || result.DailyTax > 2400000 {
 		t.Fatalf("starter daily tax = %.0f, want roughly 2 million", result.DailyTax)
+	}
+}
+
+func TestPopulationGrowthPersistsBeforeInfrastructureExpansion(t *testing.T) {
+	base := ModelNation{TaxRate: 25, Happiness: 65, Education: 40, EmploymentRate: 72, Technology: 20, Cities: []ModelCity{{ID: "capital", Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}}
+	initial := calculateEconomy(base)
+	if initial.Cities[0].PopulationCapacity <= initial.Cities[0].EffectivePopulation {
+		t.Fatal("starter Province should have room for organic population growth")
+	}
+	base.Cities[0].Population = initial.Cities[0].EffectivePopulation + 50
+	grown := calculateEconomy(base)
+	if grown.Cities[0].EffectivePopulation <= initial.Cities[0].EffectivePopulation {
+		t.Fatal("stored organic population growth was not retained")
+	}
+	base.Cities[0].Infra = 150
+	expanded := calculateEconomy(base)
+	if expanded.Cities[0].PopulationCapacity <= grown.Cities[0].PopulationCapacity || expanded.DailyTax <= grown.DailyTax {
+		t.Fatal("Infrastructure should raise population capacity and tax income")
+	}
+}
+
+func TestStarterPopulationGrowsEveryHourlyTurn(t *testing.T) {
+	result := calculateEconomy(ModelNation{TaxRate: 25, Happiness: 65, Education: 40, EmploymentRate: 72, Technology: 20, Cities: []ModelCity{{ID: "capital", Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}})
+	_, growth := nationalPopulationGrowth("nation", result.Cities, 65, 40, 1, time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC))
+	if growth < 5 || growth > 20 {
+		t.Fatalf("starter hourly population growth = %d, want the 5-20 floor", growth)
 	}
 }
 

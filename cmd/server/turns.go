@@ -2,12 +2,53 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"time"
 )
+
+func hourlyPopulationGrowth(city CityResult, happiness, education, nationalMultiplier float64, turn time.Time) int64 {
+	headroom := int64(math.Floor(city.PopulationCapacity - city.EffectivePopulation))
+	if headroom <= 0 {
+		return 0
+	}
+	seed := sha256.Sum256([]byte(city.ID + turn.UTC().Format(time.RFC3339)))
+	variance := .90 + float64(seed[0])/255*.20
+	rate := balance.PopulationGrowthRate * (.45 + happiness/100) * (.85 + education/500) / balance.TurnsPerDay * nationalMultiplier
+	growth := int64(math.Ceil(city.EffectivePopulation * rate * variance))
+	return min(growth, headroom)
+}
+
+func nationalPopulationGrowth(nationID string, cities []CityResult, happiness, education, nationalMultiplier float64, turn time.Time) (map[string]int64, int64) {
+	growthByCity := make(map[string]int64, len(cities))
+	var total, totalHeadroom int64
+	for _, city := range cities {
+		growth := hourlyPopulationGrowth(city, happiness, education, nationalMultiplier, turn)
+		growthByCity[city.ID] = growth
+		total += growth
+		totalHeadroom += max(int64(0), int64(math.Floor(city.PopulationCapacity-city.EffectivePopulation)))
+	}
+	if totalHeadroom <= total {
+		return growthByCity, total
+	}
+	seed := sha256.Sum256([]byte(nationID + turn.UTC().Format(time.RFC3339)))
+	floor := min(int64(5+seed[0]%16), totalHeadroom)
+	remaining := max(int64(0), floor-total)
+	for _, city := range cities {
+		headroom := max(int64(0), int64(math.Floor(city.PopulationCapacity-city.EffectivePopulation))-growthByCity[city.ID])
+		added := min(remaining, headroom)
+		growthByCity[city.ID] += added
+		total += added
+		remaining -= added
+		if remaining == 0 {
+			break
+		}
+	}
+	return growthByCity, total
+}
 
 func (a *app) runHourlyTurns() {
 	a.processHourlyTurn(time.Now().UTC().Truncate(time.Hour))
@@ -84,9 +125,9 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		}
 		netCash += luxuryIncome
 		ok := true
+		growthByCity, totalPopulationGrowth := nationalPopulationGrowth(nid, result.Cities, newHappy, newEducation, strategyResult.PopulationMultiplier, turn)
 		for _, c := range result.Cities {
-			growthRate := balance.PopulationGrowthRate * (.45 + newHappy/100) * (.85 + newEducation/500) / balance.TurnsPerDay * strategyResult.PopulationMultiplier
-			growth := int64(math.Max(0, c.EffectivePopulation*growthRate))
+			growth := growthByCity[c.ID]
 			_, e = tx.ExecContext(ctx, `UPDATE cities SET local_population=?,commerce_percent=?,power_capacity=?,power_usage=?,pollution=?,disease_rate=?,crime_rate=? WHERE id=?`, int64(c.EffectivePopulation)+growth, c.Commerce, c.PowerCapacity, c.PowerUsage, c.Pollution, c.Disease, c.Crime, c.ID)
 			if e != nil {
 				ok = false
@@ -97,7 +138,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.Rollback()
 			continue
 		}
-		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,gdp=? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population), gdp, nid)
+		_, e = tx.ExecContext(ctx, `UPDATE nations SET treasury=GREATEST(0,treasury+?),happiness=?,education=?,population=?,gdp=? WHERE id=?`, netCash, newHappy, newEducation, int64(result.Population)+totalPopulationGrowth, gdp, nid)
 		if e != nil {
 			tx.Rollback()
 			continue
@@ -120,7 +161,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `UPDATE nations SET technology=LEAST(100,technology+FLOOR(technology_progress+?)),technology_progress=MOD(technology_progress+?,1) WHERE id=?`, gain, gain, nid)
 		}
 		breakdown, _ := json.Marshal(result)
-		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax*strategyResult.IncomeMultiplier/balance.TurnsPerDay)+luxuryIncome, int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, 0, newHappy, newEducation, breakdown)
+		_, e = tx.ExecContext(ctx, `INSERT INTO economic_snapshots(id,nation_id,turn_at,cash_income,upkeep,population_change,happiness,education,breakdown) VALUES(?,?,?,?,?,?,?,?,?)`, uuid(), nid, turn, int64(result.DailyTax*strategyResult.IncomeMultiplier/balance.TurnsPerDay)+luxuryIncome, int64(result.DailyUpkeep/balance.TurnsPerDay)+militaryCashUpkeep, totalPopulationGrowth, newHappy, newEducation, breakdown)
 		if e != nil {
 			tx.Rollback()
 			continue

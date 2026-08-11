@@ -12,7 +12,7 @@ type EconomyConfig struct {
 
 const yenScale int64 = 100
 
-var balance = EconomyConfig{24, 90, 50, 500, .001, .018, .0012, .55, .0025, 32}
+var balance = EconomyConfig{24, 90, 50, 500, .001, .018, .0020, .55, .0025, 32}
 
 // startingNationPopulation uses the same model as the hourly turn so a newly
 // founded nation never presents a temporary placeholder population.
@@ -108,6 +108,7 @@ type CityResult struct {
 	IsCapital               bool               `json:"isCapital"`
 	Slots, Used             int                `json:"slots"`
 	BasePopulation          float64            `json:"basePopulation"`
+	PopulationCapacity      float64            `json:"populationCapacity"`
 	EffectivePopulation     float64            `json:"effectivePopulation"`
 	DensityMultiplier       float64            `json:"densityMultiplier"`
 	Commerce                float64            `json:"commerce"`
@@ -147,6 +148,8 @@ type NationResult struct {
 	NetDailyFood                     float64            `json:"netDailyFood"`
 	EffectiveEmploymentRate          float64            `json:"effectiveEmploymentRate"`
 	EffectiveTaxCollectionMultiplier float64            `json:"effectiveTaxCollectionMultiplier"`
+	ProjectedHourlyPopulationGrowth  int64              `json:"projectedHourlyPopulationGrowth"`
+	ProjectedDailyPopulationGrowth   int64              `json:"projectedDailyPopulationGrowth"`
 }
 
 func civicInstitutionCapacity(infrastructure float64) int {
@@ -291,7 +294,16 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		happyMult := clamp(1+(n.Happiness-50)*.008, .55, 1.45)
 		eduBonus := n.Education / 100 * .22
-		r.EffectivePopulation = math.Max(1000, r.BasePopulation*(1+eduBonus)*happyMult*(1-r.Disease)*(1-r.Crime)*r.DensityMultiplier)
+		// Infrastructure establishes the supported population and therefore the
+		// taxable economic base. Organic growth may rise modestly above that
+		// support level before further Infrastructure is required.
+		supportedPopulation := math.Max(1000, r.BasePopulation*(1+eduBonus)*happyMult*(1-r.Disease)*(1-r.Crime)*r.DensityMultiplier)
+		r.PopulationCapacity = supportedPopulation * 1.20
+		currentPopulation := c.Population
+		if currentPopulation <= 0 {
+			currentPopulation = supportedPopulation
+		}
+		r.EffectivePopulation = clamp(math.Max(currentPopulation, supportedPopulation), 1000, r.PopulationCapacity)
 		if n.LongTermProjects["population_development"] {
 			r.EffectivePopulation *= 1.03
 		}
@@ -314,7 +326,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
 		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
 		out.DailyInfrastructureUpkeep += r.InfrastructureUpkeep

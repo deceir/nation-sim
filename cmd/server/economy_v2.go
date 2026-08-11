@@ -37,11 +37,13 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	result := calculateEconomy(n)
+	populationGrowthMultiplier := 1.0
 	if strategy, e := a.loadStrategy(r.Context(), nid); e == nil {
 		applyProvincialOperatingConditions(&strategy, result)
 		strategic := calculateStrategy(strategy)
 		crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
 		applyCrisisTurnModifiers(&strategic, crisisModifiers)
+		populationGrowthMultiplier = strategic.PopulationMultiplier
 		result.DailyTax *= strategic.IncomeMultiplier
 		upkeepMultiplier := 1 - crisisModifiers.UpkeepReductionPct/100
 		result.DailyUpkeep *= upkeepMultiplier
@@ -57,6 +59,8 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		result.DailyFoodProduction = strategic.Production["foodstuffs"]
 		result.NetDailyFood = result.DailyFoodProduction - result.DailyFoodConsumption
 	}
+	_, result.ProjectedHourlyPopulationGrowth = nationalPopulationGrowth(nid, result.Cities, n.Happiness, n.Education, populationGrowthMultiplier, nextHour())
+	result.ProjectedDailyPopulationGrowth = result.ProjectedHourlyPopulationGrowth * int64(balance.TurnsPerDay)
 	alliance := map[string]any{"name": "", "taxRate": float64(0), "projectedDailyTax": int64(0)}
 	allianceID, allianceName, allianceRate, resourceRate := applicableAllianceTax(r.Context(), a.db, nid)
 	if allianceID != "" {
