@@ -18,9 +18,9 @@ type gearSpec struct {
 
 var gears = map[string]gearSpec{
 	"balanced":    {"Balanced / Mixed", "Broad resilience without major penalties.", 1.03, 1.03, 1.03, 1.03, 1.0, 1.0},
-	"agrarian":    {"Agrarian / Expansionist", "Population, food, fibers, and primary growth.", 1.18, 1.15, .82, .90, .85, 1.05},
-	"industrial":  {"Industrial", "Infrastructure and secondary commodity production.", .92, 1.0, 1.22, .90, 1.05, .97},
-	"commercial":  {"Commercial / Trade", "Citizen income, trade margins, and consumer activity.", 1.0, .82, .95, 1.20, .82, 1.02},
+	"agrarian":    {"Agrarian / Expansionist", "Population, food, fibers, and primary growth.", 1.18, 1.22, .82, .90, .85, 1.05},
+	"industrial":  {"Industrial", "Infrastructure and secondary commodity production.", .92, 1.0, 1.28, .90, 1.05, .97},
+	"commercial":  {"Commercial / Trade", "Citizen income, trade margins, and consumer activity.", 1.0, .82, .95, 1.25, .82, 1.02},
 	"militarized": {"Militarized Economy", "Military equipment and strategic production.", .90, .92, 1.05, .82, 1.30, .90},
 }
 
@@ -28,20 +28,38 @@ type policySpec struct {
 	Name, Description                                                          string
 	PoliticalCost                                                              float64
 	Population, Extraction, Industry, Commerce, Military, Happiness, Education float64
+	Disease, Crime, Employment, FoodConsumption, InfrastructureUpkeep          float64
 }
 
 var socialPolicies = map[string]policySpec{
-	"family_incentives":      {"Family Incentives", "Faster population growth at a continuing fiscal cost.", 20, 1.10, 1, 1, 1, 1, 1.02, 1},
-	"migration_attraction":   {"Migration Attraction", "Attract workers and improve commercial labor supply.", 20, 1.08, 1, 1, 1.05, 1, 1, 1},
-	"land_grants":            {"Land Grants", "Accelerate primary-sector settlement.", 15, 1.05, 1.10, 1, 1, 1, 1, 1},
-	"market_liberalization":  {"Market Liberalization", "Higher commerce income with a small Morale tradeoff.", 20, 1, 1, 1, 1.10, 1, .97, 1},
-	"industrial_subsidies":   {"Industrial Subsidies", "Increase national commodity conversion.", 20, 1, 1, 1.12, 1, 1, .98, 1},
-	"worker_training":        {"Worker Training", "Industry and Education reinforce each other.", 20, 1, 1, 1.07, 1, 1, 1, 1.08},
-	"extraction_compacts":    {"Extraction Compacts", "Increase deposit utilization.", 15, 1, 1.12, 1, 1, 1, .98, 1},
-	"arms_export_incentives": {"Arms Export Incentives", "Increase military-equipment production.", 25, 1, 1, 1, 1, 1.15, .96, 1},
+	"family_incentives":       {"Family Incentives", "Support household formation and long-term population growth.", 20, 1.15, 1, 1, 1, 1, 1.03, 1, 1, 1, 1, 1, 1},
+	"migration_attraction":    {"Migration Attraction", "Attract workers and expand commercial labor supply.", 20, 1.12, 1, 1, 1.08, 1, 1, 1, 1, 1, 1, 1, 1},
+	"land_grants":             {"Land Grants", "Accelerate primary-sector settlement and extraction.", 15, 1.08, 1.15, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+	"market_liberalization":   {"Market Liberalization", "Higher commerce income with a small Satisfaction tradeoff.", 20, 1, 1, 1, 1.10, 1, .97, 1, 1, 1, 1, 1, 1},
+	"industrial_subsidies":    {"Industrial Subsidies", "Increase national commodity conversion.", 20, 1, 1, 1.12, 1, 1, .98, 1, 1, 1, 1, 1, 1},
+	"worker_training":         {"Worker Training", "Improve industrial output and the rate of Education development.", 20, 1, 1, 1.08, 1, 1, 1, 1.10, 1, 1, 1, 1, 1},
+	"extraction_compacts":     {"Extraction Compacts", "Increase deposit utilization.", 15, 1, 1.12, 1, 1, 1, .98, 1, 1, 1, 1, 1, 1},
+	"arms_export_incentives":  {"Arms Export Incentives", "Increase military-equipment production.", 25, 1, 1, 1, 1, 1.15, .96, 1, 1, 1, 1, 1, 1},
+	"universal_education":     {"Universal Education Program", "Accelerate Education development and improve workforce participation.", 25, 1, 1, 1, .98, 1, 1.01, 1.15, 1, 1, 1.02, 1, 1},
+	"national_health_service": {"National Health Service", "Reduce disease nationwide through sustained public healthcare funding.", 25, 1, 1, 1, .96, 1, 1.02, 1, .72, 1, 1, 1, 1},
+	"community_policing":      {"Community Policing Initiative", "Reduce crime through local prevention and professional public security.", 20, 1, 1, 1, .97, 1, 1, 1, 1, .72, 1, 1, 1},
+	"food_security":           {"Food Security Program", "Reduce population food consumption through storage, distribution, and waste controls.", 20, 1, 1, 1, .97, 1, 1.02, 1, 1, 1, 1, .88, 1},
+	"public_works":            {"Public Works Program", "Create employment while reducing national Infrastructure upkeep.", 25, 1, 1, 1, .96, 1, 1.01, 1, 1, 1, 1.03, 1, .90},
 }
 var strategicCommodities = []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals", "textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"}
 var commodityRecipes = map[string]map[string]float64{"textiles": {"fibers": .8, "energy": .15}, "processed_foods": {"foodstuffs": .9, "energy": .1}, "construction_materials": {"timber": .45, "basic_metals": .45, "energy": .15}, "basic_goods": {"basic_metals": .5, "timber": .2, "energy": .2}, "consumer_goods": {"basic_goods": .55, "fibers": .2, "energy": .2}, "military_equipment": {"basic_metals": .7, "energy": .35, "strategic_minerals": .12}, "luxury_goods": {"consumer_goods": .5, "strategic_minerals": .08, "energy": .15}}
+
+func defaultProductionQuotas() map[string]float64 {
+	return map[string]float64{"textiles": 14.29, "processed_foods": 14.29, "construction_materials": 14.29, "basic_goods": 14.29, "consumer_goods": 14.28, "military_equipment": 14.28, "luxury_goods": 14.28}
+}
+
+func productionQuotaTotal(quotas map[string]float64) float64 {
+	total := 0.0
+	for commodity := range commodityRecipes {
+		total += math.Max(0, quotas[commodity])
+	}
+	return total
+}
 
 func startingDepositRichness(continent, resource string) float64 {
 	profiles := map[string]map[string]float64{
@@ -106,6 +124,7 @@ type strategicResult struct {
 	IndustryMultiplier   float64                       `json:"industryMultiplier"`
 	CommerceMultiplier   float64                       `json:"commerceMultiplier"`
 	MilitaryMultiplier   float64                       `json:"militaryMultiplier"`
+	EducationMultiplier  float64                       `json:"educationMultiplier"`
 	ProvinceProduction   map[string]map[string]float64 `json:"provinceProduction"`
 	ProvinceFactors      map[string]map[string]float64 `json:"provinceFactors"`
 }
@@ -115,7 +134,7 @@ func calculateStrategy(in strategicInput) strategicResult {
 	if g.Name == "" {
 		g = gears["balanced"]
 	}
-	r := strategicResult{Production: map[string]float64{}, ProvinceProduction: map[string]map[string]float64{}, ProvinceFactors: map[string]map[string]float64{}, IncomeMultiplier: g.Commerce, PopulationMultiplier: g.Population, HappinessMultiplier: g.Happiness, ExtractionMultiplier: g.Extraction, IndustryMultiplier: g.Industry, CommerceMultiplier: g.Commerce, MilitaryMultiplier: g.Military}
+	r := strategicResult{Production: map[string]float64{}, ProvinceProduction: map[string]map[string]float64{}, ProvinceFactors: map[string]map[string]float64{}, IncomeMultiplier: g.Commerce, PopulationMultiplier: g.Population, HappinessMultiplier: g.Happiness, ExtractionMultiplier: g.Extraction, IndustryMultiplier: g.Industry, CommerceMultiplier: g.Commerce, MilitaryMultiplier: g.Military, EducationMultiplier: 1}
 	if in.Projects["resource_survey"] {
 		r.ExtractionMultiplier *= 1.12
 	}
@@ -133,9 +152,14 @@ func calculateStrategy(in strategicInput) strategicResult {
 		r.CommerceMultiplier *= p.Commerce
 		r.MilitaryMultiplier *= p.Military
 		r.HappinessMultiplier *= p.Happiness
+		r.EducationMultiplier *= p.Education
 		r.IncomeMultiplier *= p.Commerce
 	}
 	knowledge := 1 + in.Education*.0025 + in.Technology*.004
+	quotas := in.Quotas
+	if productionQuotaTotal(quotas) <= .001 {
+		quotas = defaultProductionQuotas()
+	}
 	for _, p := range in.Provinces {
 		out := map[string]float64{}
 		employment := p.EmploymentRate
@@ -189,14 +213,14 @@ func calculateStrategy(in strategicInput) strategicResult {
 		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment * operationalFactor
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
-			quotaTotal += math.Max(0, in.Quotas[k])
+			quotaTotal += math.Max(0, quotas[k])
 		}
 		if quotaTotal == 0 {
 			quotaTotal = 1
 		}
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
-			share := math.Max(0, in.Quotas[k]) / quotaTotal
-			if in.Quotas[k] == 0 {
+			share := math.Max(0, quotas[k]) / quotaTotal
+			if quotas[k] == 0 {
 				continue
 			}
 			modifier := 1.0
@@ -289,6 +313,14 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Policies[k] = true
 	}
 	rows.Close()
+	if productionQuotaTotal(in.Quotas) <= .001 {
+		in.Quotas = defaultProductionQuotas()
+		for commodity, priority := range in.Quotas {
+			if _, e = a.db.ExecContext(ctx, `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?) ON DUPLICATE KEY UPDATE priority=VALUES(priority)`, nid, commodity, priority); e != nil {
+				return in, e
+			}
+		}
+	}
 	rows, e = a.db.QueryContext(ctx, `SELECT commodity,priority FROM production_quotas WHERE nation_id=?`, nid)
 	if e != nil {
 		return in, e
@@ -394,7 +426,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 	sort.Strings(keys)
 	for _, k := range keys {
 		p := socialPolicies[k]
-		policyList = append(policyList, map[string]any{"key": k, "name": p.Name, "description": p.Description, "cost": p.PoliticalCost, "active": in.Policies[k], "effects": map[string]float64{"population": p.Population, "extraction": p.Extraction, "industry": p.Industry, "commerce": p.Commerce, "military": p.Military, "happiness": p.Happiness, "education": p.Education}})
+		policyList = append(policyList, map[string]any{"key": k, "name": p.Name, "description": p.Description, "cost": p.PoliticalCost, "active": in.Policies[k], "effects": map[string]float64{"population": p.Population, "extraction": p.Extraction, "industry": p.Industry, "commerce": p.Commerce, "military": p.Military, "happiness": p.Happiness, "education": p.Education, "disease": p.Disease, "crime": p.Crime, "employment": p.Employment, "foodConsumption": p.FoodConsumption, "infrastructureUpkeep": p.InfrastructureUpkeep}})
 	}
 	stock := map[string]float64{}
 	rows, _ := a.db.QueryContext(r.Context(), `SELECT commodity,amount FROM nation_stockpiles WHERE nation_id=?`, nid)
@@ -563,6 +595,9 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 	if total > 100.001 {
 		problem(w, 400, "Production priorities cannot exceed 100%.")
 		return
+	}
+	if total <= .001 {
+		in.Quotas = defaultProductionQuotas()
 	}
 	nid, _ := a.nationID(r.Context(), u.ID)
 	tx, _ := a.db.BeginTx(r.Context(), nil)

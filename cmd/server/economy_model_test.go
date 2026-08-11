@@ -123,6 +123,21 @@ func TestManagedProvinceCanReachNinetyPercentEmployment(t *testing.T) {
 	}
 }
 
+func TestNewSocialPoliciesAffectCoreEconomy(t *testing.T) {
+	base := ModelNation{TaxRate: 25, Happiness: 55, Education: 45, EmploymentRate: 72, Cities: []ModelCity{{Infra: 300, Land: 400, Buildings: map[string]int{}, Upgrades: map[string]int{"heavy_industry": 6}}}}
+	normal := calculateEconomy(base)
+	base.Policies = map[string]bool{"national_health_service": true, "community_policing": true}
+	stable := calculateEconomy(base)
+	if stable.Cities[0].Disease >= normal.Cities[0].Disease || stable.Cities[0].Crime >= normal.Cities[0].Crime {
+		t.Fatal("healthcare and policing policies must reduce their national pressures")
+	}
+	base.Policies = map[string]bool{"public_works": true, "food_security": true}
+	managed := calculateEconomy(base)
+	if managed.EffectiveEmploymentRate <= normal.EffectiveEmploymentRate || managed.DailyInfrastructureUpkeep >= normal.DailyInfrastructureUpkeep || managed.DailyFoodConsumption >= normal.DailyFoodConsumption {
+		t.Fatal("public works and food security must affect employment, Infrastructure upkeep, and food use")
+	}
+}
+
 func TestIndustrialUpgradesCreateManageableHealthAndSecurityPressure(t *testing.T) {
 	base := ModelNation{TaxRate: 25, Happiness: 55, Education: 45, EmploymentRate: 72, Cities: []ModelCity{{Infra: 400, Land: 500, Buildings: map[string]int{}, Upgrades: map[string]int{"extraction": 8, "heavy_industry": 8, "commerce": 8}}}}
 	strained := calculateEconomy(base)

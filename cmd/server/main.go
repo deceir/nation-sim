@@ -355,7 +355,7 @@ func (a *app) createNation(w http.ResponseWriter, r *http.Request, u user) {
 		}
 		tx.Exec(r.Context(), `INSERT INTO nation_stockpiles(nation_id,commodity,amount) VALUES(?,?,?)`, nid, commodity, initial)
 	}
-	for commodity, priority := range map[string]float64{"processed_foods": 35, "construction_materials": 45, "basic_goods": 20} {
+	for commodity, priority := range defaultProductionQuotas() {
 		tx.Exec(r.Context(), `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?)`, nid, commodity, priority)
 	}
 	_, err = tx.Exec(r.Context(), `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(), INTERVAL 30 DAY),'new_nation','system')`, gid, nid)

@@ -98,6 +98,7 @@ type ModelNation struct {
 	TaxRate, Happiness, Education, EmploymentRate float64
 	Technology                                    int
 	Doctrine                                      string
+	Policies                                      map[string]bool
 	Projects                                      map[string]bool
 	LongTermProjects                              map[string]bool
 	Cities                                        []ModelCity
@@ -198,6 +199,16 @@ func clamp(v, lo, hi float64) float64 { return math.Max(lo, math.Min(hi, v)) }
 
 func calculateEconomy(n ModelNation) NationResult {
 	out := NationResult{Production: map[string]float64{}, Contributors: map[string]float64{}}
+	policyDisease, policyCrime, policyEmployment, policyFood, policyInfrastructureUpkeep := 1.0, 1.0, 1.0, 1.0, 1.0
+	for key := range n.Policies {
+		if policy, ok := socialPolicies[key]; ok {
+			policyDisease *= policy.Disease
+			policyCrime *= policy.Crime
+			policyEmployment *= policy.Employment
+			policyFood *= policy.FoodConsumption
+			policyInfrastructureUpkeep *= policy.InfrastructureUpkeep
+		}
+	}
 	if n.EmploymentRate <= 0 {
 		n.EmploymentRate = 72
 	}
@@ -292,6 +303,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.LongTermProjects["internal_security_reform"] {
 			r.Crime *= .75
 		}
+		r.Disease *= policyDisease
+		r.Crime *= policyCrime
 		happyMult := clamp(1+(n.Happiness-50)*.008, .55, 1.45)
 		eduBonus := n.Education / 100 * .22
 		// Infrastructure establishes the supported population and therefore the
@@ -313,7 +326,7 @@ func calculateEconomy(n ModelNation) NationResult {
 			r.CitizenIncome *= 1.04
 		}
 		educationEmployment := clamp((n.Education-40)*.08, -2, 4)
-		r.EmploymentRate = clamp(n.EmploymentRate+educationEmployment+employmentBonus, 25, 98)
+		r.EmploymentRate = clamp(n.EmploymentRate+educationEmployment+employmentBonus+(policyEmployment-1)*100, 25, 98)
 		r.EmploymentMultiplier = r.EmploymentRate / 72
 		r.TaxCollectionMultiplier = 1 + taxCollection/100
 		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018) * r.EmploymentMultiplier * r.TaxCollectionMultiplier
@@ -324,7 +337,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		if n.Projects["civil_engineering_corps"] {
 			upkeepModifier = .96
 		}
-		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier
+		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier * policyInfrastructureUpkeep
 		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
 		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
 		out.DailyTax += r.TaxRevenue
@@ -374,8 +387,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		out.EffectiveEmploymentRate = weightedEmployment / out.Population
 		out.EffectiveTaxCollectionMultiplier = weightedTaxCollection / out.Population
 	}
-	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen
+	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen * policyFood
 	out.HourlyFoodConsumption = out.DailyFoodConsumption / balance.TurnsPerDay
-	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "effectiveEmploymentRate": out.EffectiveEmploymentRate, "taxCollectionMultiplier": out.EffectiveTaxCollectionMultiplier, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget}
+	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "effectiveEmploymentRate": out.EffectiveEmploymentRate, "taxCollectionMultiplier": out.EffectiveTaxCollectionMultiplier, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget, "socialPolicyDisease": policyDisease, "socialPolicyCrime": policyCrime, "socialPolicyEmployment": policyEmployment, "socialPolicyFoodConsumption": policyFood, "socialPolicyInfrastructureUpkeep": policyInfrastructureUpkeep}
 	return out
 }

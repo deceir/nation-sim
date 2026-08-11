@@ -50,6 +50,13 @@ func nationalPopulationGrowth(nationID string, cities []CityResult, happiness, e
 	return growthByCity, total
 }
 
+func policyAdjustedEducationChange(change, multiplier float64) float64 {
+	if change > 0 && multiplier > 0 {
+		return change * multiplier
+	}
+	return change
+}
+
 func (a *app) runHourlyTurns() {
 	a.processHourlyTurn(time.Now().UTC().Truncate(time.Hour))
 	for {
@@ -88,7 +95,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		}
 		result := calculateEconomy(n)
 		strategy, strategyErr := a.loadStrategy(ctx, nid)
-		strategyResult := strategicResult{IncomeMultiplier: 1, PopulationMultiplier: 1, HappinessMultiplier: 1, Production: map[string]float64{}}
+		strategyResult := strategicResult{IncomeMultiplier: 1, PopulationMultiplier: 1, HappinessMultiplier: 1, EducationMultiplier: 1, Production: map[string]float64{}}
 		if strategyErr == nil {
 			applyProvincialOperatingConditions(&strategy, result)
 			strategyResult = calculateStrategy(strategy)
@@ -106,7 +113,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		// Happiness uses inertia; Gear and social-policy modifiers shift the target
 		// while the nation still moves toward it gradually each hourly turn.
 		newHappy := calculateHourlyHappiness(n.Happiness, result.HappinessTarget, strategyResult.HappinessMultiplier)
-		newEducation := clamp(n.Education+result.EducationChange/balance.TurnsPerDay, 0, 100)
+		newEducation := clamp(n.Education+policyAdjustedEducationChange(result.EducationChange, strategyResult.EducationMultiplier)/balance.TurnsPerDay, 0, 100)
 		gdp := annualizedGDP(result.DailyTax * strategyResult.IncomeMultiplier)
 		tx, e := a.db.BeginTx(ctx, nil)
 		if e != nil {

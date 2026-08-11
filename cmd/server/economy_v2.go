@@ -54,6 +54,8 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 			result.Cities[i].TaxRevenue *= strategic.IncomeMultiplier
 		}
 		result.Contributors["economicGearIncome"] = strategic.IncomeMultiplier
+		result.Contributors["socialPolicyEducationGain"] = strategic.EducationMultiplier
+		result.EducationChange = policyAdjustedEducationChange(result.EducationChange, strategic.EducationMultiplier)
 		result.Contributors["dailyCrisisIncome"] = 1 + crisisModifiers.CashIncomePct/100
 		result.Contributors["dailyCrisisUpkeepReduction"] = crisisModifiers.UpkeepReductionPct
 		result.DailyFoodProduction = strategic.Production["foodstuffs"]
@@ -100,6 +102,7 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 	var n ModelNation
 	n.Projects = map[string]bool{}
 	n.LongTermProjects = map[string]bool{}
+	n.Policies = map[string]bool{}
 	var id string
 	var cash int64
 	err := a.db.QueryRowContext(ctx, `SELECT id,tax_rate,happiness,education,employment_rate,technology,doctrine,treasury FROM nations WHERE owner_id=?`, owner).Scan(&id, &n.TaxRate, &n.Happiness, &n.Education, &n.EmploymentRate, &n.Technology, &n.Doctrine, &cash)
@@ -144,6 +147,19 @@ func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (Mode
 		n.Projects[k] = true
 	}
 	ps.Close()
+	policyRows, e := a.db.QueryContext(ctx, `SELECT policy_key FROM social_policy_selections WHERE nation_id=?`, id)
+	if e != nil {
+		return n, id, cash, e
+	}
+	for policyRows.Next() {
+		var key string
+		if e = policyRows.Scan(&key); e != nil {
+			policyRows.Close()
+			return n, id, cash, e
+		}
+		n.Policies[key] = true
+	}
+	policyRows.Close()
 	n.LongTermProjects = loadLongTermProjectSet(ctx, a.db, id)
 	return n, id, cash, nil
 }

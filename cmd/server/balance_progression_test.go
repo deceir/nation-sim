@@ -5,7 +5,7 @@ import "testing"
 func TestNewNationEconomyHasRewardingRunway(t *testing.T) {
 	n := ModelNation{TaxRate: 25, Happiness: 65, Education: 40, Technology: 20, Projects: map[string]bool{}, LongTermProjects: map[string]bool{}, Cities: []ModelCity{{ID: "capital", Name: "Capital", Infra: 100, Land: 150, Buildings: map[string]int{}, Upgrades: map[string]int{}}}}
 	cash := calculateEconomy(n)
-	if cash.NetDailyCash < 7500000 || cash.NetDailyCash > 17500000 {
+	if cash.NetDailyCash < 1750000 || cash.NetDailyCash > 2400000 {
 		t.Fatalf("starter daily cash should fund visible progress without trivializing expansion: %.0f", cash.NetDailyCash)
 	}
 	in := strategicInput{Gear: "balanced", Education: 40, Technology: 20, Policies: map[string]bool{}, Quotas: map[string]float64{"processed_foods": 35, "construction_materials": 45, "basic_goods": 20}, Provinces: []provinceStrategy{{ID: "capital", Infra: 100, Specialization: "mixed", Deposits: map[string]float64{"foodstuffs": startingDepositRichness("Asia", "foodstuffs"), "timber": startingDepositRichness("Asia", "timber"), "fibers": startingDepositRichness("Asia", "fibers"), "basic_metals": startingDepositRichness("Asia", "basic_metals"), "energy": startingDepositRichness("Asia", "energy"), "strategic_minerals": startingDepositRichness("Asia", "strategic_minerals")}, Upgrades: map[string]int{}}}}
