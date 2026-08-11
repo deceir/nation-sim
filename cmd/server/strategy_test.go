@@ -84,21 +84,27 @@ func TestResourceSurveyBoostsCurrentPrimaryResources(t *testing.T) {
 	}
 }
 
-func TestZeroCommodityAllocationFallsBackToEvenProduction(t *testing.T) {
+func TestNewNationDefaultCommodityAllocationIsEven(t *testing.T) {
 	quotas := defaultProductionQuotas()
-	if total := productionQuotaTotal(quotas); math.Abs(total-100) > .001 {
+	total := 0.0
+	for _, quota := range quotas {
+		total += quota
+		if quota < 14.28 || quota > 14.29 {
+			t.Fatalf("default allocation %.2f is not evenly distributed", quota)
+		}
+	}
+	if math.Abs(total-100) > .001 {
 		t.Fatalf("default production allocation totals %.2f, want 100", total)
 	}
+}
+
+func TestZeroCommodityAllocationRemainsZero(t *testing.T) {
 	in := sampleStrategy()
 	in.Quotas = map[string]float64{}
 	result := calculateStrategy(in)
-	producing := 0
 	for commodity := range commodityRecipes {
-		if result.Production[commodity] > 0 {
-			producing++
+		if result.Production[commodity] != 0 {
+			t.Fatalf("zero allocation unexpectedly produced %s", commodity)
 		}
-	}
-	if producing == 0 {
-		t.Fatal("zero-allocation nation should receive productive default quotas")
 	}
 }

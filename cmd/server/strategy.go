@@ -53,14 +53,6 @@ func defaultProductionQuotas() map[string]float64 {
 	return map[string]float64{"textiles": 14.29, "processed_foods": 14.29, "construction_materials": 14.29, "basic_goods": 14.29, "consumer_goods": 14.28, "military_equipment": 14.28, "luxury_goods": 14.28}
 }
 
-func productionQuotaTotal(quotas map[string]float64) float64 {
-	total := 0.0
-	for commodity := range commodityRecipes {
-		total += math.Max(0, quotas[commodity])
-	}
-	return total
-}
-
 func startingDepositRichness(continent, resource string) float64 {
 	profiles := map[string]map[string]float64{
 		"Africa":        {"foodstuffs": 1.05, "timber": .75, "fibers": 1.10, "basic_metals": 1.35, "energy": .90, "strategic_minerals": 1.30},
@@ -156,10 +148,6 @@ func calculateStrategy(in strategicInput) strategicResult {
 		r.IncomeMultiplier *= p.Commerce
 	}
 	knowledge := 1 + in.Education*.0025 + in.Technology*.004
-	quotas := in.Quotas
-	if productionQuotaTotal(quotas) <= .001 {
-		quotas = defaultProductionQuotas()
-	}
 	for _, p := range in.Provinces {
 		out := map[string]float64{}
 		employment := p.EmploymentRate
@@ -213,14 +201,14 @@ func calculateStrategy(in strategicInput) strategicResult {
 		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment * operationalFactor
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
-			quotaTotal += math.Max(0, quotas[k])
+			quotaTotal += math.Max(0, in.Quotas[k])
 		}
 		if quotaTotal == 0 {
 			quotaTotal = 1
 		}
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
-			share := math.Max(0, quotas[k]) / quotaTotal
-			if quotas[k] == 0 {
+			share := math.Max(0, in.Quotas[k]) / quotaTotal
+			if in.Quotas[k] == 0 {
 				continue
 			}
 			modifier := 1.0
@@ -313,14 +301,6 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Policies[k] = true
 	}
 	rows.Close()
-	if productionQuotaTotal(in.Quotas) <= .001 {
-		in.Quotas = defaultProductionQuotas()
-		for commodity, priority := range in.Quotas {
-			if _, e = a.db.ExecContext(ctx, `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?) ON DUPLICATE KEY UPDATE priority=VALUES(priority)`, nid, commodity, priority); e != nil {
-				return in, e
-			}
-		}
-	}
 	rows, e = a.db.QueryContext(ctx, `SELECT commodity,priority FROM production_quotas WHERE nation_id=?`, nid)
 	if e != nil {
 		return in, e
@@ -596,17 +576,27 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 400, "Production priorities cannot exceed 100%.")
 		return
 	}
-	if total <= .001 {
-		in.Quotas = defaultProductionQuotas()
-	}
 	nid, _ := a.nationID(r.Context(), u.ID)
-	tx, _ := a.db.BeginTx(r.Context(), nil)
-	defer tx.Rollback()
-	tx.ExecContext(r.Context(), `DELETE FROM production_quotas WHERE nation_id=?`, nid)
-	for k, v := range in.Quotas {
-		tx.ExecContext(r.Context(), `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?)`, nid, k, v)
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, 500, "Could not save production allocation.")
+		return
 	}
-	tx.Commit()
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(r.Context(), `DELETE FROM production_quotas WHERE nation_id=?`, nid); err != nil {
+		problem(w, 500, "Could not save production allocation.")
+		return
+	}
+	for k, v := range in.Quotas {
+		if _, err = tx.ExecContext(r.Context(), `INSERT INTO production_quotas(nation_id,commodity,priority) VALUES(?,?,?)`, nid, k, v); err != nil {
+			problem(w, 500, "Could not save production allocation.")
+			return
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, 500, "Could not save production allocation.")
+		return
+	}
 	write(w, 200, map[string]bool{"ok": true})
 }
 
