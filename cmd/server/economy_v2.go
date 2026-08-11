@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+const daysPerGDPYear = 365
+
+func annualizedGDP(projectedDailyTax float64) int64 {
+	return int64(math.Floor(projectedDailyTax * daysPerGDPYear))
+}
+
 func (a *app) projectedGDPForOwner(ctx context.Context, ownerID string) (int64, string, error) {
 	nation, nationID, _, err := a.loadEconomicNationContext(ctx, ownerID)
 	if err != nil {
@@ -21,7 +27,7 @@ func (a *app) projectedGDPForOwner(ctx context.Context, ownerID string) (int64, 
 		applyCrisisTurnModifiers(&strategic, a.loadCrisisModifiers(ctx, nationID))
 		multiplier = strategic.IncomeMultiplier
 	}
-	return int64(math.Floor(result.DailyTax * multiplier)), nationID, nil
+	return annualizedGDP(result.DailyTax * multiplier), nationID, nil
 }
 
 func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
