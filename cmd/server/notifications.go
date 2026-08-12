@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-var notificationCategories = map[string]bool{"economic": true, "war": true, "market": true, "game": true}
+var notificationCategories = map[string]bool{"economic": true, "war": true, "market": true, "game": true, "moderation": true}
 
 type notificationItem struct {
 	ID        string     `json:"id"`

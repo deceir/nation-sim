@@ -22,11 +22,32 @@ func TestDistanceTableSpecifiedPairs(t *testing.T) {
 
 func TestShipmentTerms(t *testing.T) {
 	distance, turns, fee, risk := shipmentTerms("Africa", "Africa", 100, 100000)
-	if distance != 1 || turns != 3 || fee != 1000 || risk != .5 {
+	if distance != 1 || turns != 3 || fee != 750 || risk != .5 {
 		t.Fatalf("same-continent terms incorrect: %v %v %v %v", distance, turns, fee, risk)
 	}
+	_, distantTurns, distantFee, _ := shipmentTerms("Asia", "South America", 100, 100000)
+	if distantTurns != 25 || distantFee < 3300 || distantFee > 3400 {
+		t.Fatalf("expected a 25-turn distant route near a 3.4%% fee, got %d turns and %d", distantTurns, distantFee)
+	}
 	_, bulkTurns, _, _ := shipmentTerms("Asia", "South America", 20000, 100000)
-	if bulkTurns != 8 {
-		t.Fatalf("expected 8 bulk turns, got %d", bulkTurns)
+	if bulkTurns != 33 {
+		t.Fatalf("expected 33 bulk turns, got %d", bulkTurns)
+	}
+	_, maximumTurns, _, _ := shipmentTerms("North America", "Antarctica", 100, 100000)
+	if maximumTurns != 29 {
+		t.Fatalf("expected the maximum normal route to take 29 hourly turns, got %d", maximumTurns)
+	}
+	_, nearbyTurns, _, _ := shipmentTerms("Africa", "Europe", 100, 100000)
+	if nearbyTurns != 4 {
+		t.Fatalf("expected a nearby intercontinental route to remain practical at 4 turns, got %d", nearbyTurns)
+	}
+}
+
+func TestMarketNotificationQuantityRoundsUpToTenth(t *testing.T) {
+	cases := map[float64]string{1: "1.0", 1.01: "1.1", 1.10: "1.1", 9.999: "10.0"}
+	for input, expected := range cases {
+		if actual := marketNotificationQuantity(input); actual != expected {
+			t.Fatalf("quantity %v displayed as %s; expected %s", input, actual, expected)
+		}
 	}
 }

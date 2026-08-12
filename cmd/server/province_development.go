@@ -10,28 +10,59 @@ import (
 type provinceUpgradeSpec struct {
 	Name, Description string
 	BaseCost          float64
+	HardCap           int
 }
 
+type provinceDevelopmentBalance struct {
+	StartingInfrastructure, BaseUpgradeCapacity, InfrastructurePerCapacity float64
+	UpgradeExponent, UpgradeInfrastructureFactor                           float64
+	FoundingBaseCash, FoundingExponent                                     float64
+	FoundingMaterialBase, FoundingMaterialExponent                         float64
+}
+
+var provinceDevelopment = provinceDevelopmentBalance{
+	StartingInfrastructure: 100, BaseUpgradeCapacity: 5, InfrastructurePerCapacity: 50,
+	UpgradeExponent: 1.72, UpgradeInfrastructureFactor: .08,
+	FoundingBaseCash: 250000, FoundingExponent: 2.55,
+	FoundingMaterialBase: 40, FoundingMaterialExponent: 2.15,
+}
+
+const provinceUpgradeLevelHardCap = 15
+
 var provinceUpgradeSpecs = map[string]provinceUpgradeSpec{
-	"agriculture":       {"Agricultural & Food", "Improves food and fiber output while supporting the local population base.", 20000},
-	"extraction":        {"Extraction Efficiency", "Raises output from the Province's natural deposits.", 26000},
-	"light_industry":    {"Light Industry", "Improves textiles, processed foods, and basic-goods production.", 30000},
-	"heavy_industry":    {"Heavy Industry", "Improves construction materials, consumer goods, and advanced commodities.", 45000},
-	"commerce":          {"Commercial & Trade", "Raises this Province's citizen income and tax contribution.", 28000},
-	"civil":             {"Civil & Quality of Life", "Supports effective population, Happiness, and long-term social capacity.", 24000},
-	"military_industry": {"Military-Industrial", "Improves military-equipment production in this Province.", 50000},
+	"agriculture":       {"Agricultural & Food", "Improves food and fiber output and population capacity, but intensive production adds disease and pollution pressure.", 20000, 15},
+	"extraction":        {"Extraction Efficiency", "Raises all natural-deposit output while adding substantial pollution and disease pressure.", 26000, 15},
+	"light_industry":    {"Light Industry", "Improves textiles, processed foods, and basic goods while adding moderate pollution and disease pressure.", 30000, 15},
+	"heavy_industry":    {"Heavy Industry", "Improves construction materials, consumer goods, and luxury goods; it creates the strongest pollution and disease pressure.", 45000, 15},
+	"commerce":          {"Commercial & Trade", "Raises citizen tax income and employment potential, with growing crime pressure in a larger commercial economy.", 28000, 15},
+	"civil":             {"Civil & Quality of Life", "Supports effective population, Happiness, Education, and long-term social capacity.", 24000, 15},
+	"military_industry": {"Military-Industrial", "Improves military-equipment production while adding pollution, disease, and crime pressure.", 50000, 15},
 }
 
 func provinceUpgradeCost(spec provinceUpgradeSpec, level int, infra float64) int64 {
-	cost := spec.BaseCost * math.Pow(float64(level+1), 1.85) * (1 + .12*(infra/1000))
+	cost := spec.BaseCost * float64(yenScale) * math.Pow(float64(level+1), provinceDevelopment.UpgradeExponent) * (1 + provinceDevelopment.UpgradeInfrastructureFactor*(infra/1000))
 	if level >= 12 {
 		cost *= math.Pow(float64(level-11), 1.45)
 	}
 	return int64(math.Ceil(cost))
 }
 
-func provinceUpgradeCap(infra float64) int {
-	return min(15, max(4, 3+int(math.Floor(infra/100))))
+func provinceUpgradeCapacity(infra float64) int {
+	raised := math.Max(0, infra-provinceDevelopment.StartingInfrastructure)
+	return int(provinceDevelopment.BaseUpgradeCapacity) + int(math.Floor((raised+.000001)/provinceDevelopment.InfrastructurePerCapacity))
+}
+
+func nextProvinceUpgradeCapacityAt(infra float64) int {
+	capacityGains := provinceUpgradeCapacity(infra) - int(provinceDevelopment.BaseUpgradeCapacity)
+	return int(provinceDevelopment.StartingInfrastructure + float64(capacityGains+1)*provinceDevelopment.InfrastructurePerCapacity)
+}
+
+func provinceUpgradesUsed(upgrades map[string]int) int {
+	used := 0
+	for _, level := range upgrades {
+		used += max(0, level)
+	}
+	return used
 }
 
 func provinceUpgradeEffect(level int) float64 {
@@ -70,8 +101,8 @@ func expansionPolicyModifier(policies map[string]bool) float64 {
 
 func provinceFoundingCosts(count int, gear string, policies map[string]bool) (int64, float64, int) {
 	n := math.Max(1, float64(count))
-	cash := 200000 * math.Pow(n, 2.6) * expansionGearModifier(gear) * expansionPolicyModifier(policies)
-	materials := 120 * math.Pow(n, 2.2)
+	cash := provinceDevelopment.FoundingBaseCash * float64(yenScale) * math.Pow(n, provinceDevelopment.FoundingExponent) * expansionGearModifier(gear) * expansionPolicyModifier(policies)
+	materials := provinceDevelopment.FoundingMaterialBase * math.Pow(n, provinceDevelopment.FoundingMaterialExponent)
 	strain := min(12, 2+count)
 	return int64(math.Ceil(cash)), math.Ceil(materials*100) / 100, strain
 }
@@ -95,7 +126,8 @@ func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user)
 	var nid string
 	var cash int64
 	var infra float64
-	if err = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,c.infrastructure FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, u.ID, in.ProvinceID).Scan(&nid, &cash, &infra); err != nil {
+	var upgradesUsed int
+	if err = tx.QueryRowContext(r.Context(), `SELECT n.id,n.treasury,c.infrastructure,COALESCE((SELECT SUM(level) FROM province_upgrades WHERE city_id=c.id),0) FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, u.ID, in.ProvinceID).Scan(&nid, &cash, &infra, &upgradesUsed); err != nil {
 		problem(w, http.StatusNotFound, "Province not found.")
 		return
 	}
@@ -127,16 +159,21 @@ func (a *app) buyProvinceUpgrade(w http.ResponseWriter, r *http.Request, u user)
 		problem(w, http.StatusBadRequest, "Unknown Province upgrade action.")
 		return
 	}
-	cap := provinceUpgradeCap(infra)
-	if level >= cap {
-		problem(w, http.StatusConflict, "Purchase more Infrastructure to raise this upgrade's current cap.")
-		return
-	}
-	if level >= 15 {
+	if level >= spec.HardCap {
 		problem(w, http.StatusConflict, "This Province upgrade has reached its hard cap.")
 		return
 	}
+	capacity := provinceUpgradeCapacity(infra)
+	if upgradesUsed >= capacity {
+		problem(w, http.StatusConflict, "Purchase more Infrastructure to unlock another Province upgrade.")
+		return
+	}
 	cost := provinceUpgradeCost(spec, level, infra)
+	var hasInfrastructureBank int
+	tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=? AND project_type='infrastructure_bank'`, nid).Scan(&hasInfrastructureBank)
+	if hasInfrastructureBank > 0 {
+		cost = int64(math.Ceil(float64(cost) * .90))
+	}
 	if cash < cost {
 		problem(w, http.StatusConflict, "Insufficient treasury for this Province upgrade.")
 		return

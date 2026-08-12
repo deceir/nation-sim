@@ -6,10 +6,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
+const provinceNameMaxLength = 30
+
+func normalizeProvinceName(value string) (string, bool) {
+	value = strings.TrimSpace(value)
+	length := utf8.RuneCountInString(value)
+	return value, length >= 2 && length <= provinceNameMaxLength
+}
+
 func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
-	rows, e := a.db.Query(r.Context(), `SELECT c.id,c.name,c.level,c.total_invested,c.improvement_slots,c.population_capacity,(SELECT count(*) FROM city_investments ci WHERE ci.city_id=c.id),COALESCE(GROUP_CONCAT(CONCAT(i.resource,':',i.level)), '') FROM cities c JOIN nations n ON n.id=c.nation_id LEFT JOIN city_industries i ON i.city_id=c.id WHERE n.owner_id=? GROUP BY c.id,c.name,c.level,c.total_invested,c.improvement_slots,c.population_capacity ORDER BY c.created_at`, u.ID)
+	rows, e := a.db.Query(r.Context(), `SELECT c.id,c.name,c.level,c.total_invested,c.infrastructure,c.population_capacity,COALESCE((SELECT SUM(level) FROM province_upgrades pu WHERE pu.city_id=c.id),0),COALESCE(c.id=n.capital_city_id,0) FROM cities c JOIN nations n ON n.id=c.nation_id WHERE n.owner_id=? ORDER BY COALESCE(c.id=n.capital_city_id,0) DESC,c.created_at ASC,c.id ASC`, u.ID)
 	if e != nil {
 		problem(w, 500, "Cities unavailable.")
 		return
@@ -17,23 +26,38 @@ func (a *app) cities(w http.ResponseWriter, r *http.Request, u user) {
 	defer rows.Close()
 	out := []map[string]any{}
 	for rows.Next() {
-		var id, name, industries string
-		var level, slots, used int
+		var id, name string
+		var level, infrastructure, used int
+		var isCapital bool
 		var invested, populationCapacity int64
-		rows.Scan(&id, &name, &level, &invested, &slots, &populationCapacity, &used, &industries)
-		expandCost := int64(20000) << max(0, slots-2)
-		out = append(out, map[string]any{"id": id, "name": name, "level": level, "totalInvested": invested, "improvementSlots": slots, "usedSlots": used, "populationCapacity": populationCapacity, "nextExpansionCost": expandCost, "industries": industries})
+		rows.Scan(&id, &name, &level, &invested, &infrastructure, &populationCapacity, &used, &isCapital)
+		capacity := provinceUpgradeCapacity(float64(infrastructure))
+		nextAt := nextProvinceUpgradeCapacityAt(float64(infrastructure))
+		nextCost := int64(infraPurchaseCost(float64(infrastructure), float64(max(1, nextAt-infrastructure)), 0))
+		out = append(out, map[string]any{"id": id, "name": name, "isCapital": isCapital, "level": level, "infrastructure": infrastructure, "totalInvested": invested, "improvementSlots": capacity, "usedSlots": used, "upgradeCapacity": capacity, "usedUpgrades": used, "populationCapacity": populationCapacity, "nextExpansionCost": nextCost, "nextUpgradeCapacityAt": nextAt})
 	}
+	var nationID, gear string
 	var cityCount int
 	var last sql.NullTime
-	a.db.QueryRow(r.Context(), `SELECT count(*),max(c.created_at) FROM cities c JOIN nations n ON n.id=c.nation_id WHERE n.owner_id=?`, u.ID).Scan(&cityCount, &last)
-	newCityCost := int64(50000) << max(0, cityCount-1)
+	a.db.QueryRow(r.Context(), `SELECT n.id,COALESCE(s.gear,'balanced'),COUNT(c.id),MAX(c.created_at) FROM nations n LEFT JOIN nation_economic_strategy s ON s.nation_id=n.id LEFT JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? GROUP BY n.id,s.gear`, u.ID).Scan(&nationID, &gear, &cityCount, &last)
+	policies := map[string]bool{}
+	policyRows, _ := a.db.QueryContext(r.Context(), `SELECT policy_key FROM social_policy_selections WHERE nation_id=?`, nationID)
+	if policyRows != nil {
+		for policyRows.Next() {
+			var key string
+			if policyRows.Scan(&key) == nil {
+				policies[key] = true
+			}
+		}
+		policyRows.Close()
+	}
+	newCityCost, newCityMaterials, newCityStrain := provinceFoundingCosts(cityCount, gear, policies)
 	var nextCityAt *time.Time
 	if cityCount > 1 && last.Valid {
 		t := last.Time.Add(7 * 24 * time.Hour)
 		nextCityAt = &t
 	}
-	write(w, 200, map[string]any{"cities": out, "newCityCost": newCityCost, "nextCityAt": nextCityAt})
+	write(w, 200, map[string]any{"cities": out, "newCityCost": newCityCost, "newCityConstructionMaterials": newCityMaterials, "newCityHappinessStrain": newCityStrain, "nextCityAt": nextCityAt})
 }
 
 func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
@@ -41,9 +65,10 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 	if !decode(w, r, &in) {
 		return
 	}
-	in.Name = strings.TrimSpace(in.Name)
-	if len(in.Name) < 2 {
-		problem(w, 400, "Enter a Province name.")
+	var valid bool
+	in.Name, valid = normalizeProvinceName(in.Name)
+	if !valid {
+		problem(w, 400, "Province names must contain between 2 and 30 characters.")
 		return
 	}
 	tx, _ := a.db.Begin(r.Context())
@@ -106,6 +131,51 @@ func (a *app) createCity(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 201, map[string]any{"ok": true, "cost": cost, "constructionMaterials": math.Round(constructionCost*100) / 100, "happinessStrain": happinessStrain, "nextProvinceAt": time.Now().Add(7 * 24 * time.Hour)})
 }
 
+func (a *app) renameCity(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Name string }
+	if !decode(w, r, &in) {
+		return
+	}
+	name, valid := normalizeProvinceName(in.Name)
+	if !valid {
+		problem(w, http.StatusBadRequest, "Province names must contain between 2 and 30 characters.")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not begin the Province rename.")
+		return
+	}
+	defer tx.Rollback()
+	var nationID, currentName string
+	if err = tx.QueryRowContext(r.Context(), `SELECT n.id,c.name FROM cities c JOIN nations n ON n.id=c.nation_id WHERE c.id=? AND n.owner_id=? FOR UPDATE`, r.PathValue("id"), u.ID).Scan(&nationID, &currentName); err != nil {
+		problem(w, http.StatusNotFound, "Province not found.")
+		return
+	}
+	if currentName == name {
+		write(w, http.StatusOK, map[string]any{"ok": true, "name": name})
+		return
+	}
+	var duplicate int
+	if err = tx.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM cities WHERE nation_id=? AND id<>? AND name=?`, nationID, r.PathValue("id"), name).Scan(&duplicate); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not verify the Province name.")
+		return
+	}
+	if duplicate > 0 {
+		problem(w, http.StatusConflict, "Another Province in your nation already uses that name.")
+		return
+	}
+	if _, err = tx.ExecContext(r.Context(), `UPDATE cities SET name=? WHERE id=? AND nation_id=?`, name, r.PathValue("id"), nationID); err != nil {
+		problem(w, http.StatusConflict, "That Province name is unavailable.")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not rename the Province.")
+		return
+	}
+	write(w, http.StatusOK, map[string]any{"ok": true, "name": name})
+}
+
 func (a *app) investCity(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct{ CityID, Program string }
 	if !decode(w, r, &in) {
@@ -133,7 +203,7 @@ func (a *app) investCity(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This city has no open improvement slots. Expand it or found another city.")
 		return
 	}
-	cost := int64(10000 * (used + 1) * (used + 1))
+	cost := int64(10000*yenScale) * int64((used+1)*(used+1))
 	if cash < cost {
 		problem(w, 409, "Insufficient treasury for this program.")
 		return
@@ -167,7 +237,7 @@ func (a *app) expandCity(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This city has reached its maximum capacity. Found a new city.")
 		return
 	}
-	cost := int64(20000) << max(0, slots-2)
+	cost := (int64(20000) * yenScale) << max(0, slots-2)
 	if cash < cost {
 		problem(w, 409, "Insufficient treasury for this expansion.")
 		return
@@ -182,46 +252,6 @@ func (a *app) expandCity(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]any{"ok": true, "cost": cost, "slots": slots + 1, "level": level + 1})
 }
 
-func (a *app) investIndustry(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ CityID, Resource string }
-	if !decode(w, r, &in) {
-		return
-	}
-	required := map[string]int{"food": 2, "coal": 3, "steel": 5}[in.Resource]
-	if required == 0 {
-		problem(w, 400, "Unknown industry.")
-		return
-	}
-	tx, _ := a.db.Begin(r.Context())
-	defer tx.Rollback(r.Context())
-	var nid string
-	var cash int64
-	var cityLevel, current, slots, used int
-	if tx.QueryRow(r.Context(), `SELECT n.id,n.treasury,c.level,COALESCE((SELECT level FROM city_industries WHERE city_id=c.id AND resource=?),0),c.improvement_slots,(SELECT count(*) FROM city_investments WHERE city_id=c.id) FROM nations n JOIN cities c ON c.nation_id=n.id WHERE n.owner_id=? AND c.id=? FOR UPDATE`, in.Resource, u.ID, in.CityID).Scan(&nid, &cash, &cityLevel, &current, &slots, &used) != nil {
-		problem(w, 404, "City not found.")
-		return
-	}
-	if cityLevel < required {
-		problem(w, 409, "Develop this city further before establishing that industry.")
-		return
-	}
-	if used >= slots {
-		problem(w, 409, "This city has no open improvement slots.")
-		return
-	}
-	cost := int64(20000 * (current + 1) * (current + 1))
-	if cash < cost {
-		problem(w, 409, "Insufficient treasury.")
-		return
-	}
-	tx.Exec(r.Context(), `UPDATE nations SET treasury=treasury-? WHERE id=?`, cost, nid)
-	tx.Exec(r.Context(), `INSERT INTO city_industries(id,city_id,resource,level,total_invested) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE level=level+1,total_invested=total_invested+VALUES(total_invested)`, uuid(), in.CityID, in.Resource, 1, cost)
-	tx.Exec(r.Context(), `INSERT INTO city_investments(id,city_id,nation_id,program,amount) VALUES(?,?,?,?,?)`, uuid(), in.CityID, nid, "industry_"+in.Resource, cost)
-	tx.Exec(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'industry',?,?)`, uuid(), nid, -cost, "Expanded "+in.Resource+" production")
-	tx.Commit(r.Context())
-	write(w, 200, map[string]any{"ok": true, "cost": cost})
-}
-
 func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	var pop, treasury int64
 	var employment, education, satisfaction, technology float64
@@ -229,15 +259,13 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	if a.db.QueryRow(r.Context(), `SELECT id,population,treasury,employment_rate,education,happiness,technology FROM nations WHERE owner_id=?`, u.ID).Scan(&nid, &pop, &treasury, &employment, &education, &satisfaction, &technology) != nil {
 		return
 	}
-	var food, coal, steel int64
-	a.db.QueryRow(r.Context(), `SELECT COALESCE(sum(CASE resource WHEN 'food' THEN level*5 ELSE 0 END),0),COALESCE(sum(CASE resource WHEN 'coal' THEN level*2 ELSE 0 END),0),COALESCE(sum(CASE resource WHEN 'steel' THEN level ELSE 0 END),0) FROM city_industries i JOIN cities c ON c.id=i.city_id WHERE c.nation_id=?`, nid).Scan(&food, &coal, &steel)
 	baseDaily := float64(pop) * 0.02
 	employmentFactor := employment / 100
 	educationFactor := 0.5 + education/200
 	satisfactionFactor := 0.5 + satisfaction/200
 	productivityFactor := 1 + technology/500
 	dailyCash := int64(baseDaily * employmentFactor * educationFactor * satisfactionFactor * productivityFactor)
-	hourlyCash := dailyCash / 24
+	hourlyCash := dailyCash / 24 * yenScale
 	var populationCapacity int64
 	a.db.QueryRow(r.Context(), `SELECT COALESCE(sum(population_capacity),0) FROM cities WHERE nation_id=?`, nid).Scan(&populationCapacity)
 	dailyPopulationGrowth := int64(float64(pop) * 0.002 * satisfactionFactor)
@@ -247,14 +275,14 @@ func (a *app) income(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	now := time.Now().UTC()
 	next := now.Truncate(time.Hour).Add(time.Hour)
-	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "hourlyResources": map[string]int64{"food": food, "coal": coal, "steel": steel}, "dailyResources": map[string]int64{"food": food * 24, "coal": coal * 24, "steel": steel * 24}, "population": pop, "populationCapacity": populationCapacity, "hourlyPopulationGrowth": hourlyPopulationGrowth, "dailyPopulationGrowth": hourlyPopulationGrowth * 24, "treasury": treasury, "nextTurnAt": next})
+	write(w, 200, map[string]any{"hourlyCash": hourlyCash, "dailyCash": hourlyCash * 24, "baseTaxCapacityDaily": int64(baseDaily), "factors": map[string]any{"employment": employmentFactor, "education": educationFactor, "satisfaction": satisfactionFactor, "productivity": productivityFactor}, "population": pop, "populationCapacity": populationCapacity, "hourlyPopulationGrowth": hourlyPopulationGrowth, "dailyPopulationGrowth": hourlyPopulationGrowth * 24, "treasury": treasury, "nextTurnAt": next})
 }
 
 func (a *app) worldStatus(w http.ResponseWriter, r *http.Request, u user) {
-	var active, active24Hours int
-	a.db.QueryRow(r.Context(), `SELECT COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) THEN user_id END),COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR) THEN user_id END) FROM sessions`).Scan(&active, &active24Hours)
+	var active, active24Hours, activeTwoWeeks int
+	a.db.QueryRow(r.Context(), `SELECT COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 5 MINUTE) THEN user_id END),COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR) THEN user_id END),COUNT(DISTINCT CASE WHEN last_action_at>=DATE_SUB(NOW(),INTERVAL 14 DAY) THEN user_id END) FROM sessions`).Scan(&active, &active24Hours, &activeTwoWeeks)
 	now := time.Now().UTC()
 	epoch := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	game := epoch.Add(now.Sub(epoch) * 4)
-	write(w, 200, map[string]any{"realTime": now, "gameTime": game, "gameSpeed": 4, "activePlayers": active, "activePlayers24Hours": active24Hours})
+	write(w, 200, map[string]any{"realTime": now, "gameTime": game, "gameSpeed": 4, "activePlayers": active, "activePlayers24Hours": active24Hours, "activePlayersTwoWeeks": activeTwoWeeks})
 }

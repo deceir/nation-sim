@@ -98,6 +98,9 @@ func feedBot(ctx context.Context, db *sql.DB, bot botNation) (bool, error) {
 	if _, err = tx.ExecContext(ctx, `INSERT INTO cities(id,nation_id,name) VALUES(?,?,?)`, cid, nid, bot.Capital); err != nil {
 		return false, err
 	}
+	if _, err = tx.ExecContext(ctx, `UPDATE nations SET capital_city_id=? WHERE id=?`, cid, nid); err != nil {
+		return false, err
+	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO guardian_grants(id,nation_id,starts_at,expires_at,reason,granted_by) VALUES(?,?,NOW(),DATE_ADD(NOW(),INTERVAL 30 DAY),'seeded_bot','system')`, gid, nid); err != nil {
 		return false, err
 	}

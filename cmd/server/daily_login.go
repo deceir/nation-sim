@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-const dailyLoginReward int64 = 25000
+const dailyLoginReward int64 = 25000 * yenScale
 
 func loginRewardForStreak(streak int) int64 {
-	return min(int64(50000), dailyLoginReward+int64(max(0, streak-1))*5000)
+	return min(int64(50000*yenScale), dailyLoginReward+int64(max(0, streak-1))*5000*yenScale)
 }
 
 func nextLoginStreak(last time.Time, previous int, today time.Time) int {

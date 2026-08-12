@@ -15,3 +15,5 @@ Open http://localhost:3000. The migrator safely upgrades existing MySQL volumes 
 1. Create an account with email and password.
 2. Create a nation, leader, capital, government, and continent.
 3. Enter the game.
+
+Modifying the branch setup.

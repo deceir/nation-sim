@@ -1,0 +1,34 @@
+import {useEffect,useMemo,useState} from 'react';
+import {AreaChart,Database,RefreshCw} from 'lucide-react';
+import ResourceIcon from './ResourceIcon';
+import './world-data.css';
+
+const labels:Record<string,string>={foodstuffs:'Foodstuffs',timber:'Timber',fibers:'Fibers',basic_metals:'Basic Metals',energy:'Energy',strategic_minerals:'Strategic Minerals',textiles:'Textiles',processed_foods:'Processed Foods',construction_materials:'Construction Materials',basic_goods:'Basic Goods',consumer_goods:'Consumer Goods',military_equipment:'Military Equipment',luxury_goods:'Luxury Goods'};
+type Point={recordedAt:string;total:number};
+type Payload={resource:string;range:string;resources:string[];points:Point[];latest:Record<string,number>};
+const compact=(value:number)=>Intl.NumberFormat(undefined,{notation:'compact',maximumFractionDigits:1}).format(value);
+const exact=(value:number)=>Number(value||0).toLocaleString(undefined,{maximumFractionDigits:3});
+
+export default function WorldDataScreen(){
+ const[resource,setResource]=useState('foodstuffs'),[range,setRange]=useState('30d'),[data,setData]=useState<Payload>(),[loading,setLoading]=useState(true),[error,setError]=useState('');
+ const load=async()=>{setLoading(true);setError('');try{const response=await fetch(`/api/world/resources?resource=${encodeURIComponent(resource)}&range=${range}`,{credentials:'include'}),raw=await response.text(),value=raw?JSON.parse(raw):{};if(!response.ok)throw Error(value.error||'Could not load world data.');setData(value)}catch(reason){setError(reason instanceof Error?reason.message:'Could not load world data.')}finally{setLoading(false)}};
+ useEffect(()=>{void load()},[resource,range]);
+ return <div className="world-data-page">
+  <section className="world-data-hero"><div><span className="eyebrow">GLOBAL ECONOMIC RECORD</span><h2>Visualized Data</h2><p>Hourly records of resources held across the world economy.</p></div><AreaChart/></section>
+  <section className="panel world-data-controls"><label>Resource<select value={resource} onChange={event=>setResource(event.target.value)}>{(data?.resources||Object.keys(labels)).map(key=><option value={key} key={key}>{labels[key]||key}</option>)}</select></label><div className="world-data-ranges" aria-label="Chart time range">{[['7d','7 days'],['30d','30 days'],['90d','90 days'],['1y','1 year'],['all','All time']].map(([key,name])=><button className={range===key?'active':''} onClick={()=>setRange(key)} key={key}>{name}</button>)}</div><button className="world-data-refresh" onClick={()=>void load()} disabled={loading}><RefreshCw/>{loading?'Loading…':'Refresh'}</button></section>
+  {error&&<p className="error notice">{error}</p>}
+  <section className="panel world-resource-chart-panel"><header><div><span className="eyebrow">WORLD SUPPLY OVER TIME</span><h2>Total {labels[resource]||resource}</h2></div><strong>{exact(data?.latest?.[resource]||data?.points.at(-1)?.total||0)} <small>tonnes</small></strong></header>{loading&&!data?<div className="world-data-empty">Loading historical records…</div>:data?.points.length?<WorldResourceChart points={data.points} label={labels[resource]||resource}/>:<div className="world-data-empty"><Database/><b>History begins with this deployment</b><span>The first snapshot has been recorded. Additional points are added after every hourly economic turn.</span></div>}</section>
+  {!!data&&<section className="world-resource-latest"><header><span className="eyebrow">CURRENT RECORDED SUPPLY</span><h2>All resources</h2></header><div>{data.resources.map(key=><article key={key}><ResourceIcon type={key as any}/><span>{labels[key]||key}</span><b>{exact(data.latest[key]||0)} t</b></article>)}</div></section>}
+  {!!data?.points.length&&<details className="panel world-data-table"><summary><span><b>Exact historical values</b><small>{data.points.length.toLocaleString()} hourly records in this range</small></span></summary><div><table><thead><tr><th>Recorded at</th><th>{labels[resource]||resource}</th></tr></thead><tbody>{[...data.points].reverse().slice(0,100).map(point=><tr key={point.recordedAt}><td>{new Date(point.recordedAt).toLocaleString()}</td><td>{exact(point.total)} t</td></tr>)}</tbody></table>{data.points.length>100&&<p>Showing the 100 most recent exact records for the selected range.</p>}</div></details>}
+ </div>
+}
+
+function WorldResourceChart({points,label}:{points:Point[];label:string}){
+ const[hover,setHover]=useState<number|null>(null),width=1000,height=360,left=82,right=24,top=28,bottom=52,plotW=width-left-right,plotH=height-top-bottom;
+ const values=points.map(point=>Number(point.total)),min=Math.min(...values),max=Math.max(...values),padding=Math.max((max-min)*.1,max*.02,1),low=Math.max(0,min-padding),high=max+padding,span=Math.max(1,high-low);
+ const coords=useMemo(()=>points.map((point,index)=>({x:left+(points.length===1?.5:index/(points.length-1))*plotW,y:top+(1-(Number(point.total)-low)/span)*plotH})),[points,low,span]);
+ const line=coords.map(point=>`${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),area=`${left},${top+plotH} ${line} ${left+plotW},${top+plotH}`;
+ const active=hover===null?null:{...points[hover],...coords[hover]},ticks=Array.from({length:5},(_,index)=>low+span*(4-index)/4);
+ const move=(event:React.MouseEvent<SVGSVGElement>)=>{const box=event.currentTarget.getBoundingClientRect(),x=(event.clientX-box.left)/box.width*width,index=Math.max(0,Math.min(points.length-1,Math.round((x-left)/plotW*(points.length-1))));setHover(index)};
+ return <div className="world-resource-chart"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Total ${label} over time`} onMouseMove={move} onMouseLeave={()=>setHover(null)}>{ticks.map((value,index)=>{const y=top+plotH*index/4;return <g key={value}><line className="chart-grid" x1={left} y1={y} x2={left+plotW} y2={y}/><text className="chart-axis-value" x={left-14} y={y+5} textAnchor="end">{compact(value)}</text></g>})}<polygon className="chart-area" points={area}/><polyline className="chart-line" points={line}/>{coords.length<=12&&coords.map((point,index)=><circle className="chart-point static" cx={point.x} cy={point.y} r="4" key={index}/>)}{active&&<><line className="chart-cursor" x1={active.x} y1={top} x2={active.x} y2={top+plotH}/><circle className="chart-point" cx={active.x} cy={active.y} r="6"/></>}<text className="chart-date" x={left} y={height-15}>{new Date(points[0].recordedAt).toLocaleDateString()}</text><text className="chart-date" x={left+plotW} y={height-15} textAnchor="end">{new Date(points.at(-1)!.recordedAt).toLocaleDateString()}</text></svg>{active&&<div className="chart-tooltip" style={{left:`${active.x/width*100}%`,top:`${active.y/height*100}%`}}><b>{exact(active.total)} t</b><span>{new Date(active.recordedAt).toLocaleString()}</span></div>}</div>
+}

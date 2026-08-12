@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func sampleStrategy() strategicInput {
 	return strategicInput{Gear: "balanced", Education: 40, Technology: 10, Policies: map[string]bool{}, Quotas: map[string]float64{"textiles": 100}, Provinces: []provinceStrategy{{ID: "p", Infra: 200, Development: 1, Specialization: "agriculture", Deposits: map[string]float64{"foodstuffs": 1.2, "fibers": 1.1}}}}
@@ -16,6 +19,23 @@ func TestEconomicGearsProduceDistinctStrategies(t *testing.T) {
 	in.Gear = "commercial"
 	if calculateStrategy(in).IncomeMultiplier <= balanced.IncomeMultiplier {
 		t.Fatal("commercial gear should increase citizen income")
+	}
+}
+
+func TestSpecializedGearBonusesUseStrongerBalancePass(t *testing.T) {
+	tests := []struct {
+		gear  string
+		field float64
+		want  float64
+	}{
+		{"agrarian extraction", gears["agrarian"].Extraction, 1.22},
+		{"industrial production", gears["industrial"].Industry, 1.28},
+		{"commercial income", gears["commercial"].Commerce, 1.25},
+	}
+	for _, test := range tests {
+		if math.Abs(test.field-test.want) > .0001 {
+			t.Errorf("%s multiplier = %.2f, want %.2f", test.gear, test.field, test.want)
+		}
 	}
 }
 func TestGearDisruptionReducesOutput(t *testing.T) {
@@ -36,5 +56,55 @@ func TestPolicySynergyCompoundsWithGear(t *testing.T) {
 	with := calculateStrategy(in)
 	if with.ExtractionMultiplier <= without.ExtractionMultiplier || with.PopulationMultiplier <= without.PopulationMultiplier {
 		t.Fatal("land grants should reinforce agrarian growth")
+	}
+}
+
+func TestWorkerTrainingEducationEffectIsWired(t *testing.T) {
+	in := sampleStrategy()
+	in.Policies = map[string]bool{"worker_training": true}
+	result := calculateStrategy(in)
+	if math.Abs(result.EducationMultiplier-1.10) > .0001 {
+		t.Fatalf("Worker Training Education multiplier = %.2f, want 1.10", result.EducationMultiplier)
+	}
+	if got := policyAdjustedEducationChange(2, result.EducationMultiplier); math.Abs(got-2.2) > .0001 {
+		t.Fatalf("positive Education change = %.2f, want 2.20", got)
+	}
+	if got := policyAdjustedEducationChange(-.5, result.EducationMultiplier); got != -.5 {
+		t.Fatalf("Education policy should not accelerate decay, got %.2f", got)
+	}
+}
+
+func TestResourceSurveyBoostsCurrentPrimaryResources(t *testing.T) {
+	in := sampleStrategy()
+	without := calculateStrategy(in)
+	in.Projects = map[string]bool{"resource_survey": true}
+	with := calculateStrategy(in)
+	if with.Production["foodstuffs"] <= without.Production["foodstuffs"] {
+		t.Fatal("resource survey should boost current primary resource production")
+	}
+}
+
+func TestNewNationDefaultCommodityAllocationIsEven(t *testing.T) {
+	quotas := defaultProductionQuotas()
+	total := 0.0
+	for _, quota := range quotas {
+		total += quota
+		if quota < 14.28 || quota > 14.29 {
+			t.Fatalf("default allocation %.2f is not evenly distributed", quota)
+		}
+	}
+	if math.Abs(total-100) > .001 {
+		t.Fatalf("default production allocation totals %.2f, want 100", total)
+	}
+}
+
+func TestZeroCommodityAllocationRemainsZero(t *testing.T) {
+	in := sampleStrategy()
+	in.Quotas = map[string]float64{}
+	result := calculateStrategy(in)
+	for commodity := range commodityRecipes {
+		if result.Production[commodity] != 0 {
+			t.Fatalf("zero allocation unexpectedly produced %s", commodity)
+		}
 	}
 }

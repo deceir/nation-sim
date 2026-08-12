@@ -1,0 +1,17 @@
+import {useEffect,useState} from 'react';
+import {Ship} from 'lucide-react';
+import {calculateMaritimeRoute,projectNationLocation,type MapPoint,type MaritimeRoute} from './maritimeRouting';
+
+const pointList=(points:MapPoint[])=>points.map(point=>`${point.x},${point.y}`).join(' ');
+const normalizedX=(x:number)=>(x%1000+1000)%1000;
+const interpolate=(points:MapPoint[],progress:number)=>{const lengths=points.slice(1).map((point,index)=>Math.hypot(point.x-points[index].x,point.y-points[index].y)),total=lengths.reduce((sum,n)=>sum+n,0);let target=total*progress;for(let i=0;i<lengths.length;i++){if(target<=lengths[i]){const ratio=lengths[i]?target/lengths[i]:0;return{x:normalizedX(points[i].x+(points[i+1].x-points[i].x)*ratio),y:points[i].y+(points[i+1].y-points[i].y)*ratio}}target-=lengths[i]}const last=points.at(-1)!;return{x:normalizedX(last.x),y:last.y}};
+
+export default function MaritimeTradeRouteMap({shipment}:{shipment:any}){
+ const[,tick]=useState(0),[route,setRoute]=useState<MaritimeRoute>(),[routeError,setRouteError]=useState(false);
+ const origin={lat:Number(shipment.originLat),lng:Number(shipment.originLng)},destination={lat:Number(shipment.destinationLat),lng:Number(shipment.destinationLng)},originScreen=projectNationLocation(origin.lat,origin.lng),destinationScreen=projectNationLocation(destination.lat,destination.lng);
+ useEffect(()=>{const timer=setInterval(()=>tick(value=>value+1),1000);return()=>clearInterval(timer)},[]);
+ useEffect(()=>{let active=true;setRoute(undefined);setRouteError(false);void calculateMaritimeRoute(origin,destination).then(value=>{if(active)setRoute(value)}).catch(()=>{if(active)setRouteError(true)});return()=>{active=false}},[origin.lat,origin.lng,destination.lat,destination.lng]);
+ const progress=shipment.status==='delivered'?1:(()=>{const start=new Date(shipment.departedAt).getTime(),end=new Date(shipment.estimatedArrivalAt).getTime();return Math.max(Number(shipment.progress)||0,Math.min(.99,(Date.now()-start)/(end-start)))})();
+ const marker=route?interpolate(route.fullPath,progress):originScreen;
+ return <div className={'route-map maritime-route '+(!route?'routing':'')}><svg viewBox="0 0 1000 500" role="img" aria-label={`Maritime shipment route from ${shipment.seller} to ${shipment.buyer}`}><image href="/world-map.svg" width="1000" height="500" preserveAspectRatio="none"/>{route&&<><polyline className="land-leg" points={pointList([originScreen,route.originPort])}/>{route.seaSegments.map((segment,index)=><polyline className="sea-leg" points={pointList(segment)} key={index}/>)}<polyline className="land-leg" points={pointList([route.destinationPort,destinationScreen])}/></>}<circle className="route-end origin" cx={originScreen.x} cy={originScreen.y} r="7"/><circle className="route-end" cx={destinationScreen.x} cy={destinationScreen.y} r="7"/>{route&&<g className="trade-marker" transform={`translate(${marker.x} ${marker.y})`}><circle r="15"/><Ship size={18} x={-9} y={-9}/></g>}</svg><div className="route-label start">{shipment.seller}</div><div className="route-label end">{shipment.buyer}</div><div className="route-live"><i/>{routeError?'Route preview unavailable':!route?'Charting water route…':shipment.status==='delivered'?'Delivered':`${Math.round(progress*100)}% en route`}</div><div className="route-legend"><span><i className="sea"/>Water-aware route</span><span><i className="land"/>Coastal connection</span></div></div>;
+}

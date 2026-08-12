@@ -1,0 +1,1 @@
+.directory-pager{display:flex;justify-content:center;align-items:center;gap:12px;margin:20px 0}.directory-pager span{color:var(--muted);font-size:10px}.directory-pager button:disabled{opacity:.35;cursor:not-allowed}@media(max-width:500px){.directory-pager{justify-content:space-between}.directory-pager span{font-size:8px}}

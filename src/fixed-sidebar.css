@@ -1,4 +1,0 @@
-@media(min-width:851px){html body .shell .game-sidebar{position:fixed;z-index:50;top:0;bottom:0;left:0;width:230px;height:100vh;overflow-y:auto;overscroll-behavior:contain}.shell>main{grid-column:2}[data-theme="dark"] body .shell .game-sidebar{width:245px}}
-@media(max-width:1550px) and (min-width:1201px){html body .shell .game-sidebar,[data-theme="dark"] body .shell .game-sidebar{width:220px}}
-@media(max-width:1200px) and (min-width:851px){html body .shell .game-sidebar,[data-theme="dark"] body .shell .game-sidebar{width:205px}}
-@media(max-width:850px){html body .shell .game-sidebar{position:static;width:100%;height:auto;overflow-x:auto;overflow-y:hidden}.shell>main{grid-column:auto}}

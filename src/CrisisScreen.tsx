@@ -1,0 +1,26 @@
+import {useEffect,useMemo,useState} from 'react';
+import {CheckCircle2,Clock3,Scale,ShieldAlert} from 'lucide-react';
+import './crises.css';
+
+type Option={id:string;label:string;description:string;effectType:string;effectTarget:string;effectValue:number;effectText:string};
+type Crisis={id:string;templateId:string;title:string;briefing:string;resolved:boolean;selectedLabel?:string;effectSummary?:string;respondedAt?:string;options:Option[]};
+type Dashboard={serverDate:string;expiresAt:string;total:number;unresolved:number;items:Crisis[]};
+async function request(path:string,options?:RequestInit){const response=await fetch('/api'+path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),text=await response.text();let data:any={};if(text){try{data=JSON.parse(text)}catch{throw Error(`The server returned an invalid response (HTTP ${response.status}).`)}}if(!response.ok)throw Error(data.error||`Request failed (HTTP ${response.status}).`);return data}
+const countdown=(date:string,now:number)=>{const remaining=Math.max(0,new Date(date).getTime()-now),hours=Math.floor(remaining/3600000),minutes=Math.floor((remaining%3600000)/60000);return `${hours}h ${minutes}m`};
+
+export default function CrisisScreen(){
+ const[data,setData]=useState<Dashboard|null>(null),[selected,setSelected]=useState<Record<string,string>>({}),[busy,setBusy]=useState(''),[error,setError]=useState(''),[now,setNow]=useState(Date.now());
+ const load=async()=>{try{setData(await request('/crises'));setError('')}catch(e){setError((e as Error).message)}};
+ useEffect(()=>{void load();const clock=setInterval(()=>setNow(Date.now()),30000),poll=setInterval(load,60000);return()=>{clearInterval(clock);clearInterval(poll)}},[]);
+ const active=useMemo(()=>data?.items.filter(item=>!item.resolved)||[],[data]),resolved=useMemo(()=>data?.items.filter(item=>item.resolved)||[],[data]);
+ const respond=async(crisis:Crisis)=>{const optionID=selected[crisis.id];if(!optionID)return;setBusy(crisis.id);setError('');try{await request('/crises/'+crisis.id+'/respond',{method:'POST',body:JSON.stringify({optionId:optionID})});window.dispatchEvent(new Event('diplomatia:resources'));window.dispatchEvent(new Event('diplomatia:crises'));await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ if(!data)return <section className="panel crisis-loading"><ShieldAlert/><p>{error||'Loading today’s briefings…'}</p></section>;
+ return <div className="crisis-page">
+  <section className="crisis-hero"><div><span className="eyebrow">NATIONAL SITUATION ROOM</span><h2>Daily Crises</h2><p>Short-lived national questions requiring a decision before the next server day.</p></div><div className="crisis-deadline"><Clock3/><span>Decision window</span><b>{countdown(data.expiresAt,now)}</b><small>Server date {data.serverDate}</small></div></section>
+  {error&&<p className="error notice">{error}</p>}
+  <section className="crisis-status-strip"><article><span>Issued today</span><b>{data.total}</b></article><article><span>Awaiting response</span><b>{data.unresolved}</b></article><article><span>Resolved</span><b>{data.total-data.unresolved}</b></article></section>
+  {data.total===0?<section className="panel no-crises"><CheckCircle2/><span className="eyebrow">NO ACTIVE BRIEFINGS</span><h2>A quiet day</h2><p>No national Crises were generated for this server day.</p></section>:active.length===0?<section className="panel no-crises"><CheckCircle2/><span className="eyebrow">BRIEFING COMPLETE</span><h2>All decisions recorded</h2><p>Your nation has responded to every Crisis issued today.</p></section>:<section className="crisis-active"><div className="crisis-section-title"><div><span className="eyebrow">ACTION REQUIRED</span><h2>Unresolved briefings</h2></div><b>{active.length}</b></div>{active.map((crisis,index)=><article className="panel crisis-card" key={crisis.id}><header><span>BRIEFING {String(index+1).padStart(2,'0')}</span><ShieldAlert/></header><h2>{crisis.title}</h2><p className="crisis-briefing">{crisis.briefing}</p><fieldset><legend>Select one national response</legend>{crisis.options.map(option=><label className={selected[crisis.id]===option.id?'selected':''} key={option.id}><input type="radio" name={crisis.id} value={option.id} checked={selected[crisis.id]===option.id} onChange={()=>setSelected({...selected,[crisis.id]:option.id})}/><span><b>{option.label}</b><small>{option.description}</small><strong>{option.effectText}</strong></span></label>)}</fieldset><button className="primary crisis-submit" disabled={!selected[crisis.id]||busy!==''} onClick={()=>respond(crisis)}>{busy===crisis.id?'Recording decision…':'Confirm response'}</button></article>)}</section>}
+  {resolved.length>0&&<section className="panel resolved-crises"><div><span className="eyebrow">TODAY’S RECORD</span><h2>Resolved briefings</h2></div><div className="resolved-crisis-list">{resolved.map(crisis=><article key={crisis.id}><CheckCircle2/><span><b>{crisis.title}</b><small>{crisis.selectedLabel}</small></span><strong>{crisis.effectSummary}</strong></article>)}</div></section>}
+  <aside className="crisis-principle"><Scale/><p>Review costs and consequences before committing. Temporary effects expire automatically at the next server-day change.</p></aside>
+ </div>
+}
