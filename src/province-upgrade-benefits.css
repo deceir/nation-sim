@@ -1,0 +1,5 @@
+.upgrade-benefits{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px}
+.upgrade-benefits span{display:grid;gap:2px;min-width:145px;padding:7px 9px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 76%,transparent)}
+.upgrade-benefits small{color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.05em}
+.upgrade-benefits b{color:var(--text);font-size:11px;font-weight:600}
+.upgrade-benefits i{color:var(--gold);font-style:normal;padding:0 3px}

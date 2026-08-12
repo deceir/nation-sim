@@ -40,11 +40,40 @@ var provinceUpgradeSpecs = map[string]provinceUpgradeSpec{
 }
 
 func provinceUpgradeCost(spec provinceUpgradeSpec, level int, infra float64) int64 {
-	cost := spec.BaseCost * float64(yenScale) * math.Pow(float64(level+1), provinceDevelopment.UpgradeExponent) * (1 + provinceDevelopment.UpgradeInfrastructureFactor*(infra/1000))
+	cost := spec.BaseCost * float64(yenScale) * .80 * math.Pow(float64(level+1), provinceDevelopment.UpgradeExponent) * (1 + provinceDevelopment.UpgradeInfrastructureFactor*(infra/1000))
 	if level >= 12 {
 		cost *= math.Pow(float64(level-11), 1.45)
 	}
 	return int64(math.Ceil(cost))
+}
+
+func provinceUpgradeBenefits(key string, level int) map[string]float64 {
+	level = min(max(level, 0), provinceUpgradeLevelHardCap)
+	effect := provinceUpgradeEffect(level)
+	benefits := map[string]float64{}
+	switch key {
+	case "agriculture":
+		benefits["Foodstuffs and Fibers output"] = effect * 4.5
+		benefits["Supported population"] = effect * .8
+	case "extraction":
+		benefits["All primary resource output"] = effect * 4
+	case "light_industry":
+		benefits["Industrial capacity"] = effect * 2.5
+		benefits["Textiles, Processed Foods and Basic Goods"] = effect * 3.5
+	case "heavy_industry":
+		benefits["Industrial capacity"] = effect * 3
+		benefits["Construction, Consumer and Luxury Goods"] = effect * 3.5
+	case "commerce":
+		benefits["Citizen tax income"] = effect * 2.5
+	case "civil":
+		benefits["Supported population"] = effect * 1.25
+		benefits["Local Satisfaction"] = effect * .7
+		benefits["Education development weight"] = effect * .15
+		benefits["Population growth"] = effect * .3
+	case "military_industry":
+		benefits["Military Equipment output"] = effect * 4
+	}
+	return benefits
 }
 
 func provinceUpgradeCapacity(infra float64) int {

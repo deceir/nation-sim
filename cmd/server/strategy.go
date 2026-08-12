@@ -85,6 +85,8 @@ type provinceStrategy struct {
 	Deposits                       map[string]float64
 	Upgrades                       map[string]int
 	UpgradeQuotes                  map[string]int64
+	CurrentUpgradeBenefits         map[string]map[string]float64
+	NextUpgradeBenefits            map[string]map[string]float64
 	InfrastructureQuotes           map[string]int64
 	UpgradeCap                     int // Per-category hard cap retained for API compatibility.
 	UpgradeCapacity                int
@@ -180,7 +182,7 @@ func calculateStrategy(in strategicInput) strategicResult {
 			r.MilitaryMultiplier *= 1.025
 		}
 		r.IncomeMultiplier *= 1 + commerce*.006
-		r.PopulationMultiplier *= 1 + civil*.002
+		r.PopulationMultiplier *= 1 + civil*.003
 		alignment := 1.0
 		if (p.Specialization == "agriculture" && in.Gear == "agrarian") || (p.Specialization == "industry" && in.Gear == "industrial") || (p.Specialization == "commerce" && in.Gear == "commercial") || (p.Specialization == "military" && in.Gear == "militarized") {
 			alignment = 1.08
@@ -192,13 +194,13 @@ func calculateStrategy(in strategicInput) strategicResult {
 			}
 			agricultureBoost := 1.0
 			if resource == "foodstuffs" || resource == "fibers" {
-				agricultureBoost += agriculture * .03
+				agricultureBoost += agriculture * .045
 			}
-			v := p.Infra * .10 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.025) * alignment * operationalFactor
+			v := p.Infra * .10 * richness * r.ExtractionMultiplier * resourceSpec * agricultureBoost * (1 + extraction*.04) * alignment * operationalFactor
 			out[resource] += v
 			r.Production[resource] += v
 		}
-		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.018 + heavy*.022) * alignment * operationalFactor
+		capacity := p.Infra * .055 * specIndustry * r.IndustryMultiplier * knowledge * (1 + light*.025 + heavy*.03) * alignment * operationalFactor
 		quotaTotal := 0.0
 		for _, k := range []string{"textiles", "processed_foods", "construction_materials", "basic_goods", "consumer_goods", "military_equipment", "luxury_goods"} {
 			quotaTotal += math.Max(0, in.Quotas[k])
@@ -213,13 +215,13 @@ func calculateStrategy(in strategicInput) strategicResult {
 			}
 			modifier := 1.0
 			if k == "textiles" || k == "processed_foods" || k == "basic_goods" {
-				modifier *= 1 + light*.025
+				modifier *= 1 + light*.035
 			}
 			if k == "construction_materials" || k == "consumer_goods" || k == "luxury_goods" {
-				modifier *= 1 + heavy*.025
+				modifier *= 1 + heavy*.035
 			}
 			if k == "military_equipment" {
-				modifier *= r.MilitaryMultiplier / r.IndustryMultiplier * (1 + military*.03)
+				modifier *= r.MilitaryMultiplier / r.IndustryMultiplier * (1 + military*.04)
 			}
 			v := capacity * share * modifier
 			out[k] += v
@@ -322,6 +324,8 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		p.Upgrades = map[string]int{}
 		p.Institutions = map[string]int{}
 		p.UpgradeQuotes = map[string]int64{}
+		p.CurrentUpgradeBenefits = map[string]map[string]float64{}
+		p.NextUpgradeBenefits = map[string]map[string]float64{}
 		p.InfrastructureQuotes = map[string]int64{}
 		rows.Scan(&p.ID, &p.Name, &p.Specialization, &p.Infra, &p.Population, &p.IsCapital)
 		in.Provinces = append(in.Provinces, p)
@@ -335,7 +339,10 @@ func (a *app) loadStrategy(ctx context.Context, nid string) (strategicInput, err
 		in.Provinces[i].NextUpgradeCapacityAt = nextProvinceUpgradeCapacityAt(in.Provinces[i].Infra)
 		in.Provinces[i].CivicCapacity = civicInstitutionCapacity(in.Provinces[i].Infra)
 		for key, spec := range provinceUpgradeSpecs {
-			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, in.Provinces[i].Upgrades[key], in.Provinces[i].Infra)
+			level := in.Provinces[i].Upgrades[key]
+			in.Provinces[i].UpgradeQuotes[key] = provinceUpgradeCost(spec, level, in.Provinces[i].Infra)
+			in.Provinces[i].CurrentUpgradeBenefits[key] = provinceUpgradeBenefits(key, level)
+			in.Provinces[i].NextUpgradeBenefits[key] = provinceUpgradeBenefits(key, min(level+1, spec.HardCap))
 			if in.LongTermProjects["infrastructure_bank"] {
 				in.Provinces[i].UpgradeQuotes[key] = int64(math.Ceil(float64(in.Provinces[i].UpgradeQuotes[key]) * .90))
 			}

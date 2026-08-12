@@ -32,6 +32,30 @@ func TestProvinceUpgradesCostMoreAndDiminish(t *testing.T) {
 	}
 }
 
+func TestProvinceUpgradeBenefitQuotesMatchTheBalanceModel(t *testing.T) {
+	tests := []struct {
+		key, benefit string
+	}{
+		{"agriculture", "Foodstuffs and Fibers output"},
+		{"extraction", "All primary resource output"},
+		{"light_industry", "Industrial capacity"},
+		{"heavy_industry", "Construction, Consumer and Luxury Goods"},
+		{"commerce", "Citizen tax income"},
+		{"civil", "Supported population"},
+		{"military_industry", "Military Equipment output"},
+	}
+	for _, test := range tests {
+		current := provinceUpgradeBenefits(test.key, 3)[test.benefit]
+		next := provinceUpgradeBenefits(test.key, 4)[test.benefit]
+		if current <= 0 || next <= current {
+			t.Fatalf("%s should expose an increasing %s quote, got %.2f -> %.2f", test.key, test.benefit, current, next)
+		}
+	}
+	if got := provinceUpgradeBenefits("commerce", 15)["Citizen tax income"]; got != provinceUpgradeBenefits("commerce", 16)["Citizen tax income"] {
+		t.Fatalf("benefit quotes must stop at the hard cap, got %.2f", got)
+	}
+}
+
 func TestProvincePriceCurveEncouragesAlternatingDevelopmentAndExpansion(t *testing.T) {
 	earlyDevelopment := int64(infraPurchaseCost(100, 50, 20))
 	for _, key := range []string{"agriculture", "civil", "extraction", "commerce", "light_industry"} {
