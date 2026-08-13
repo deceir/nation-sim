@@ -26,6 +26,9 @@ func continentAt(lat, lng float64) (string, bool) {
 	if lat < -90 || lat > 90 || lng < -180 || lng > 180 || math.IsNaN(lat) || math.IsNaN(lng) {
 		return "", false
 	}
+	if !isLandPoint(lat, lng) {
+		return "", false
+	}
 	p := geoPoint{lng, lat}
 	for _, shape := range continentShapes {
 		if pointInPolygon(p, shape.Points) {

@@ -238,7 +238,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		militaryIndustry := provinceUpgradeEffect(c.Upgrades["military_industry"])
 		commerceUpgrade := provinceUpgradeEffect(c.Upgrades["commerce"])
 		civil := provinceUpgradeEffect(c.Upgrades["civil"])
-		r.BasePopulation = c.Infra * balance.PopulationPerInfra * (1 + agriculture*.006 + civil*.009)
+		r.BasePopulation = c.Infra * balance.PopulationPerInfra * (1 + agriculture*.008 + civil*.0125)
 		density := r.BasePopulation / math.Max(1, c.Land*75)
 		r.DensityMultiplier = 1
 		if density > 1 {
@@ -248,8 +248,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		productionDisease := agriculture*.0008 + extraction*.0007 + lightIndustry*.0005 + heavyIndustry*.0008 + militaryIndustry*.0006
 		productionCrime := commerceUpgrade*.0008 + lightIndustry*.0003 + heavyIndustry*.0004 + militaryIndustry*.0003
 		powerCapacity, powerUse, commerce, pollution := 0.0, 0.0, 0.0, productionPollution
-		diseaseReduction, crimeReduction, localHappiness, employmentBonus, taxCollection := 0.0, 0.0, civil*.55, 0.0, 0.0
-		educationBuildings += civil * .12
+		diseaseReduction, crimeReduction, localHappiness, employmentBonus, taxCollection := 0.0, 0.0, civil*.70, 0.0, 0.0
+		educationBuildings += civil * .15
 		for key, q := range c.Buildings {
 			s, ok := buildings[key]
 			if !ok {
@@ -329,7 +329,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		r.EmploymentRate = clamp(n.EmploymentRate+educationEmployment+employmentBonus+(policyEmployment-1)*100, 25, 98)
 		r.EmploymentMultiplier = r.EmploymentRate / 72
 		r.TaxCollectionMultiplier = 1 + taxCollection/100
-		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.018) * r.EmploymentMultiplier * r.TaxCollectionMultiplier
+		r.TaxRevenue = r.EffectivePopulation * r.CitizenIncome * (n.TaxRate / 100) * (1 + r.Commerce/100) * doctrineIncome * (1 + commerceUpgrade*.025) * r.EmploymentMultiplier * r.TaxCollectionMultiplier
 		if n.LongTermProjects["tax_modernization"] {
 			r.TaxRevenue *= 1.08
 		}
@@ -339,7 +339,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier * policyInfrastructureUpkeep
 		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.006, "civilPopulationBonus": 1 + civil*.009, "commerceUpgradeBonus": 1 + commerceUpgrade*.018}
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.008, "civilPopulationBonus": 1 + civil*.0125, "commerceUpgradeBonus": 1 + commerceUpgrade*.025}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
 		out.DailyInfrastructureUpkeep += r.InfrastructureUpkeep

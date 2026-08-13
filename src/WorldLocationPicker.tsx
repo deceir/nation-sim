@@ -1,4 +1,5 @@
 import React,{useEffect,useId,useRef,useState}from'react';
+import {isLand}from'./landMask';
 
 export type WorldLocation={latitude:number;longitude:number;continent:string};
 type Point=[number,number];
@@ -27,8 +28,10 @@ export default function WorldLocationPicker({value,onChange,disabled=false,readO
   const choose=(event:React.MouseEvent<SVGSVGElement>)=>{
     if(ignoreClick.current){ignoreClick.current=false;return}
     if(disabled||readOnly)return;const point=screenPoint(event.clientX,event.clientY);if(!point)return;
-    const mapX=(point.x-camera.x)/camera.zoom,mapY=(point.y-camera.y)/camera.zoom,longitude=mapX/1000*360-180,latitude=90-mapY/500*180,continent=locate(latitude,longitude);
-    if(!continent){setHint('That point is ocean. Choose a position on land.');return}
+    const mapX=(point.x-camera.x)/camera.zoom,mapY=(point.y-camera.y)/camera.zoom,longitude=mapX/1000*360-180,latitude=90-mapY/500*180;
+    if(!isLand(latitude,longitude)){setHint('That point is ocean. Choose a position on land.');return}
+    const continent=locate(latitude,longitude);
+    if(!continent){setHint('That land position could not be assigned to a continent. Choose a nearby point.');return}
     const next={latitude:Number(latitude.toFixed(4)),longitude:Number(longitude.toFixed(4)),continent};onChange(next);setHint(`${continent} selected.`);
   };
   const pointerDown=(event:React.PointerEvent<SVGSVGElement>)=>{if(camera.zoom<=1||disabled)return;drag.current={clientX:event.clientX,clientY:event.clientY,x:camera.x,y:camera.y,moved:false};event.currentTarget.setPointerCapture(event.pointerId)};
