@@ -12,6 +12,14 @@ type worldResourcePoint struct {
 	Total      float64   `json:"total"`
 }
 
+const worldPopulationSeries = "population"
+
+func worldDataSeries() []string {
+	series := make([]string, 0, len(strategicCommodities)+1)
+	series = append(series, worldPopulationSeries)
+	return append(series, strategicCommodities...)
+}
+
 // captureWorldResourceSnapshot records goods wherever they currently exist.
 // Escrow and in-transit goods remain part of the world supply until consumed.
 func (a *app) captureWorldResourceSnapshot(ctx context.Context, recordedAt time.Time) error {
@@ -48,6 +56,13 @@ func (a *app) captureWorldResourceSnapshot(ctx context.Context, recordedAt time.
 			return err
 		}
 	}
+	var population float64
+	if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(population),0) FROM nations`).Scan(&population); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO world_resource_snapshots(recorded_at,resource,total) VALUES(?,?,?) ON DUPLICATE KEY UPDATE total=VALUES(total)`, recordedAt.UTC(), worldPopulationSeries, population); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -57,7 +72,7 @@ func (a *app) worldResourceHistory(w http.ResponseWriter, r *http.Request, _ use
 		resource = strategicCommodities[0]
 	}
 	valid := false
-	for _, candidate := range strategicCommodities {
+	for _, candidate := range worldDataSeries() {
 		valid = valid || resource == candidate
 	}
 	if !valid {
@@ -106,5 +121,5 @@ func (a *app) worldResourceHistory(w http.ResponseWriter, r *http.Request, _ use
 			}
 		}
 	}
-	write(w, http.StatusOK, map[string]any{"resource": resource, "range": rangeKey, "resources": strategicCommodities, "points": points, "latest": latest})
+	write(w, http.StatusOK, map[string]any{"resource": resource, "range": rangeKey, "resources": strategicCommodities, "series": worldDataSeries(), "points": points, "latest": latest})
 }
