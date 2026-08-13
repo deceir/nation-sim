@@ -1,0 +1,18 @@
+.sidebar-mobile-bar{display:contents}.mobile-nav-toggle,.mobile-nav-backdrop{display:none}
+@media(max-width:850px){
+ .shell .game-sidebar{position:sticky!important;top:0!important;z-index:1200;width:100%;height:auto!important;padding:0!important;overflow:visible!important;border:0!important}
+ .sidebar-mobile-bar{position:relative;z-index:1202;display:flex;align-items:center;justify-content:space-between;width:100%;min-height:70px;padding:10px 16px;border-bottom:1px solid var(--line);background:inherit}
+ .game-sidebar .brand{min-width:0}.game-sidebar .crest{width:40px;height:40px;flex-basis:40px}
+ .mobile-nav-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:92px;min-height:42px;padding:9px 12px;border:1px solid #46515a;background:#151d24;color:var(--text);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+ .mobile-nav-toggle svg{width:18px}
+ .mobile-nav-backdrop{position:fixed;z-index:1200;inset:70px 0 0;display:none;width:100%;border:0;background:#05080bb8;backdrop-filter:blur(3px)}
+ .game-sidebar.mobile-nav-open .mobile-nav-backdrop{display:block}
+ .game-sidebar .nav-groups{position:fixed;z-index:1201;top:70px;right:0;bottom:0;left:0;display:none!important;min-width:0!important;padding:14px 16px 28px;overflow-x:hidden!important;overflow-y:auto!important;overscroll-behavior:contain;background:#0d141b;border-bottom:1px solid var(--line);box-shadow:0 20px 50px #0009}
+ .game-sidebar.mobile-nav-open .nav-groups{display:block!important}
+ .game-sidebar nav,.game-sidebar .world-nav,.game-sidebar .directory-nav,.game-sidebar .personal-nav{display:grid!important;grid-template-columns:1fr!important;gap:5px!important;width:100%;margin:0!important;padding:8px 0 14px!important;border:0!important}
+ .game-sidebar .personal-nav{padding-bottom:30px!important;border-top:1px solid var(--line)!important}
+ .game-sidebar .nav-heading{display:block!important;padding:10px 10px 7px}
+ .game-sidebar nav button,.game-sidebar .logout{width:100%;min-height:46px;margin:0!important;padding:11px 13px!important;white-space:normal!important}
+ [data-theme="light"] .mobile-nav-toggle{background:#f2efe7;color:#18211d;border-color:#c8c3b7}
+ [data-theme="light"] .game-sidebar .nav-groups{background:#fbfaf6}
+}
