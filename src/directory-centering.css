@@ -1,0 +1,19 @@
+.nation-directory-page,
+.alliance-directory-page{
+ width:min(1500px,100%);
+ margin-inline:auto;
+}
+
+.nation-directory-page>.section-intro,
+.alliance-directory-page>.alliance-hero,
+.nation-directory-page>.directory-grid,
+.alliance-directory-page>.alliance-grid,
+.nation-directory-page>.directory-pager,
+.alliance-directory-page>.directory-pager{
+ width:100%;
+}
+
+@media(max-width:850px){
+ .nation-directory-page,
+ .alliance-directory-page{width:100%}
+}
