@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -26,6 +27,40 @@ type militaryOverviewItem struct {
 	Quantity int64  `json:"quantity"`
 }
 
+// Domestic production is intentionally paced. A nation can mobilize roughly
+// ten percent of its maximum force in a server day, so rebuilding from zero to
+// the hard cap takes about ten days. The floors keep starter production useful.
+var militaryDailyProductionFloors = map[string]int64{
+	"soldiers": 500,
+	"tanks":    10,
+	"ships":    2,
+	"jets":     3,
+	"drones":   5,
+}
+
+// BOT forces are testing fixtures rather than normal domestic production.
+// Every server turn restores inventory up to these floors without consuming
+// Treasury, resources, project access, or daily mobilization allowance.
+var botMilitaryFloors = map[string]int64{
+	"soldiers": 1000,
+	"tanks":    25,
+	"ships":    5,
+	"jets":     25,
+}
+
+func (a *app) regenerateBotMilitary(ctx context.Context) error {
+	for _, unit := range militaryUnitKeys() {
+		floor, configured := botMilitaryFloors[unit]
+		if !configured {
+			continue
+		}
+		if _, err := a.db.ExecContext(ctx, `INSERT INTO military_inventory(nation_id,unit_type,quantity) SELECT id,?,? FROM nations WHERE user_type='BOT' ON DUPLICATE KEY UPDATE quantity=GREATEST(military_inventory.quantity,?)`, unit, floor, floor); err != nil {
+			return fmt.Errorf("regenerate BOT %s: %w", unit, err)
+		}
+	}
+	return nil
+}
+
 // Military balance is data-driven here so costs and coefficients can be tuned
 // without changing acquisition, upkeep, capacity, or decommission logic.
 var militaryUnits = map[string]militaryUnitSpec{
@@ -36,8 +71,34 @@ var militaryUnits = map[string]militaryUnitSpec{
 	"drones":   {Name: "Drones", Project: "advanced_ordnance", Cash: 85000, Resources: map[string]float64{"basic_metals": 4, "strategic_minerals": 7, "energy": 2, "basic_goods": 1, "military_equipment": 8}, DailyCash: 2500, DailyEnergy: .15, PopulationCoefficient: .006, ProvinceCoefficient: 40, BaseCapacity: 30, Tradable: true},
 }
 
+// Testing override: project mappings remain intact, but requirements default
+// off until MILITARY_PROJECT_REQUIREMENTS=true is set on the API service.
+// Restoring the production gates therefore requires no code or data migration.
+func militaryProjectRequirementsEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(env("MILITARY_PROJECT_REQUIREMENTS", "false")), "true")
+}
+
 func militaryCapacity(spec militaryUnitSpec, population int64, provinces int) int64 {
 	return int64(math.Floor(spec.PopulationCoefficient*float64(population))) + spec.ProvinceCoefficient*int64(provinces) + spec.BaseCapacity
+}
+
+func militaryDailyProductionLimit(unit string, capacity int64) int64 {
+	limit := int64(math.Ceil(float64(capacity) * .10))
+	if floor := militaryDailyProductionFloors[unit]; floor > limit {
+		limit = floor
+	}
+	if limit > capacity {
+		return capacity
+	}
+	return limit
+}
+
+func committedMilitary(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, nationID, unit string) int64 {
+	var committed int64
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(d.remaining),0) FROM war_deployments d JOIN wars w ON w.conflict_id=d.conflict_id WHERE d.nation_id=? AND d.unit_type=? AND w.stage<>'ended'`, nationID, unit).Scan(&committed)
+	return committed
 }
 
 func isMilitaryEquipment(unit string) bool {
@@ -57,7 +118,15 @@ func removeMilitaryInventory(ctx context.Context, tx *sql.Tx, nationID, unit str
 	if !ok {
 		return fmt.Errorf("military equipment must be traded in whole units")
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE military_inventory SET quantity=quantity-? WHERE nation_id=? AND unit_type=? AND quantity>=?`, count, nationID, unit, count)
+	var owned int64
+	if err := tx.QueryRowContext(ctx, `SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type=? FOR UPDATE`, nationID, unit).Scan(&owned); err != nil {
+		return fmt.Errorf("not enough military equipment")
+	}
+	committed := committedMilitary(ctx, tx, nationID, unit)
+	if owned-committed < count {
+		return fmt.Errorf("not enough uncommitted military equipment")
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE military_inventory SET quantity=quantity-? WHERE nation_id=? AND unit_type=? AND quantity-?>=?`, count, nationID, unit, committed, count)
 	if err != nil || affected(result) != 1 {
 		return fmt.Errorf("not enough military equipment")
 	}
@@ -161,16 +230,20 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		return
 	}
 	projects := loadLongTermProjectSet(r.Context(), a.db, nid)
+	requireProjects := militaryProjectRequirementsEnabled()
 	items := []map[string]any{}
 	for _, key := range militaryUnitKeys() {
 		spec := militaryUnits[key]
 		var quantity, escrowed, producedToday int64
-		a.db.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type=?),0),COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=CURRENT_DATE()),0)`, nid, key, nid, key).Scan(&quantity, &producedToday)
+		a.db.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type=?),0),COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=UTC_DATE()),0)`, nid, key, nid, key).Scan(&quantity, &producedToday)
 		a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(escrow_goods),0) FROM market_orders WHERE nation_id=? AND resource=? AND side='sell' AND status IN('open','pending')`, nid, key).Scan(&escrowed)
 		totalOwned := quantity + escrowed
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": quantity, "escrowedQuantity": escrowed, "capacity": militaryCapacity(spec, population, provinces), "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday})
+		capacity := militaryCapacity(spec, population, provinces)
+		dailyLimit := militaryDailyProductionLimit(key, capacity)
+		committed := committedMilitary(r.Context(), a.db, nid, key)
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday)})
 	}
-	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02")})
+	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
 }
 
 func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
@@ -200,7 +273,7 @@ func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	if spec.Project != "" {
+	if militaryProjectRequirementsEnabled() && spec.Project != "" {
 		var completed int
 		if err = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM national_long_term_projects WHERE nation_id=? AND project_type=?)`, nid, spec.Project).Scan(&completed); err != nil {
 			problem(w, 500, "Could not verify the required National Project.")
@@ -224,6 +297,13 @@ func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, fmt.Sprintf("Production would exceed the %s capacity of %d.", spec.Name, cap))
 		return
 	}
+	var producedToday int64
+	_ = tx.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=UTC_DATE()),0)`, nid, in.UnitType).Scan(&producedToday)
+	dailyLimit := militaryDailyProductionLimit(in.UnitType, cap)
+	if producedToday+in.Quantity > dailyLimit {
+		problem(w, 409, fmt.Sprintf("This order exceeds today's %s mobilization limit. You may still produce %d today.", spec.Name, max(int64(0), dailyLimit-producedToday)))
+		return
+	}
 	cashCost := spec.Cash * in.Quantity
 	if treasury < cashCost {
 		problem(w, 409, "Insufficient treasury for this production order.")
@@ -245,7 +325,7 @@ func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not add produced units.")
 		return
 	}
-	tx.ExecContext(r.Context(), `INSERT INTO military_production_daily(nation_id,unit_type,production_date,quantity) VALUES(?,?,CURRENT_DATE(),?) ON DUPLICATE KEY UPDATE quantity=quantity+VALUES(quantity)`, nid, in.UnitType, in.Quantity)
+	tx.ExecContext(r.Context(), `INSERT INTO military_production_daily(nation_id,unit_type,production_date,quantity) VALUES(?,?,UTC_DATE(),?) ON DUPLICATE KEY UPDATE quantity=quantity+VALUES(quantity)`, nid, in.UnitType, in.Quantity)
 	tx.ExecContext(r.Context(), `INSERT INTO ledger_entries(id,nation_id,category,amount,memo) VALUES(?,?,'military_production',?,?)`, uuid(), nid, -cashCost, fmt.Sprintf("Produced %d %s", in.Quantity, spec.Name))
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not complete production.")
@@ -279,14 +359,15 @@ func (a *app) decommissionMilitary(w http.ResponseWriter, r *http.Request, u use
 		return
 	}
 	var produced int64
-	tx.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=CURRENT_DATE()),0)`, nid, in.UnitType).Scan(&produced)
+	tx.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=UTC_DATE()),0)`, nid, in.UnitType).Scan(&produced)
 	if produced > 0 {
 		problem(w, 409, "Units of this type were produced today and cannot be decommissioned until the next server day.")
 		return
 	}
-	result, err := tx.ExecContext(r.Context(), `UPDATE military_inventory SET quantity=quantity-? WHERE nation_id=? AND unit_type=? AND quantity>=?`, in.Quantity, nid, in.UnitType, in.Quantity)
+	committed := committedMilitary(r.Context(), tx, nid, in.UnitType)
+	result, err := tx.ExecContext(r.Context(), `UPDATE military_inventory SET quantity=quantity-? WHERE nation_id=? AND unit_type=? AND quantity-?>=?`, in.Quantity, nid, in.UnitType, committed, in.Quantity)
 	if err != nil || affected(result) != 1 {
-		problem(w, 409, "You do not own that many units.")
+		problem(w, 409, "You do not have that many uncommitted units available.")
 		return
 	}
 	if err = tx.Commit(); err != nil {

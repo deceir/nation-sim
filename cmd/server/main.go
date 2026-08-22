@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -85,6 +84,9 @@ func main() {
 	if err = a.captureWorldResourceSnapshot(context.Background(), time.Now().UTC().Truncate(time.Hour)); err != nil {
 		log.Printf("initial world resource snapshot failed: %v", err)
 	}
+	if err = a.regenerateBotMilitary(context.Background()); err != nil {
+		log.Printf("initial BOT military regeneration failed: %v", err)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /api/auth/register", a.register)
 	mux.HandleFunc("POST /api/auth/login", a.login)
@@ -140,6 +142,8 @@ func main() {
 	mux.HandleFunc("GET /api/dev/bans", a.auth(a.devBans))
 	mux.HandleFunc("POST /api/dev/bans", a.auth(a.banUser))
 	mux.HandleFunc("DELETE /api/dev/bans/{userID}", a.auth(a.unbanUser))
+	mux.HandleFunc("DELETE /api/dev/nations/{id}/guardian", a.auth(a.removeGuardianStatus))
+	mux.HandleFunc("DELETE /api/nation/guardian", a.auth(a.voluntarilyRemoveGuardianStatus))
 	mux.HandleFunc("GET /api/world/status", a.auth(a.worldStatus))
 	mux.HandleFunc("GET /api/world/stats", a.worldStats)
 	mux.HandleFunc("GET /api/world/resources", a.auth(a.worldResourceHistory))
@@ -152,6 +156,12 @@ func main() {
 	mux.HandleFunc("GET /api/military", a.auth(a.militaryDashboard))
 	mux.HandleFunc("POST /api/military/produce", a.auth(a.produceMilitary))
 	mux.HandleFunc("POST /api/military/decommission", a.auth(a.decommissionMilitary))
+	mux.HandleFunc("GET /api/wars", a.auth(a.warsDashboard))
+	mux.HandleFunc("POST /api/wars", a.auth(a.declareWar))
+	mux.HandleFunc("GET /api/wars/{id}", a.auth(a.warDetails))
+	mux.HandleFunc("POST /api/wars/{id}/deploy", a.auth(a.deployWarForces))
+	mux.HandleFunc("PUT /api/wars/{id}/orders", a.auth(a.submitWarOrders))
+	mux.HandleFunc("POST /api/wars/{id}/capitulate", a.auth(a.capitulateWar))
 	mux.HandleFunc("POST /api/conflicts", a.auth(a.declareConflict))
 	mux.HandleFunc("GET /api/alliances", a.auth(a.allianceDirectory))
 	mux.HandleFunc("POST /api/alliances", a.auth(a.createAlliance))
@@ -436,47 +446,7 @@ func (a *app) settings(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]any{"ok": true, "nameChangeCost": cost})
 }
 func (a *app) declareConflict(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Kind, DefenderID string }
-	if !decode(w, r, &in) {
-		return
-	}
-	if in.Kind != "raid" && in.Kind != "war" {
-		problem(w, 400, "Conflict must be raid or war.")
-		return
-	}
-	tx, _ := a.db.Begin(r.Context())
-	defer tx.Rollback(r.Context())
-	var attacker, attackerName string
-	if tx.QueryRow(r.Context(), `SELECT id,name FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&attacker, &attackerName) != nil {
-		problem(w, 409, "Create a nation first.")
-		return
-	}
-	if attacker == in.DefenderID {
-		problem(w, 400, "You cannot attack yourself.")
-		return
-	}
-	var protected bool
-	tx.QueryRow(r.Context(), `SELECT EXISTS(SELECT 1 FROM guardian_grants WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=now() AND expires_at>now())`, in.DefenderID).Scan(&protected)
-	if protected {
-		problem(w, 409, "That nation has Guardian status.")
-		return
-	}
-	var defenderName string
-	if tx.QueryRow(r.Context(), `SELECT name FROM nations WHERE id=?`, in.DefenderID).Scan(&defenderName) != nil {
-		problem(w, 404, "Defending nation not found.")
-		return
-	}
-	res, _ := tx.Exec(r.Context(), `UPDATE guardian_grants SET revoked_at=now(),revoked_reason=CONCAT('initiated_', ?) WHERE nation_id=? AND revoked_at IS NULL AND expires_at>now()`, in.Kind, attacker)
-	_ = res
-	_, e := tx.Exec(r.Context(), `INSERT INTO conflicts(id,kind,attacker_id,defender_id) VALUES(?,?,?,?)`, uuid(), in.Kind, attacker, in.DefenderID)
-	if e != nil {
-		problem(w, 400, "Unable to declare conflict.")
-		return
-	}
-	tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','Conflict declared',?)`, uuid(), attacker, fmt.Sprintf("You declared a %s against %s.", in.Kind, defenderName))
-	tx.Exec(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','Your nation is under attack',?)`, uuid(), in.DefenderID, fmt.Sprintf("%s declared a %s against your nation.", attackerName, in.Kind))
-	tx.Commit(r.Context())
-	write(w, 201, map[string]any{"ok": true, "guardianRevoked": true})
+	problem(w, http.StatusGone, "The legacy conflict endpoint is retired. Use the War Room for wars. Raiding will be introduced as its own system later.")
 }
 
 type handler func(http.ResponseWriter, *http.Request, user)

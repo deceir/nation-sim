@@ -131,6 +131,97 @@ CREATE TABLE IF NOT EXISTS conflicts (
   CONSTRAINT fk_conflicts_attacker FOREIGN KEY (attacker_id) REFERENCES nations(id),
   CONSTRAINT fk_conflicts_defender FOREIGN KEY (defender_id) REFERENCES nations(id)
 ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS wars (
+  conflict_id CHAR(36) PRIMARY KEY,
+  objective VARCHAR(40) NOT NULL,
+  stage ENUM('mobilizing','active','ended') NOT NULL DEFAULT 'mobilizing',
+  attacker_score DECIMAL(9,3) NOT NULL DEFAULT 0,
+  defender_score DECIMAL(9,3) NOT NULL DEFAULT 0,
+  attacker_resolve DECIMAL(6,3) NOT NULL DEFAULT 100,
+  defender_resolve DECIMAL(6,3) NOT NULL DEFAULT 100,
+  attacker_readiness DECIMAL(6,3) NOT NULL DEFAULT 100,
+  defender_readiness DECIMAL(6,3) NOT NULL DEFAULT 100,
+  attacker_organization DECIMAL(6,3) NOT NULL DEFAULT 100,
+  defender_organization DECIMAL(6,3) NOT NULL DEFAULT 100,
+  rounds_resolved INT NOT NULL DEFAULT 0,
+  next_round_at DATETIME NOT NULL,
+  ends_at DATETIME NOT NULL,
+  distance_km DECIMAL(12,3) NOT NULL DEFAULT 0,
+  route_type ENUM('land','maritime','mixed') NOT NULL DEFAULT 'mixed',
+  mobilization_rounds INT NOT NULL DEFAULT 1,
+  supply_factor DECIMAL(7,4) NOT NULL DEFAULT 1,
+  winner_nation_id CHAR(36) NULL,
+  outcome VARCHAR(30) NULL,
+  end_reason VARCHAR(40) NULL,
+  ended_at DATETIME NULL,
+  coalition_conflict_id CHAR(36) NULL,
+  CONSTRAINT fk_wars_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_wars_winner FOREIGN KEY(winner_nation_id) REFERENCES nations(id) ON DELETE SET NULL,
+  INDEX idx_wars_round(stage,next_round_at),
+  INDEX idx_wars_end(stage,ends_at)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_deployments (
+  id CHAR(36) PRIMARY KEY,
+  conflict_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
+  quantity BIGINT NOT NULL,
+  remaining BIGINT NOT NULL,
+  arrives_round INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_war_deployments_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_war_deployments_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  INDEX idx_war_deployments_force(conflict_id,nation_id,arrives_round)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_orders (
+  conflict_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  round_number INT NOT NULL,
+  operation VARCHAR(40) NOT NULL,
+  posture VARCHAR(40) NOT NULL,
+  submitted_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(conflict_id,nation_id,round_number),
+  CONSTRAINT fk_war_orders_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_war_orders_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_reports (
+  id CHAR(36) PRIMARY KEY,
+  conflict_id CHAR(36) NOT NULL,
+  round_number INT NOT NULL,
+  resolved_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  attacker_operation VARCHAR(40) NOT NULL,
+  defender_operation VARCHAR(40) NOT NULL,
+  attacker_strength DECIMAL(24,4) NOT NULL DEFAULT 0,
+  defender_strength DECIMAL(24,4) NOT NULL DEFAULT 0,
+  attacker_losses JSON NOT NULL,
+  defender_losses JSON NOT NULL,
+  attacker_supply DECIMAL(7,4) NOT NULL DEFAULT 1,
+  defender_supply DECIMAL(7,4) NOT NULL DEFAULT 1,
+  attacker_score_change DECIMAL(9,3) NOT NULL DEFAULT 0,
+  defender_score_change DECIMAL(9,3) NOT NULL DEFAULT 0,
+  attacker_resolve_change DECIMAL(9,3) NOT NULL DEFAULT 0,
+  defender_resolve_change DECIMAL(9,3) NOT NULL DEFAULT 0,
+  summary TEXT NOT NULL,
+  UNIQUE KEY uq_war_report_round(conflict_id,round_number),
+  CONSTRAINT fk_war_reports_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS nation_war_status (
+  nation_id CHAR(36) PRIMARY KEY,
+  war_exhaustion DECIMAL(7,3) NOT NULL DEFAULT 0,
+  reconstruction_until DATETIME NULL,
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_nation_war_status_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_armistices (
+  nation_a_id CHAR(36) NOT NULL,
+  nation_b_id CHAR(36) NOT NULL,
+  expires_at DATETIME NOT NULL,
+  source_conflict_id CHAR(36) NOT NULL,
+  PRIMARY KEY(nation_a_id,nation_b_id),
+  CONSTRAINT fk_armistice_a FOREIGN KEY(nation_a_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_armistice_b FOREIGN KEY(nation_b_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_armistice_conflict FOREIGN KEY(source_conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS military_inventory (
   nation_id CHAR(36) NOT NULL,
   unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
