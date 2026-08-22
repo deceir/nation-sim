@@ -83,11 +83,12 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 	var declared, next, ends time.Time
 	var ended sql.NullTime
 	var attackerScore, defenderScore, attackerResolve, defenderResolve, attackerReadiness, defenderReadiness, attackerOrganization, defenderOrganization, distance, supplyFactor float64
+	var attackerLat, attackerLng, defenderLat, defenderLng float64
 	var rounds, mobilization int
 	err := a.db.QueryRowContext(r.Context(), `SELECT c.declared_at,c.attacker_id,an.name,an.leader_name,COALESCE(aa.id,''),COALESCE(aa.name,''),
 		c.defender_id,dn.name,dn.leader_name,COALESCE(da.id,''),COALESCE(da.name,''),w.objective,w.stage,
 		w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,
-		w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,w.mobilization_rounds,w.supply_factor,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at
+		w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,COALESCE(w.attacker_lat,an.location_lat,0),COALESCE(w.attacker_lng,an.location_lng,0),COALESCE(w.defender_lat,dn.location_lat,0),COALESCE(w.defender_lng,dn.location_lng,0),w.mobilization_rounds,w.supply_factor,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at
 		FROM conflicts c JOIN wars w ON w.conflict_id=c.id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id
 		LEFT JOIN alliance_members aam ON aam.nation_id=an.id LEFT JOIN alliances aa ON aa.id=aam.alliance_id
 		LEFT JOIN alliance_members dam ON dam.nation_id=dn.id LEFT JOIN alliances da ON da.id=dam.alliance_id
@@ -97,7 +98,7 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 		&declared, &attackerID, &attackerName, &attackerLeader, &attackerAllianceID, &attackerAllianceName,
 		&defenderID, &defenderName, &defenderLeader, &defenderAllianceID, &defenderAllianceName, &objective, &stage,
 		&attackerScore, &defenderScore, &attackerResolve, &defenderResolve, &attackerReadiness, &defenderReadiness, &attackerOrganization, &defenderOrganization,
-		&rounds, &next, &ends, &distance, &route, &mobilization, &supplyFactor, &winner, &outcome, &endReason, &ended)
+		&rounds, &next, &ends, &distance, &route, &attackerLat, &attackerLng, &defenderLat, &defenderLng, &mobilization, &supplyFactor, &winner, &outcome, &endReason, &ended)
 	if err != nil {
 		problem(w, http.StatusNotFound, "Conflict not found.")
 		return
@@ -140,11 +141,12 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 	if ended.Valid {
 		endedAt = ended.Time
 	}
+	deployments, _ := warDeploymentBatches(r.Context(), a.db, id, attackerID, stage, rounds, next)
 	write(w, http.StatusOK, map[string]any{
 		"id": id, "declaredAt": declared, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage,
-		"attacker":       map[string]any{"id": attackerID, "name": attackerName, "leaderName": attackerLeader, "allianceID": attackerAllianceID, "allianceName": attackerAllianceName, "score": attackerScore, "resolve": attackerResolve, "readiness": attackerReadiness, "organization": attackerOrganization},
-		"defender":       map[string]any{"id": defenderID, "name": defenderName, "leaderName": defenderLeader, "allianceID": defenderAllianceID, "allianceName": defenderAllianceName, "score": defenderScore, "resolve": defenderResolve, "readiness": defenderReadiness, "organization": defenderOrganization},
+		"attacker":       map[string]any{"id": attackerID, "name": attackerName, "leaderName": attackerLeader, "allianceID": attackerAllianceID, "allianceName": attackerAllianceName, "score": attackerScore, "resolve": attackerResolve, "readiness": attackerReadiness, "organization": attackerOrganization, "lat": attackerLat, "lng": attackerLng},
+		"defender":       map[string]any{"id": defenderID, "name": defenderName, "leaderName": defenderLeader, "allianceID": defenderAllianceID, "allianceName": defenderAllianceName, "score": defenderScore, "resolve": defenderResolve, "readiness": defenderReadiness, "organization": defenderOrganization, "lat": defenderLat, "lng": defenderLng},
 		"roundsResolved": rounds, "maximumRounds": warMaximumRounds, "nextRoundAt": next, "endsAt": ends, "endedAt": endedAt, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supplyFactor,
-		"winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "reports": reports,
+		"winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports,
 	})
 }

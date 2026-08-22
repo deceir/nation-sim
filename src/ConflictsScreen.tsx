@@ -1,5 +1,6 @@
 import {useEffect,useState} from 'react';
 import {Activity,ChevronLeft,ChevronRight,Clock3,Crosshair,Route,Shield,Swords} from 'lucide-react';
+import WarTheaterMap from './WarTheaterMap';
 import './conflicts.css';
 
 const units=['soldiers','tanks','ships','jets','drones'];
@@ -46,6 +47,7 @@ function ConflictDetail({id}:{id:string}){
   <section className="conflict-side-by-side"><ConflictSide title="Attacker" nation={data.attacker}/><div className="conflict-center-mark"><Swords/><b>{number(data.attacker.score,1)} - {number(data.defender.score,1)}</b><span>Score</span></div><ConflictSide title="Defender" nation={data.defender}/></section>
   <section className="conflict-progress panel"><header><b>Campaign progress</b><span>Round {data.roundsResolved} / {data.maximumRounds}</span></header><i><em style={{width:`${completed}%`}}/></i></section>
   <section className="conflict-meta-strip"><div><Route/><span>Distance</span><b>{number(data.distanceKm)} km</b></div><div><Clock3/><span>Mobilization</span><b>{data.mobilizationRounds} rounds</b></div><div><Activity/><span>Route</span><b>{label(data.routeType)}</b></div><div><Shield/><span>Objective</span><b>{data.objectiveName}</b></div></section>
+  <WarTheaterMap attacker={{name:data.attacker.name,lat:data.attacker.lat,lng:data.attacker.lng}} defender={{name:data.defender.name,lat:data.defender.lat,lng:data.defender.lng}} routeType={data.routeType} stage={data.stage} distanceKm={data.distanceKm} roundsResolved={data.roundsResolved} deployments={data.deployments||[]}/>
   <section className="conflict-detail-grid">
    <section className="panel conflict-forces"><span className="eyebrow">WAR STATISTICS</span><h3>Military commitments</h3><div className="conflict-force-table"><header><span>Unit</span><b>Attacker</b><b>Defender</b></header>{units.map(unit=><div key={unit}><span>{unitNames[unit]}</span><ForceValue force={data.forces.attacker?.[unit]}/><ForceValue force={data.forces.defender?.[unit]}/></div>)}</div></section>
    <section className="panel conflict-timeline"><div className="conflict-timeline-title"><div><span className="eyebrow">WAR TIMELINE</span><h3>Strategic reports</h3></div><Activity/></div><div className="conflict-timeline-scroll">{data.reports.length?data.reports.map((report:any)=><article key={report.round}><header><b>Round {report.round}</b><time>{dateTime(report.resolvedAt)}</time></header><p>{report.summary}</p><div><span>{label(report.attackerOperation)} · {number(report.attackerStrength)} strength</span><span>{label(report.defenderOperation)} · {number(report.defenderStrength)} strength</span></div><small>Losses: {lossText(report.attackerLosses)} / {lossText(report.defenderLosses)}</small></article>):<p className="conflict-no-reports">No strategic reports yet.</p>}</div></section>
