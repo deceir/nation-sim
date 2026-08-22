@@ -185,6 +185,10 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	a.processTradeShipments(ctx, turn)
 	a.processLongTermProjects(ctx)
 	a.processMatureVentures(ctx)
+	a.processWarRounds(ctx, turn)
+	// War exhaustion recedes slowly outside the moment-to-moment fighting. At
+	// 0.1 per hourly turn, fully accumulated exhaustion takes weeks to clear.
+	a.db.ExecContext(ctx, `UPDATE nation_war_status SET war_exhaustion=GREATEST(0,war_exhaustion-.1)`)
 	if err := a.captureWorldResourceSnapshot(ctx, turn); err != nil {
 		log.Printf("world resource snapshot failed: %v", err)
 	}
