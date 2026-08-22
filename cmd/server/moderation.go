@@ -135,3 +135,77 @@ func (a *app) devBans(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	write(w, http.StatusOK, map[string]any{"items": items})
 }
+
+func (a *app) removeGuardianStatus(w http.ResponseWriter, r *http.Request, u user) {
+	if !a.isDev(r, u.ID) {
+		problem(w, http.StatusForbidden, "Developer access required.")
+		return
+	}
+	targetID := strings.TrimSpace(r.PathValue("id"))
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not begin Guardian moderation.")
+		return
+	}
+	defer tx.Rollback()
+	var targetName string
+	if err = tx.QueryRowContext(r.Context(), `SELECT name FROM nations WHERE id=? FOR UPDATE`, targetID).Scan(&targetName); err != nil {
+		problem(w, http.StatusNotFound, "Nation not found.")
+		return
+	}
+	result, err := tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='removed_by_dev' WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP()`, targetID)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not remove Guardian status.")
+		return
+	}
+	removed := affected(result)
+	if removed == 0 {
+		problem(w, http.StatusConflict, "That nation does not currently have active Guardian status.")
+		return
+	}
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'game','Guardian status removed','Diplomatia has removed Guardian protection from your nation.')`, uuid(), targetID); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not record the Guardian moderation action.")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not complete Guardian moderation.")
+		return
+	}
+	write(w, http.StatusOK, map[string]any{"ok": true, "nation": targetName, "grantsRevoked": removed})
+}
+
+func (a *app) voluntarilyRemoveGuardianStatus(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct{ Confirmed bool }
+	if !decode(w, r, &in) {
+		return
+	}
+	if !in.Confirmed {
+		problem(w, http.StatusBadRequest, "You must acknowledge that Guardian status cannot be recovered before removing it.")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not begin Guardian removal.")
+		return
+	}
+	defer tx.Rollback()
+	var nationID string
+	if err = tx.QueryRowContext(r.Context(), `SELECT id FROM nations WHERE owner_id=? FOR UPDATE`, u.ID).Scan(&nationID); err != nil {
+		problem(w, http.StatusNotFound, "Nation not found.")
+		return
+	}
+	result, err := tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='voluntarily_removed' WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP()`, nationID)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not remove Guardian status.")
+		return
+	}
+	if affected(result) == 0 {
+		problem(w, http.StatusConflict, "Your nation does not currently have active Guardian status.")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not complete Guardian removal.")
+		return
+	}
+	write(w, http.StatusOK, map[string]bool{"ok": true})
+}

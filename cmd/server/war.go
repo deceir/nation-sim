@@ -201,7 +201,10 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 		_ = tx.QueryRowContext(r.Context(), `SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type=? FOR UPDATE`, attacker.ID, unit).Scan(&quantity)
 	}
 	var guarded int
-	_ = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM guardian_grants WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP())`, defender.ID).Scan(&guarded)
+	if err = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM guardian_grants WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP())`, defender.ID).Scan(&guarded); err != nil {
+		problem(w, 500, "Could not verify the defending nation's Guardian status.")
+		return
+	}
 	if guarded == 1 {
 		problem(w, 409, "That nation has Guardian status.")
 		return
@@ -291,7 +294,10 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 			_, _ = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round) VALUES(?,?,?,?,?,?,0)`, uuid(), id, defender.ID, unit, amount, amount)
 		}
 	}
-	_, _ = tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='initiated_war' WHERE nation_id=? AND revoked_at IS NULL AND expires_at>UTC_TIMESTAMP()`, attacker.ID)
+	if _, err = tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='initiated_war' WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP()`, attacker.ID); err != nil {
+		problem(w, 500, "Could not update the attacking nation's Guardian status.")
+		return
+	}
 	_, _ = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War declared',?),(?,?,'war','Your nation is at war',?)`, uuid(), attacker.ID, fmt.Sprintf("You declared war on %s. Initial forces arrive in %d strategic rounds.", defender.Name, mobilization), uuid(), defender.ID, fmt.Sprintf("%s declared war on your nation. Home forces have begun an automatic defensive deployment.", attacker.Name))
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not finalize the declaration.")

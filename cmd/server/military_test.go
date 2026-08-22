@@ -5,6 +5,27 @@ import (
 	"testing"
 )
 
+func TestMilitaryProjectRequirementTestingSwitch(t *testing.T) {
+	t.Setenv("MILITARY_PROJECT_REQUIREMENTS", "")
+	if militaryProjectRequirementsEnabled() {
+		t.Fatal("project requirements should default off during the testing phase")
+	}
+	t.Setenv("MILITARY_PROJECT_REQUIREMENTS", "true")
+	if !militaryProjectRequirementsEnabled() {
+		t.Fatal("setting MILITARY_PROJECT_REQUIREMENTS=true should restore project gates")
+	}
+}
+
+func TestBotMilitaryRegenerationFloors(t *testing.T) {
+	want := map[string]int64{"soldiers": 1000, "tanks": 25, "ships": 5, "jets": 25}
+	if !reflect.DeepEqual(botMilitaryFloors, want) {
+		t.Fatalf("BOT military floors = %#v; want %#v", botMilitaryFloors, want)
+	}
+	if _, configured := botMilitaryFloors["drones"]; configured {
+		t.Fatal("BOT Drones were not requested and should not receive a regeneration floor")
+	}
+}
+
 func TestMilitaryCapacityUsesConfiguredCoefficients(t *testing.T) {
 	cases := map[string]int64{
 		"soldiers": 17000,

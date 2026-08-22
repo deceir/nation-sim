@@ -13,8 +13,9 @@ export default function WarScreen({warID}:{warID?:string}){
 }
 
 function WarOverview(){
- const[data,setData]=useState<any>(),[military,setMilitary]=useState<any>(),[error,setError]=useState(''),[view,setView]=useState<'active'|'history'|'declare'>('active');
- const[target,setTarget]=useState(()=>new URLSearchParams(location.search).get('target')||''),[objective,setObjective]=useState('territorial_pressure'),[forces,setForces]=useState<Record<string,number>>({}),[review,setReview]=useState(false),[busy,setBusy]=useState(false);
+ const initialTarget=new URLSearchParams(location.search).get('target')||'';
+ const[data,setData]=useState<any>(),[military,setMilitary]=useState<any>(),[error,setError]=useState(''),[view,setView]=useState<'active'|'history'|'declare'>(initialTarget?'declare':'active');
+ const[target,setTarget]=useState(initialTarget),[objective,setObjective]=useState('territorial_pressure'),[forces,setForces]=useState<Record<string,number>>({}),[review,setReview]=useState(false),[busy,setBusy]=useState(false);
  const load=()=>Promise.all([api('/wars'),api('/military')]).then(([wars,military])=>{setData(wars);setMilitary(military)}).catch(e=>setError(e.message));
  useEffect(()=>{void load()},[]);
  const submit=async()=>{setBusy(true);setError('');try{const result=await api('/wars',{method:'POST',body:JSON.stringify({defenderName:target.trim(),objective,forces})});location.href='/war/'+encodeURIComponent(result.warID)}catch(e){setError((e as Error).message);setReview(false)}finally{setBusy(false)}};

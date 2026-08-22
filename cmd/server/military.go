@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,29 @@ var militaryDailyProductionFloors = map[string]int64{
 	"drones":   5,
 }
 
+// BOT forces are testing fixtures rather than normal domestic production.
+// Every server turn restores inventory up to these floors without consuming
+// Treasury, resources, project access, or daily mobilization allowance.
+var botMilitaryFloors = map[string]int64{
+	"soldiers": 1000,
+	"tanks":    25,
+	"ships":    5,
+	"jets":     25,
+}
+
+func (a *app) regenerateBotMilitary(ctx context.Context) error {
+	for _, unit := range militaryUnitKeys() {
+		floor, configured := botMilitaryFloors[unit]
+		if !configured {
+			continue
+		}
+		if _, err := a.db.ExecContext(ctx, `INSERT INTO military_inventory(nation_id,unit_type,quantity) SELECT id,?,? FROM nations WHERE user_type='BOT' ON DUPLICATE KEY UPDATE quantity=GREATEST(military_inventory.quantity,?)`, unit, floor, floor); err != nil {
+			return fmt.Errorf("regenerate BOT %s: %w", unit, err)
+		}
+	}
+	return nil
+}
+
 // Military balance is data-driven here so costs and coefficients can be tuned
 // without changing acquisition, upkeep, capacity, or decommission logic.
 var militaryUnits = map[string]militaryUnitSpec{
@@ -45,6 +69,13 @@ var militaryUnits = map[string]militaryUnitSpec{
 	"ships":    {Name: "Ships", Project: "naval_shipyard", Cash: 450000, Resources: map[string]float64{"basic_metals": 20, "construction_materials": 12, "energy": 8, "timber": 5, "military_equipment": 10}, DailyCash: 1200, DailyEnergy: .4, PopulationCoefficient: .0015, ProvinceCoefficient: 20, BaseCapacity: 10, Tradable: true},
 	"jets":     {Name: "Fighter Jets", Project: "aviation_industry", Cash: 350000, Resources: map[string]float64{"basic_metals": 6, "construction_materials": 8, "energy": 6, "strategic_minerals": 4, "military_equipment": 12}, DailyCash: 800, DailyEnergy: .3, PopulationCoefficient: .002, ProvinceCoefficient: 25, BaseCapacity: 15, Tradable: true},
 	"drones":   {Name: "Drones", Project: "advanced_ordnance", Cash: 85000, Resources: map[string]float64{"basic_metals": 4, "strategic_minerals": 7, "energy": 2, "basic_goods": 1, "military_equipment": 8}, DailyCash: 2500, DailyEnergy: .15, PopulationCoefficient: .006, ProvinceCoefficient: 40, BaseCapacity: 30, Tradable: true},
+}
+
+// Testing override: project mappings remain intact, but requirements default
+// off until MILITARY_PROJECT_REQUIREMENTS=true is set on the API service.
+// Restoring the production gates therefore requires no code or data migration.
+func militaryProjectRequirementsEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(env("MILITARY_PROJECT_REQUIREMENTS", "false")), "true")
 }
 
 func militaryCapacity(spec militaryUnitSpec, population int64, provinces int) int64 {
@@ -199,6 +230,7 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		return
 	}
 	projects := loadLongTermProjectSet(r.Context(), a.db, nid)
+	requireProjects := militaryProjectRequirementsEnabled()
 	items := []map[string]any{}
 	for _, key := range militaryUnitKeys() {
 		spec := militaryUnits[key]
@@ -209,9 +241,9 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		capacity := militaryCapacity(spec, population, provinces)
 		dailyLimit := militaryDailyProductionLimit(key, capacity)
 		committed := committedMilitary(r.Context(), a.db, nid, key)
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday)})
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday)})
 	}
-	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02")})
+	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
 }
 
 func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
@@ -241,7 +273,7 @@ func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 404, "Nation not found.")
 		return
 	}
-	if spec.Project != "" {
+	if militaryProjectRequirementsEnabled() && spec.Project != "" {
 		var completed int
 		if err = tx.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM national_long_term_projects WHERE nation_id=? AND project_type=?)`, nid, spec.Project).Scan(&completed); err != nil {
 			problem(w, 500, "Could not verify the required National Project.")

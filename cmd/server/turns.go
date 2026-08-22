@@ -185,6 +185,9 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	a.processTradeShipments(ctx, turn)
 	a.processLongTermProjects(ctx)
 	a.processMatureVentures(ctx)
+	if err := a.regenerateBotMilitary(ctx); err != nil {
+		log.Printf("BOT military regeneration failed: %v", err)
+	}
 	a.processWarRounds(ctx, turn)
 	// War exhaustion recedes slowly outside the moment-to-moment fighting. At
 	// 0.1 per hourly turn, fully accumulated exhaustion takes weeks to clear.
