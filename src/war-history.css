@@ -1,0 +1,50 @@
+.nation-profile-tabs {
+  display:flex;
+  flex-direction:row !important;
+  gap:0;
+  margin:0 0 18px !important;
+  border-bottom:1px solid var(--border);
+}
+.nation-profile-tabs button { display:flex;align-items:center;gap:8px;padding:12px 18px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);cursor:pointer }
+.nation-profile-tabs button svg { width:16px }
+.nation-profile-tabs button.active { border-bottom-color:var(--gold);color:var(--gold) }
+.war-history-panel { padding:0;overflow:hidden }
+.war-history-heading { display:flex;align-items:center;justify-content:space-between;padding:22px 24px;border-bottom:1px solid var(--border) }
+.war-history-heading h2 { margin:4px 0 0;font-size:28px }
+.war-history-heading>b { color:var(--gold);font-size:12px }
+.war-history-table { display:grid }
+.war-history-row { display:grid;grid-template-columns:minmax(150px,.8fr) minmax(200px,1.2fr) minmax(200px,1.2fr) minmax(145px,.7fr);align-items:stretch;border-bottom:1px solid var(--border) }
+.war-history-row:last-child { border-bottom:0 }
+.war-history-row:nth-child(odd):not(.war-history-head) { background:color-mix(in srgb,var(--surface) 48%,transparent) }
+.war-history-head { min-height:45px;background:var(--surface);color:var(--text);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase }
+.war-history-head>span { display:flex;align-items:center;padding:12px 17px;border-right:1px solid var(--border) }
+.war-history-head>span:last-child { border-right:0 }
+.war-history-date,.war-history-nation,.war-history-result { display:flex;min-width:0;flex-direction:column;justify-content:center;gap:4px;padding:16px 17px;border-right:1px solid var(--border) }
+.war-history-result { border-right:0 }
+.war-history-date time { font-size:11px }
+.war-history-date span,.war-history-nation span,.war-history-nation small { color:var(--muted);font-size:9px }
+.war-history-nation>a:first-child { overflow:hidden;color:var(--text);font-family:var(--display-font,Georgia,serif);font-size:17px;text-overflow:ellipsis;white-space:nowrap }
+.war-history-nation .war-history-alliance { overflow:hidden;color:var(--gold);font-size:10px;text-overflow:ellipsis;white-space:nowrap }
+.war-history-result b { font-size:11px }
+.war-history-result b.active { color:var(--gold) }
+.war-history-result b.victory { color:#7fc59b }
+.war-history-result b.defeat { color:#dc8378 }
+.war-history-result b.neutral { color:var(--muted) }
+.war-history-result a { display:flex;align-items:center;gap:6px;color:#61aaff;font-size:11px }
+.war-history-result svg { width:13px }
+.war-history-pagination { display:flex;flex-direction:row !important;align-items:center;justify-content:space-between;margin:0 !important;padding:14px 18px;border-top:1px solid var(--border);background:var(--surface) }
+.war-history-pagination button { display:flex;align-items:center;gap:5px;cursor:pointer }
+.war-history-pagination button:disabled { cursor:not-allowed }
+.war-history-pagination svg { width:14px }
+.war-history-pagination span { color:var(--muted);font-size:10px }
+.war-history-empty { display:grid;min-height:190px;place-items:center;align-content:center;gap:5px;color:var(--muted);text-align:center }
+.war-history-empty svg { width:28px }
+.war-history-empty h3,.war-history-empty p { margin:2px }
+.war-history-loading { min-height:180px;display:grid;place-items:center;color:var(--muted) }
+[data-theme="light"] .war-history-row:nth-child(odd):not(.war-history-head) { background:#f7f4ed }
+@media(max-width:800px) {
+  .war-history-table { overflow-x:auto }
+  .war-history-row { min-width:760px }
+  .nation-profile-tabs { overflow-x:auto }
+  .nation-profile-tabs button { white-space:nowrap }
+}

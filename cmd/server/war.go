@@ -288,13 +288,14 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not create the war.")
 		return
 	}
-	if _, err = tx.ExecContext(r.Context(), `INSERT INTO wars(conflict_id,objective,next_round_at,ends_at,distance_km,route_type,mobilization_rounds,supply_factor) VALUES(?,?,?,?,?,?,?,?)`, id, in.Objective, next, ends, distance, warRoute(attacker.Continent, defender.Continent), mobilization, supplyFactor); err != nil {
+	if _, err = tx.ExecContext(r.Context(), `INSERT INTO wars(conflict_id,objective,next_round_at,ends_at,distance_km,route_type,attacker_lat,attacker_lng,defender_lat,defender_lng,mobilization_rounds,supply_factor) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, id, in.Objective, next, ends, distance, warRoute(attacker.Continent, defender.Continent), attacker.Lat, attacker.Lng, defender.Lat, defender.Lng, mobilization, supplyFactor); err != nil {
 		problem(w, 500, "Could not establish the war state.")
 		return
 	}
+	attackerDeploymentGroup := uuid()
 	for _, unit := range militaryUnitKeys() {
 		if amount := in.Forces[unit]; amount > 0 {
-			if _, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round) VALUES(?,?,?,?,?,?,?)`, uuid(), id, attacker.ID, unit, amount, amount, mobilization); err != nil {
+			if _, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id) VALUES(?,?,?,?,?,?,?,?)`, uuid(), id, attacker.ID, unit, amount, amount, mobilization, attackerDeploymentGroup); err != nil {
 				problem(w, 500, "Could not deploy the attacking force.")
 				return
 			}
@@ -302,11 +303,12 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	// A home defender commits the configured percentage of each currently
 	// available unit type. Nations without a saved preference use 60%.
+	defenderDeploymentGroup := uuid()
 	for _, unit := range militaryUnitKeys() {
 		available := committedAvailable(r.Context(), tx, defender.ID, unit)
 		amount := automaticDefenseCommitment(available, defensiveCommitmentPercent(r.Context(), tx, defender.ID, unit))
 		if amount > 0 {
-			_, _ = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round) VALUES(?,?,?,?,?,?,0)`, uuid(), id, defender.ID, unit, amount, amount)
+			_, _ = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id) VALUES(?,?,?,?,?,?,0,?)`, uuid(), id, defender.ID, unit, amount, amount, defenderDeploymentGroup)
 		}
 	}
 	if _, err = tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='initiated_war' WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP()`, attacker.ID); err != nil {
@@ -337,11 +339,11 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	id := r.PathValue("id")
 	var aid, an, did, dn, objective, stage, route, winner, outcome, endReason string
-	var as, ds, ar, dr, ard, drd, aorg, dorg, distance, supply float64
+	var as, ds, ar, dr, ard, drd, aorg, dorg, distance, supply, attackerLat, attackerLng, defenderLat, defenderLng float64
 	var rounds, mobilization int
 	var next, ends time.Time
 	var ended sql.NullTime
-	err = a.db.QueryRowContext(r.Context(), `SELECT c.attacker_id,an.name,c.defender_id,dn.name,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,w.mobilization_rounds,w.supply_factor,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at FROM conflicts c JOIN wars w ON w.conflict_id=c.id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id WHERE c.id=? AND (c.attacker_id=? OR c.defender_id=?)`, id, me.ID, me.ID).Scan(&aid, &an, &did, &dn, &objective, &stage, &as, &ds, &ar, &dr, &ard, &drd, &aorg, &dorg, &rounds, &next, &ends, &distance, &route, &mobilization, &supply, &winner, &outcome, &endReason, &ended)
+	err = a.db.QueryRowContext(r.Context(), `SELECT c.attacker_id,an.name,c.defender_id,dn.name,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,COALESCE(w.attacker_lat,an.location_lat,0),COALESCE(w.attacker_lng,an.location_lng,0),COALESCE(w.defender_lat,dn.location_lat,0),COALESCE(w.defender_lng,dn.location_lng,0),w.mobilization_rounds,w.supply_factor,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at FROM conflicts c JOIN wars w ON w.conflict_id=c.id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id WHERE c.id=? AND (c.attacker_id=? OR c.defender_id=?)`, id, me.ID, me.ID).Scan(&aid, &an, &did, &dn, &objective, &stage, &as, &ds, &ar, &dr, &ard, &drd, &aorg, &dorg, &rounds, &next, &ends, &distance, &route, &attackerLat, &attackerLng, &defenderLat, &defenderLng, &mobilization, &supply, &winner, &outcome, &endReason, &ended)
 	if err != nil {
 		problem(w, 404, "War not found.")
 		return
@@ -380,7 +382,12 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 	}
-	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "defenderID": did, "defenderName": dn, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "reports": reports, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures})
+	deployments, _ := warDeploymentBatches(r.Context(), a.db, id, aid, stage, rounds, next)
+	availableForDeployment := map[string]int64{}
+	for _, unit := range militaryUnitKeys() {
+		availableForDeployment[unit] = committedAvailable(r.Context(), a.db, me.ID, unit)
+	}
+	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures})
 }
 
 func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
@@ -423,6 +430,7 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 	if me.ID == aid {
 		arrives = rounds + mobilization
 	}
+	deploymentGroup := uuid()
 	total := int64(0)
 	for _, unit := range militaryUnitKeys() {
 		amount := in.Forces[unit]
@@ -431,7 +439,7 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		if amount > 0 {
-			_, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round) VALUES(?,?,?,?,?,?,?)`, uuid(), id, me.ID, unit, amount, amount, arrives)
+			_, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id) VALUES(?,?,?,?,?,?,?,?)`, uuid(), id, me.ID, unit, amount, amount, arrives, deploymentGroup)
 			if err != nil {
 				problem(w, 500, "Could not deploy forces.")
 				return
@@ -654,6 +662,68 @@ func warForces(ctx context.Context, tx *sql.Tx, id, nid string, round int) (map[
 		if rows.Scan(&unit, &n) == nil {
 			result[unit] = n
 		}
+	}
+	return result, nil
+}
+
+func warDeploymentArrival(nextRound time.Time, roundsResolved, arrivesRound int) time.Time {
+	remainingRoundWindows := max(0, arrivesRound-roundsResolved-1)
+	return nextRound.Add(time.Duration(remainingRoundWindows*warRoundHours) * time.Hour)
+}
+
+func warDeploymentBatches(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, conflictID, attackerID, stage string, roundsResolved int, nextRound time.Time) ([]map[string]any, error) {
+	rows, err := q.QueryContext(ctx, `SELECT COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,SUM(quantity),SUM(remaining),arrives_round,MIN(created_at) FROM war_deployments WHERE conflict_id=? GROUP BY COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,arrives_round ORDER BY MIN(created_at),arrives_round,nation_id,unit_type`, conflictID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type deploymentBatch struct {
+		ID, NationID string
+		Arrives      int
+		Departed     time.Time
+		Units        map[string]map[string]int64
+	}
+	byID := map[string]*deploymentBatch{}
+	ordered := []*deploymentBatch{}
+	for rows.Next() {
+		var groupID, nationID, unit string
+		var quantity, remaining int64
+		var arrives int
+		var departed time.Time
+		if err := rows.Scan(&groupID, &nationID, &unit, &quantity, &remaining, &arrives, &departed); err != nil {
+			return nil, err
+		}
+		batch := byID[groupID]
+		if batch == nil {
+			batch = &deploymentBatch{ID: groupID, NationID: nationID, Arrives: arrives, Departed: departed, Units: map[string]map[string]int64{}}
+			byID[groupID] = batch
+			ordered = append(ordered, batch)
+		}
+		batch.Units[unit] = map[string]int64{"deployed": quantity, "remaining": remaining, "lost": max(int64(0), quantity-remaining)}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]map[string]any, 0, len(ordered))
+	for _, batch := range ordered {
+		side := "defender"
+		if batch.NationID == attackerID {
+			side = "attacker"
+		}
+		status := "deployed"
+		var arrivalAt any
+		if stage == "ended" {
+			status = "concluded"
+		} else if batch.Arrives > roundsResolved {
+			status = "in_transit"
+			if side == "defender" {
+				status = "preparing"
+			}
+			arrivalAt = warDeploymentArrival(nextRound, roundsResolved, batch.Arrives)
+		}
+		result = append(result, map[string]any{"id": batch.ID, "side": side, "status": status, "arrivesRound": batch.Arrives, "departedAt": batch.Departed, "arrivalAt": arrivalAt, "units": batch.Units})
 	}
 	return result, nil
 }

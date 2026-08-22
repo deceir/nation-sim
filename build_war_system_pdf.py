@@ -292,6 +292,7 @@ def build():
         Spacer(1, 3 * mm),
         callout("Civic institution damage", "Institutions use a separate per-building damage roll: 0.4% / 0.8% / 1.2% after a minor / major / decisive defeat, plus 0.1 percentage point per winning Strategic Strike round (up to 1.2 points) and 0.6 points for a successful Infrastructure Campaign. Risk is capped at 3% per institution. Infrastructure never falls below 50, and falling below institution capacity does not delete or disable existing institutions; only this independent combat-damage roll can destroy one."),
         callout("No reward for losing", "Reconstruction limits fresh offensive declarations and prevents defensive dogpiling beyond one front, but it does not grant Guardian protection or an economic bonus. Every completed war also creates a seven-day armistice between the same two nations.", gold=True),
+        PageBreak(),
         P("Military capacity and daily mobilization", "Section"),
         P("Military ownership is capped by population and province count. Domestic production is also paced so that moving from an empty force to the cap normally takes about ten server days."),
         formula("Unit capacity = floor(A * population) + B * provinces + C\nDaily production limit = min(capacity, max(unit floor, ceil(0.10 * capacity)))"),

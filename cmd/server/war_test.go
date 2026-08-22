@@ -121,3 +121,13 @@ func TestWarInstitutionDamageIsSeparateAndBounded(t *testing.T) {
 		t.Fatalf("deterministic damage roll invalid: %f then %f", first, second)
 	}
 }
+
+func TestWarDeploymentArrivalUsesScheduledRoundWindows(t *testing.T) {
+	next := time.Date(2026, 8, 22, 12, 0, 0, 0, time.UTC)
+	if got := warDeploymentArrival(next, 2, 3); !got.Equal(next) {
+		t.Fatalf("next-round deployment arrives at %s; want %s", got, next)
+	}
+	if got := warDeploymentArrival(next, 2, 5); !got.Equal(next.Add(12 * time.Hour)) {
+		t.Fatalf("round-five deployment arrives at %s; want %s", got, next.Add(12*time.Hour))
+	}
+}

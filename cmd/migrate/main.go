@@ -99,6 +99,11 @@ func main() {
 		{"trade_shipments", "status", "ENUM('in_transit','delivered','delayed','cancelled') NOT NULL DEFAULT 'in_transit'"},
 		{"alliance_bank_transactions", "batch_id", "CHAR(36) NULL"},
 		{"crisis_options", "effect_payload", "JSON NULL"},
+		{"wars", "attacker_lat", "DECIMAL(9,6) NULL"},
+		{"wars", "attacker_lng", "DECIMAL(9,6) NULL"},
+		{"wars", "defender_lat", "DECIMAL(9,6) NULL"},
+		{"wars", "defender_lng", "DECIMAL(9,6) NULL"},
+		{"war_deployments", "deployment_group_id", "CHAR(36) NULL"},
 	}
 	// Moderation is a first-class notification category. Existing databases need
 	// an explicit enum expansion; fresh databases receive it from schema.sql.
@@ -201,6 +206,7 @@ func main() {
 		`INSERT IGNORE INTO alliance_tax_assignments(alliance_id,nation_id,bracket_id) SELECT b.alliance_id,b.nation_id,b.id FROM alliance_tax_brackets b JOIN alliance_members m ON m.alliance_id=b.alliance_id AND m.nation_id=b.nation_id WHERE b.nation_id IS NOT NULL`,
 		`UPDATE alliance_treaties SET proposed_by_alliance_id=alliance_a_id WHERE proposed_by_alliance_id IS NULL`,
 		`UPDATE alliance_treaties t JOIN alliances a ON a.id=t.proposed_by_alliance_id SET t.proposed_by_nation_id=a.founder_nation_id WHERE t.proposed_by_nation_id IS NULL`,
+		`UPDATE wars w JOIN conflicts c ON c.id=w.conflict_id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id SET w.attacker_lat=COALESCE(w.attacker_lat,an.location_lat,CASE an.continent WHEN 'Africa' THEN 5 WHEN 'Asia' THEN 34 WHEN 'Europe' THEN 50 WHEN 'North America' THEN 40 WHEN 'South America' THEN -15 WHEN 'Oceania' THEN -25 ELSE -75 END),w.attacker_lng=COALESCE(w.attacker_lng,an.location_lng,CASE an.continent WHEN 'Africa' THEN 20 WHEN 'Asia' THEN 100 WHEN 'Europe' THEN 15 WHEN 'North America' THEN -100 WHEN 'South America' THEN -60 WHEN 'Oceania' THEN 135 ELSE 0 END),w.defender_lat=COALESCE(w.defender_lat,dn.location_lat,CASE dn.continent WHEN 'Africa' THEN 5 WHEN 'Asia' THEN 34 WHEN 'Europe' THEN 50 WHEN 'North America' THEN 40 WHEN 'South America' THEN -15 WHEN 'Oceania' THEN -25 ELSE -75 END),w.defender_lng=COALESCE(w.defender_lng,dn.location_lng,CASE dn.continent WHEN 'Africa' THEN 20 WHEN 'Asia' THEN 100 WHEN 'Europe' THEN 15 WHEN 'North America' THEN -100 WHEN 'South America' THEN -60 WHEN 'Oceania' THEN 135 ELSE 0 END) WHERE w.attacker_lat IS NULL OR w.attacker_lng IS NULL OR w.defender_lat IS NULL OR w.defender_lng IS NULL`,
 		`UPDATE market_orders SET status='cancelled' WHERE status IN('open','pending') AND escrow_cash=0 AND escrow_goods=0`,
 		`INSERT IGNORE INTO nation_economic_strategy(nation_id) SELECT id FROM nations`,
 		`UPDATE nations n SET capital_city_id=(SELECT c.id FROM cities c WHERE c.nation_id=n.id ORDER BY c.created_at ASC,c.id ASC LIMIT 1) WHERE n.capital_city_id IS NULL OR NOT EXISTS(SELECT 1 FROM cities c WHERE c.id=n.capital_city_id AND c.nation_id=n.id)`,
