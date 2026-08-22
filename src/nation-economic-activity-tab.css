@@ -1,0 +1,29 @@
+.nation-economic-activity {
+  padding: 0;
+  overflow: hidden;
+}
+.nation-economic-activity>header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:22px 24px;
+  border-bottom:1px solid var(--line);
+}
+.nation-economic-activity>header h2 { margin:4px 0 0;font-size:28px }
+.nation-economic-activity>header>svg { width:25px;color:var(--gold) }
+.nation-economic-activity .trade-history-tabs {
+  flex-direction:row !important;
+  margin:0 !important;
+}
+.nation-economic-activity .trade-history-content {
+  min-height:280px;
+  overflow-x:auto;
+  padding:8px 24px 24px;
+}
+.nation-economic-activity .trade-history-pager {
+  flex-direction:row !important;
+  margin:18px 0 0 !important;
+}
+@media(max-width:760px) {
+  .nation-economic-activity .trade-history-content { padding:8px 14px 18px }
+}

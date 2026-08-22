@@ -1,0 +1,44 @@
+.reinforcement-inputs label {
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb,var(--panel) 76%,var(--surface));
+}
+.reinforcement-inputs label>span {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.reinforcement-inputs input {
+  width: 100%;
+  min-height: 50px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb,var(--gold) 32%,var(--line));
+  background: var(--surface);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.reinforcement-inputs input:focus {
+  border-color: var(--gold);
+  outline: 2px solid color-mix(in srgb,var(--gold) 20%,transparent);
+  outline-offset: 1px;
+}
+.reinforcement-inputs label>small {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.reinforcement-inputs label>small b {
+  color: var(--gold);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+[data-theme="light"] .reinforcement-inputs label {
+  background: #f7f4ed;
+}

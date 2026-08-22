@@ -383,7 +383,11 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 		}
 	}
 	deployments, _ := warDeploymentBatches(r.Context(), a.db, id, aid, stage, rounds, next)
-	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures})
+	availableForDeployment := map[string]int64{}
+	for _, unit := range militaryUnitKeys() {
+		availableForDeployment[unit] = committedAvailable(r.Context(), a.db, me.ID, unit)
+	}
+	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures})
 }
 
 func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
