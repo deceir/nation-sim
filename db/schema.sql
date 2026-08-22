@@ -91,6 +91,18 @@ CREATE TABLE IF NOT EXISTS market_orders (
   CONSTRAINT fk_orders_target FOREIGN KEY (target_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   INDEX idx_orders_book (resource, side, status, unit_price, created_at)
 ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS connection_observations (
+  id CHAR(36) PRIMARY KEY,
+  user_id CHAR(36) NOT NULL,
+  connection_token CHAR(64) NOT NULL,
+  first_seen_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  last_seen_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  login_count INT UNSIGNED NOT NULL DEFAULT 1,
+  CONSTRAINT fk_connection_observations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE INDEX uq_connection_observation (user_id,connection_token),
+  INDEX idx_connection_observations_match (connection_token,last_seen_at),
+  INDEX idx_connection_observations_retention (last_seen_at)
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS trade_shipments (
   id CHAR(36) PRIMARY KEY,
   order_id CHAR(36) NULL,
@@ -675,7 +687,6 @@ CREATE TABLE IF NOT EXISTS user_bans (
   CONSTRAINT fk_user_bans_user FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
   CONSTRAINT fk_user_bans_actor FOREIGN KEY(banned_by_user_id) REFERENCES users(id)
 ) ENGINE=InnoDB;
-
 CREATE TABLE IF NOT EXISTS crisis_templates (
   id VARCHAR(80) PRIMARY KEY,
   internal_name VARCHAR(100) NOT NULL UNIQUE,

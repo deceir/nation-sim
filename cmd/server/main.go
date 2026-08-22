@@ -43,7 +43,10 @@ func (t *transaction) QueryRow(c context.Context, q string, a ...any) *sql.Row {
 func (t *transaction) Rollback(context.Context) error { return t.Tx.Rollback() }
 func (t *transaction) Commit(context.Context) error   { return t.Tx.Commit() }
 
-type app struct{ db *database }
+type app struct {
+	db               *database
+	connectionSecret []byte
+}
 type user struct {
 	ID, Email, ThemePreference string
 	TurnRevenueNotifications   bool
@@ -74,7 +77,12 @@ func main() {
 	if err = db.PingContext(context.Background()); err != nil {
 		log.Fatal(err)
 	}
-	a := &app{db: db}
+	connectionSecret := os.Getenv("CONNECTION_LINK_SECRET")
+	if connectionSecret == "" {
+		connectionSecret = dsn
+		log.Print("CONNECTION_LINK_SECRET is not set; connection linking will use the database credential as a stable fallback. Set a dedicated secret in Railway.")
+	}
+	a := &app{db: db, connectionSecret: []byte(connectionSecret)}
 	if err = a.syncCrisisCatalog(context.Background()); err != nil {
 		log.Fatal(err)
 	}
@@ -141,6 +149,7 @@ func main() {
 	mux.HandleFunc("POST /api/dev/notifications", a.auth(a.broadcastGameNotification))
 	mux.HandleFunc("POST /api/nations/{id}/report", a.auth(a.reportNation))
 	mux.HandleFunc("GET /api/dev/bans", a.auth(a.devBans))
+	mux.HandleFunc("GET /api/nations/{id}/connections", a.auth(a.nationConnections))
 	mux.HandleFunc("POST /api/dev/bans", a.auth(a.banUser))
 	mux.HandleFunc("DELETE /api/dev/bans/{userID}", a.auth(a.unbanUser))
 	mux.HandleFunc("DELETE /api/dev/nations/{id}/guardian", a.auth(a.removeGuardianStatus))
@@ -280,6 +289,7 @@ func (a *app) userSettings(w http.ResponseWriter, r *http.Request, u user) {
 func (a *app) newSession(w http.ResponseWriter, r *http.Request, userID string) {
 	token := random(32)
 	a.db.Exec(r.Context(), `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,DATE_ADD(NOW(), INTERVAL 30 DAY))`, digest(token), userID)
+	a.recordConnectionObservation(r, userID)
 	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", HttpOnly: true, Secure: env("COOKIE_SECURE", "") == "true", SameSite: http.SameSiteLaxMode, MaxAge: 2592000})
 }
 
