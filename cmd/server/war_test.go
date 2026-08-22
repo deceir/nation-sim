@@ -42,3 +42,82 @@ func TestHaversineDistance(t *testing.T) {
 		t.Fatalf("unexpected London-Tokyo distance %.1f", got)
 	}
 }
+
+func TestAutomaticDefenseCommitment(t *testing.T) {
+	cases := []struct {
+		available int64
+		percent   int
+		want      int64
+	}{
+		{1000, 60, 600},
+		{7, 60, 4},
+		{1000, 0, 0},
+		{1000, 100, 1000},
+		{1000, -10, 0},
+		{1000, 120, 1000},
+	}
+	for _, tc := range cases {
+		if got := automaticDefenseCommitment(tc.available, tc.percent); got != tc.want {
+			t.Fatalf("automaticDefenseCommitment(%d,%d)=%d; want %d", tc.available, tc.percent, got, tc.want)
+		}
+	}
+}
+
+func TestInitialMobilizationRoundsDoNotResolveCombat(t *testing.T) {
+	cases := []struct {
+		round, mobilization int
+		pending             bool
+	}{
+		{1, 1, false},
+		{1, 2, true},
+		{1, 5, true},
+		{4, 5, true},
+		{5, 5, false},
+	}
+	for _, tc := range cases {
+		if got := initialMobilizationPending(tc.round, tc.mobilization); got != tc.pending {
+			t.Fatalf("initialMobilizationPending(%d,%d)=%v; want %v", tc.round, tc.mobilization, got, tc.pending)
+		}
+	}
+}
+
+func TestWarInfrastructureDamageIsOutcomeScaledAndCapped(t *testing.T) {
+	cases := []struct {
+		outcome         string
+		targeted        bool
+		strategicRounds int
+		want            float64
+	}{
+		{"minor", false, 0, .0075},
+		{"major", false, 8, .015},
+		{"decisive", false, 20, .025},
+		{"minor", true, 1, .02},
+		{"major", true, 0, .0275},
+		{"decisive", true, 6, .06},
+	}
+	for _, tc := range cases {
+		if got := warInfrastructureDamageRate(tc.outcome, tc.targeted, tc.strategicRounds); math.Abs(got-tc.want) > 0.000001 {
+			t.Fatalf("damage rate for %s targeted=%v strikes=%d was %.4f; want %.4f", tc.outcome, tc.targeted, tc.strategicRounds, got, tc.want)
+		}
+	}
+}
+
+func TestWarInstitutionDamageIsSeparateAndBounded(t *testing.T) {
+	if got := warInstitutionDestructionChance("minor", false, 0); math.Abs(got-.004) > 0.000001 {
+		t.Fatalf("minor institution risk = %.4f; want .004", got)
+	}
+	if got := warInstitutionDestructionChance("decisive", true, 100); math.Abs(got-warInstitutionRiskCap) > 0.000001 {
+		t.Fatalf("institution risk = %.4f; want cap %.4f", got, warInstitutionRiskCap)
+	}
+	if got := deterministicInstitutionLosses("war", "province", "school", 12, 0); got != 0 {
+		t.Fatalf("zero-risk damage destroyed %d institutions", got)
+	}
+	if got := deterministicInstitutionLosses("war", "province", "school", 12, 1); got != 12 {
+		t.Fatalf("certain damage destroyed %d institutions; want 12", got)
+	}
+	first := deterministicWarDamageRoll("war", "province", "school", 0)
+	second := deterministicWarDamageRoll("war", "province", "school", 0)
+	if first != second || first < 0 || first >= 1 {
+		t.Fatalf("deterministic damage roll invalid: %f then %f", first, second)
+	}
+}

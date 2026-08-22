@@ -93,6 +93,19 @@ func militaryDailyProductionLimit(unit string, capacity int64) int64 {
 	return limit
 }
 
+func automaticDefenseCommitment(available int64, percent int) int64 {
+	percent = max(0, min(100, percent))
+	return int64(math.Floor(float64(max(int64(0), available)) * float64(percent) / 100))
+}
+
+func defensiveCommitmentPercent(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, nationID, unit string) int {
+	percent := 60
+	_ = q.QueryRowContext(ctx, `SELECT commitment_percent FROM military_defense_settings WHERE nation_id=? AND unit_type=?`, nationID, unit).Scan(&percent)
+	return max(0, min(100, percent))
+}
+
 func committedMilitary(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nationID, unit string) int64 {
@@ -241,9 +254,50 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		capacity := militaryCapacity(spec, population, provinces)
 		dailyLimit := militaryDailyProductionLimit(key, capacity)
 		committed := committedMilitary(r.Context(), a.db, nid, key)
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday)})
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday), "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
 	}
 	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
+}
+
+func (a *app) saveMilitaryDefenseSettings(w http.ResponseWriter, r *http.Request, u user) {
+	var in struct {
+		Percentages map[string]int `json:"percentages"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Percentages) == 0 {
+		problem(w, http.StatusBadRequest, "Choose at least one automatic defense percentage.")
+		return
+	}
+	for unit, percent := range in.Percentages {
+		if _, ok := militaryUnits[unit]; !ok || percent < 0 || percent > 100 {
+			problem(w, http.StatusBadRequest, "Automatic defense percentages must be between 0 and 100.")
+			return
+		}
+	}
+	var nationID string
+	if err := a.db.QueryRowContext(r.Context(), `SELECT id FROM nations WHERE owner_id=?`, u.ID).Scan(&nationID); err != nil {
+		problem(w, http.StatusNotFound, "Nation not found.")
+		return
+	}
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not save automatic defense settings.")
+		return
+	}
+	defer tx.Rollback()
+	for unit, percent := range in.Percentages {
+		if _, err = tx.ExecContext(r.Context(), `INSERT INTO military_defense_settings(nation_id,unit_type,commitment_percent) VALUES(?,?,?) ON DUPLICATE KEY UPDATE commitment_percent=VALUES(commitment_percent)`, nationID, unit, percent); err != nil {
+			problem(w, http.StatusInternalServerError, "Could not save automatic defense settings.")
+			return
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		problem(w, http.StatusInternalServerError, "Could not save automatic defense settings.")
+		return
+	}
+	write(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (a *app) produceMilitary(w http.ResponseWriter, r *http.Request, u user) {

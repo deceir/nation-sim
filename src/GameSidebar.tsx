@@ -1,8 +1,8 @@
 import {useEffect,useState} from 'react';
-import {AreaChart,BarChart3,Bell,BriefcaseBusiness,Coins,Crosshair,FileClock,Globe2,Hammer,Landmark,List,LogOut,Menu,Settings,Shield,ShieldAlert,ShoppingCart,Swords,Trophy,UserRound,UsersRound,X} from 'lucide-react';
+import {AreaChart,BarChart3,Bell,BriefcaseBusiness,Coins,Crosshair,FileClock,Flame,Globe2,Hammer,Landmark,List,LogOut,Menu,Settings,Shield,ShieldAlert,ShoppingCart,Swords,Trophy,UserRound,UsersRound,X} from 'lucide-react';
 type Props={tab:string;setTab:(tab:string)=>void;logout:()=>void};
 const primary=[['home','World Home',Globe2],['crises','Daily Crises',ShieldAlert],['economy','Economy',Coins],['national-projects','National Projects',Hammer],['market','World Market',ShoppingCart],['ventures','Private Ventures',BriefcaseBusiness],['military','Military',Swords],['wars','War Room',Crosshair]] as const;
-const directories=[['nations','Nation List',UsersRound],['alliance-list','Alliance List',List],['leaderboards','Leaderboards',Trophy],['world-data','Visualized Data',AreaChart],['changelog','Changelog',FileClock]] as const;
+const directories=[['nations','Nation List',UsersRound],['alliance-list','Alliance List',List],['conflicts','Conflicts',Flame],['leaderboards','Leaderboards',Trophy],['world-data','Visualized Data',AreaChart],['changelog','Changelog',FileClock]] as const;
 const personal=[['overview','My Nation',Landmark],['my-alliance','My Alliance',Shield],['revenue','Revenue',BarChart3],['notifications','Notifications',Bell],['profile','Edit Nation',UserRound],['settings','Settings',Settings]] as const;
 
 export default function GameSidebar({tab,setTab,logout}:Props){
