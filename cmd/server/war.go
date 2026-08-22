@@ -15,13 +15,27 @@ import (
 )
 
 const (
-	warRoundHours        = 6
-	warMaximumRounds     = 20
-	warOffensiveSlots    = 2
-	warDefensiveSlots    = 3
-	warArmisticeDays     = 7
-	warMinimumCapitulate = 4
+	warRoundHours            = 6
+	warMaximumRounds         = 20
+	warOffensiveSlots        = 2
+	warDefensiveSlots        = 3
+	warArmisticeDays         = 7
+	warMinimumCapitulate     = 4
+	warMinimumInfrastructure = 50
+	warInstitutionRiskCap    = .03
 )
+
+var warInfrastructureBaseDamage = map[string]float64{
+	"minor": .0075, "major": .015, "decisive": .025,
+}
+
+var warInfrastructureCampaignBonus = map[string]float64{
+	"minor": .0125, "major": .025, "decisive": .035,
+}
+
+var warInstitutionBaseRisk = map[string]float64{
+	"minor": .004, "major": .008, "decisive": .012,
+}
 
 type warObjective struct {
 	Name        string `json:"name"`
@@ -286,10 +300,11 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 			}
 		}
 	}
-	// A home defender automatically commits up to 60% of its free force. This
-	// prevents an offline player being represented by an empty battlefield.
+	// A home defender commits the configured percentage of each currently
+	// available unit type. Nations without a saved preference use 60%.
 	for _, unit := range militaryUnitKeys() {
-		amount := int64(math.Floor(float64(committedAvailable(r.Context(), tx, defender.ID, unit)) * .60))
+		available := committedAvailable(r.Context(), tx, defender.ID, unit)
+		amount := automaticDefenseCommitment(available, defensiveCommitmentPercent(r.Context(), tx, defender.ID, unit))
 		if amount > 0 {
 			_, _ = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round) VALUES(?,?,?,?,?,?,0)`, uuid(), id, defender.ID, unit, amount, amount)
 		}
@@ -298,7 +313,7 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not update the attacking nation's Guardian status.")
 		return
 	}
-	_, _ = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War declared',?),(?,?,'war','Your nation is at war',?)`, uuid(), attacker.ID, fmt.Sprintf("You declared war on %s. Initial forces arrive in %d strategic rounds.", defender.Name, mobilization), uuid(), defender.ID, fmt.Sprintf("%s declared war on your nation. Home forces have begun an automatic defensive deployment.", attacker.Name))
+	_, _ = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War declared',?),(?,?,'war','Your nation is at war',?)`, uuid(), attacker.ID, fmt.Sprintf("You declared war on %s. Initial forces arrive in %d strategic rounds.", defender.Name, mobilization), uuid(), defender.ID, fmt.Sprintf("%s declared war on your nation. Your automatic defense settings have been applied.", attacker.Name))
 	if err = tx.Commit(); err != nil {
 		problem(w, 500, "Could not finalize the declaration.")
 		return
@@ -589,6 +604,43 @@ func deterministicWarJitter(id string, round int, side string) float64 {
 	return .92 + float64(sum[0])/255*.16
 }
 
+func warInfrastructureDamageRate(outcome string, targetedCampaign bool, strategicRounds int) float64 {
+	rate := warInfrastructureBaseDamage[outcome]
+	if targetedCampaign {
+		bonus := warInfrastructureCampaignBonus[outcome]
+		if strategicRounds == 0 {
+			bonus *= .5
+		}
+		rate += bonus
+	}
+	return rate
+}
+
+func warInstitutionDestructionChance(outcome string, targetedCampaign bool, strategicRounds int) float64 {
+	chance := warInstitutionBaseRisk[outcome]
+	chance += math.Min(.012, float64(strategicRounds)*.001)
+	if targetedCampaign {
+		chance += .006
+	}
+	return math.Min(warInstitutionRiskCap, chance)
+}
+
+func deterministicWarDamageRoll(conflictID, cityID, buildingType string, index int) float64 {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%d:civic-damage", conflictID, cityID, buildingType, index)))
+	value := uint32(sum[0])<<24 | uint32(sum[1])<<16 | uint32(sum[2])<<8 | uint32(sum[3])
+	return float64(value) / 4294967296.0
+}
+
+func deterministicInstitutionLosses(conflictID, cityID, buildingType string, quantity int, chance float64) int {
+	lost := 0
+	for i := 0; i < quantity; i++ {
+		if deterministicWarDamageRoll(conflictID, cityID, buildingType, i) < chance {
+			lost++
+		}
+	}
+	return lost
+}
+
 func warForces(ctx context.Context, tx *sql.Tx, id, nid string, round int) (map[string]int64, error) {
 	result := map[string]int64{}
 	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(remaining) FROM war_deployments WHERE conflict_id=? AND nation_id=? AND arrives_round<=? AND remaining>0 GROUP BY unit_type`, id, nid, round)
@@ -604,6 +656,23 @@ func warForces(ctx context.Context, tx *sql.Tx, id, nid string, round int) (map[
 		}
 	}
 	return result, nil
+}
+
+func initialMobilizationPending(round, mobilizationRounds int) bool {
+	return round < max(1, mobilizationRounds)
+}
+
+func resolveInitialMobilizationRound(ctx context.Context, tx *sql.Tx, s *warState, round int) error {
+	s.Rounds = round
+	s.Stage = "mobilizing"
+	s.NextRound = s.NextRound.Add(warRoundHours * time.Hour)
+	summary := fmt.Sprintf("Round %d: Attacking forces remain in transit. Combat begins when the initial deployment arrives in round %d.", round, s.Mobilization)
+	_, err := tx.ExecContext(ctx, `INSERT INTO war_reports(id,conflict_id,round_number,attacker_operation,defender_operation,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary) VALUES(?,?,?,?,?,0,0,'{}','{}',1,1,0,0,0,0,?)`, uuid(), s.ConflictID, round, "hold", "hold", summary)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE wars SET stage='mobilizing',rounds_resolved=?,next_round_at=? WHERE conflict_id=?`, s.Rounds, s.NextRound, s.ConflictID)
+	return err
 }
 
 func warOrder(ctx context.Context, tx *sql.Tx, id, nid string, round int) (string, string) {
@@ -776,6 +845,9 @@ func (a *app) processWarRounds(ctx context.Context, turn time.Time) {
 
 func resolveWarRound(ctx context.Context, tx *sql.Tx, s *warState) error {
 	round := s.Rounds + 1
+	if initialMobilizationPending(round, s.Mobilization) {
+		return resolveInitialMobilizationRound(ctx, tx, s, round)
+	}
 	af, err := warForces(ctx, tx, s.ConflictID, s.AttackerID, round)
 	if err != nil {
 		return err
@@ -947,24 +1019,40 @@ func endWar(ctx context.Context, tx *sql.Tx, s *warState, winner, outcome, reaso
 			}
 		}
 	}
-	if winner == s.AttackerID && s.Objective == "infrastructure_campaign" {
-		damageRate := .02
-		if outcome == "major" {
-			damageRate = .05
-		}
-		if outcome == "decisive" {
-			damageRate = .08
-		}
+	if loser != "" {
 		var strategicRounds int
-		_ = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM war_orders WHERE conflict_id=? AND nation_id=? AND operation='strategic_strike'`, s.ConflictID, s.AttackerID).Scan(&strategicRounds)
-		if strategicRounds == 0 {
-			damageRate *= .5
-		}
-		_, err = tx.ExecContext(ctx, `UPDATE cities SET infrastructure=GREATEST(50,FLOOR(infrastructure*(1-?))) WHERE nation_id=?`, damageRate, s.DefenderID)
-		if err != nil {
+		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM war_orders WHERE conflict_id=? AND nation_id=? AND operation='strategic_strike'`, s.ConflictID, winner).Scan(&strategicRounds); err != nil {
 			return err
 		}
-		_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','Infrastructure damaged',?)`, uuid(), s.DefenderID, fmt.Sprintf("The concluded infrastructure campaign reduced provincial Infrastructure by approximately %.0f%%. Infrastructure cannot be damaged below 50.", damageRate*100))
+		targetedCampaign := winner == s.AttackerID && s.Objective == "infrastructure_campaign"
+		damageRate := warInfrastructureDamageRate(outcome, targetedCampaign, strategicRounds)
+		var infrastructureBefore, infrastructureAfter float64
+		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, loser).Scan(&infrastructureBefore); err != nil {
+			return err
+		}
+		if damageRate > 0 {
+			_, err = tx.ExecContext(ctx, `UPDATE cities SET infrastructure=GREATEST(?,FLOOR(infrastructure*(1-?))) WHERE nation_id=?`, warMinimumInfrastructure, damageRate, loser)
+			if err != nil {
+				return err
+			}
+		}
+		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, loser).Scan(&infrastructureAfter); err != nil {
+			return err
+		}
+
+		institutionChance := warInstitutionDestructionChance(outcome, targetedCampaign, strategicRounds)
+		destroyed, destroyedNames, destroyErr := destroyWarDamagedInstitutions(ctx, tx, s.ConflictID, loser, institutionChance)
+		if destroyErr != nil {
+			return destroyErr
+		}
+		messageParts := []string{fmt.Sprintf("The defeat destroyed %.0f Infrastructure across your Provinces (%.1f%% of the pre-war total).", math.Max(0, infrastructureBefore-infrastructureAfter), actualDamagePercent(infrastructureBefore, infrastructureAfter))}
+		if destroyed > 0 {
+			messageParts = append(messageParts, fmt.Sprintf("Separate combat damage destroyed %d civic institution(s): %s.", destroyed, strings.Join(destroyedNames, ", ")))
+		} else {
+			messageParts = append(messageParts, "No civic institutions were destroyed.")
+		}
+		messageParts = append(messageParts, fmt.Sprintf("Infrastructure cannot be reduced below %d, and reduced capacity never removes existing institutions.", warMinimumInfrastructure))
+		_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War damage assessed',?)`, uuid(), loser, strings.Join(messageParts, " "))
 	}
 	message := "The war ended in a stalemate."
 	if winner != "" {
@@ -972,4 +1060,69 @@ func endWar(ctx context.Context, tx *sql.Tx, s *warState, winner, outcome, reaso
 	}
 	_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War concluded',?),(?,?,'war','War concluded',?)`, uuid(), s.AttackerID, message, uuid(), s.DefenderID, message)
 	return nil
+}
+
+func actualDamagePercent(before, after float64) float64 {
+	if before <= 0 {
+		return 0
+	}
+	return math.Max(0, (before-after)/before*100)
+}
+
+func destroyWarDamagedInstitutions(ctx context.Context, tx *sql.Tx, conflictID, nationID string, chance float64) (int, []string, error) {
+	if chance <= 0 {
+		return 0, nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT i.id,c.id,i.building_type,i.quantity FROM city_improvements i JOIN cities c ON c.id=i.city_id WHERE c.nation_id=? AND i.quantity>0 ORDER BY c.created_at,c.id,i.building_type FOR UPDATE`, nationID)
+	if err != nil {
+		return 0, nil, err
+	}
+	type institutionDamage struct {
+		id, cityID, buildingType string
+		quantity, lost           int
+	}
+	damages := []institutionDamage{}
+	for rows.Next() {
+		var damage institutionDamage
+		if err := rows.Scan(&damage.id, &damage.cityID, &damage.buildingType, &damage.quantity); err != nil {
+			rows.Close()
+			return 0, nil, err
+		}
+		damage.lost = deterministicInstitutionLosses(conflictID, damage.cityID, damage.buildingType, damage.quantity, chance)
+		if damage.lost > 0 {
+			damages = append(damages, damage)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return 0, nil, err
+	}
+
+	total := 0
+	byName := map[string]int{}
+	for _, damage := range damages {
+		if damage.lost >= damage.quantity {
+			_, err = tx.ExecContext(ctx, `DELETE FROM city_improvements WHERE id=?`, damage.id)
+		} else {
+			_, err = tx.ExecContext(ctx, `UPDATE city_improvements SET quantity=quantity-? WHERE id=?`, damage.lost, damage.id)
+		}
+		if err != nil {
+			return 0, nil, err
+		}
+		name := damage.buildingType
+		if spec, ok := buildings[damage.buildingType]; ok {
+			name = spec.Name
+		}
+		byName[name] += damage.lost
+		total += damage.lost
+	}
+	names := make([]string, 0, len(byName))
+	for name, quantity := range byName {
+		names = append(names, fmt.Sprintf("%d %s", quantity, name))
+	}
+	sort.Strings(names)
+	return total, names, nil
 }

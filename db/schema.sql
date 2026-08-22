@@ -230,6 +230,14 @@ CREATE TABLE IF NOT EXISTS military_inventory (
   CONSTRAINT fk_military_inventory_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   CHECK (quantity >= 0)
 ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS military_defense_settings (
+  nation_id CHAR(36) NOT NULL,
+  unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
+  commitment_percent TINYINT UNSIGNED NOT NULL DEFAULT 60,
+  PRIMARY KEY (nation_id,unit_type),
+  CONSTRAINT fk_military_defense_settings_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CHECK (commitment_percent <= 100)
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS military_production_daily (
   nation_id CHAR(36) NOT NULL,
   unit_type ENUM('soldiers','tanks','ships','jets','drones') NOT NULL,
