@@ -104,6 +104,11 @@ func main() {
 		{"wars", "defender_lat", "DECIMAL(9,6) NULL"},
 		{"wars", "defender_lng", "DECIMAL(9,6) NULL"},
 		{"war_deployments", "deployment_group_id", "CHAR(36) NULL"},
+		{"war_deployments", "origin_type", "ENUM('homeland','fob') NOT NULL DEFAULT 'homeland'"},
+		{"war_deployments", "origin_fob_id", "CHAR(36) NULL"},
+		{"war_deployments", "origin_name", "VARCHAR(180) NOT NULL DEFAULT 'Homeland'"},
+		{"war_deployments", "origin_lat", "DECIMAL(9,6) NULL"},
+		{"war_deployments", "origin_lng", "DECIMAL(9,6) NULL"},
 	}
 	// Moderation is a first-class notification category. Existing databases need
 	// an explicit enum expansion; fresh databases receive it from schema.sql.

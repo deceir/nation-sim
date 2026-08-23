@@ -1,3 +1,5 @@
+.reinforcement-origin{display:grid;grid-template-columns:minmax(150px,220px) minmax(240px,1fr);align-items:center;gap:12px;padding:13px 15px;border:1px solid var(--line);background:#ffffff03;font-size:11px;font-weight:700}
+.reinforcement-origin select{min-height:43px;padding:9px 11px}
 .reinforcement-inputs label {
   gap: 8px;
   padding: 12px;
@@ -42,3 +44,4 @@
 [data-theme="light"] .reinforcement-inputs label {
   background: #f7f4ed;
 }
+@media(max-width:720px){.reinforcement-origin{grid-template-columns:1fr}}
