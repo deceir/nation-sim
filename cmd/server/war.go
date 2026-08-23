@@ -387,7 +387,13 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 	for _, unit := range militaryUnitKeys() {
 		availableForDeployment[unit] = committedAvailable(r.Context(), a.db, me.ID, unit)
 	}
-	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures})
+	var currentOrder any
+	var orderOperation, orderPosture string
+	var orderSubmittedAt time.Time
+	if a.db.QueryRowContext(r.Context(), `SELECT operation,posture,submitted_at FROM war_orders WHERE conflict_id=? AND nation_id=? AND round_number=?`, id, me.ID, rounds+1).Scan(&orderOperation, &orderPosture, &orderSubmittedAt) == nil {
+		currentOrder = map[string]any{"round": rounds + 1, "operation": orderOperation, "posture": orderPosture, "submittedAt": orderSubmittedAt}
+	}
+	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures, "currentOrder": currentOrder})
 }
 
 func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
@@ -494,7 +500,7 @@ func (a *app) submitWarOrders(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not save orders.")
 		return
 	}
-	write(w, 200, map[string]any{"ok": true, "round": rounds + 1})
+	write(w, 200, map[string]any{"ok": true, "round": rounds + 1, "operation": in.Operation, "posture": in.Posture})
 }
 
 func (a *app) capitulateWar(w http.ResponseWriter, r *http.Request, u user) {
