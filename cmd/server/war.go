@@ -418,7 +418,8 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 	id := r.PathValue("id")
 	var aid, did, stage string
 	var rounds, mobilization int
-	if tx.QueryRowContext(r.Context(), `SELECT c.attacker_id,c.defender_id,w.stage,w.rounds_resolved,w.mobilization_rounds FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=? FOR UPDATE`, id).Scan(&aid, &did, &stage, &rounds, &mobilization) != nil || (me.ID != aid && me.ID != did) {
+	var battlefieldLat, battlefieldLng sql.NullFloat64
+	if tx.QueryRowContext(r.Context(), `SELECT c.attacker_id,c.defender_id,w.stage,w.rounds_resolved,w.mobilization_rounds,w.defender_lat,w.defender_lng FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=? FOR UPDATE`, id).Scan(&aid, &did, &stage, &rounds, &mobilization, &battlefieldLat, &battlefieldLng) != nil || (me.ID != aid && me.ID != did) {
 		problem(w, 404, "War not found.")
 		return
 	}
@@ -447,10 +448,14 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		originType = "fob"
-		var targetLat, targetLng float64
-		if tx.QueryRowContext(r.Context(), `SELECT location_lat,location_lng FROM nations WHERE id=?`, did).Scan(&targetLat, &targetLng) != nil {
-			problem(w, 409, "The opposing nation has no valid military location.")
-			return
+		targetLat, targetLng := battlefieldLat.Float64, battlefieldLng.Float64
+		if !battlefieldLat.Valid || !battlefieldLng.Valid {
+			defender, defenderErr := loadWarNation(r.Context(), tx, "id", did)
+			if defenderErr != nil {
+				problem(w, 409, "The campaign battlefield location is unavailable.")
+				return
+			}
+			targetLat, targetLng = defender.Lat, defender.Lng
 		}
 		travelRounds = 1 + int(math.Floor(haversineKM(originLat, originLng, targetLat, targetLng)/3500))
 	}

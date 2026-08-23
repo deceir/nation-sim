@@ -8,7 +8,7 @@ import (
 )
 
 const forwardOperatingBaseCost int64 = 25_000_000
-const forwardOperatingBaseProvinceRequirement = 3
+const forwardOperatingBaseProvinceRequirement = 2
 const forwardOperatingBaseCooldownDays = 60
 
 var forwardOperatingBaseCodes = []string{"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliett", "Kilo", "Lima", "Mike", "November", "Oscar", "Papa", "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "X-ray", "Yankee", "Zulu"}
@@ -88,7 +88,7 @@ func (a *app) buildForwardOperatingBase(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if provinces < forwardOperatingBaseProvinceRequirement {
-		problem(w, 409, "At least 3 Provinces are required to build a Forward Operating Base.")
+		problem(w, 409, "At least 2 Provinces are required to build a Forward Operating Base.")
 		return
 	}
 	var existing int
