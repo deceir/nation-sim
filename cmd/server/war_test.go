@@ -63,24 +63,6 @@ func TestAutomaticDefenseCommitment(t *testing.T) {
 	}
 }
 
-func TestInitialMobilizationRoundsDoNotResolveCombat(t *testing.T) {
-	cases := []struct {
-		round, mobilization int
-		pending             bool
-	}{
-		{1, 1, false},
-		{1, 2, true},
-		{1, 5, true},
-		{4, 5, true},
-		{5, 5, false},
-	}
-	for _, tc := range cases {
-		if got := initialMobilizationPending(tc.round, tc.mobilization); got != tc.pending {
-			t.Fatalf("initialMobilizationPending(%d,%d)=%v; want %v", tc.round, tc.mobilization, got, tc.pending)
-		}
-	}
-}
-
 func TestWarInfrastructureDamageIsOutcomeScaledAndCapped(t *testing.T) {
 	cases := []struct {
 		outcome         string

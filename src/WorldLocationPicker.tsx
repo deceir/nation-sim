@@ -2,6 +2,7 @@ import React,{useEffect,useId,useRef,useState}from'react';
 import {isLand}from'./landMask';
 
 export type WorldLocation={latitude:number;longitude:number;continent:string};
+export type WorldMapMarker={latitude:number;longitude:number;label:string;kind?:'fob'};
 type Point=[number,number];
 type Shape={name:string;points:Point[]};
 type Camera={zoom:number;x:number;y:number};
@@ -20,7 +21,7 @@ function inPolygon(point:Point,polygon:Point[]){let inside=false;for(let i=0,j=p
 function locate(latitude:number,longitude:number){return shapes.find(shape=>inPolygon([longitude,latitude],shape.points))?.name}
 function clampCamera(camera:Camera):Camera{return{...camera,x:Math.min(0,Math.max(1000-1000*camera.zoom,camera.x)),y:Math.min(0,Math.max(500-500*camera.zoom,camera.y))}}
 
-export default function WorldLocationPicker({value,onChange,disabled=false,readOnly=false,compact=false}:{value:WorldLocation|null;onChange:(value:WorldLocation)=>void;disabled?:boolean;readOnly?:boolean;compact?:boolean}){
+export default function WorldLocationPicker({value,onChange,disabled=false,readOnly=false,compact=false,mode='nation',markers=[]}:{value:WorldLocation|null;onChange:(value:WorldLocation)=>void;disabled?:boolean;readOnly?:boolean;compact?:boolean;mode?:'nation'|'fob';markers?:WorldMapMarker[]}){
   const svg=useRef<SVGSVGElement>(null),labelId=useId(),drag=useRef<{clientX:number;clientY:number;x:number;y:number;moved:boolean}|null>(null),ignoreClick=useRef(false),[hint,setHint]=useState(readOnly?'Approximate national position':'Select a point on land.'),[camera,setCamera]=useState<Camera>({zoom:1,x:0,y:0});
   const screenPoint=(clientX:number,clientY:number)=>{if(!svg.current)return null;const matrix=svg.current.getScreenCTM();if(!matrix)return null;const cursor=svg.current.createSVGPoint();cursor.x=clientX;cursor.y=clientY;return cursor.matrixTransform(matrix.inverse())};
   const setZoom=(nextZoom:number,focus={x:500,y:250})=>setCamera(old=>{const zoom=Math.min(6,Math.max(1,nextZoom)),ratio=zoom/old.zoom;return clampCamera({zoom,x:focus.x-(focus.x-old.x)*ratio,y:focus.y-(focus.y-old.y)*ratio})});
@@ -39,8 +40,8 @@ export default function WorldLocationPicker({value,onChange,disabled=false,readO
   const pointerUp=()=>{if(drag.current?.moved)ignoreClick.current=true;drag.current=null};
   const markerX=value?(value.longitude+180)/360*1000:0,markerY=value?(90-value.latitude)/180*500:0;
   return <div className={`world-location-picker${readOnly?' readonly':''}${compact?' compact':''}`}>
-    <div className="location-heading"><div><span className="eyebrow">NATIONAL LOCATION</span><h3>{readOnly?'Position in the world':'Pick a position on the world map'}</h3></div>{value&&<strong>{value.continent}</strong>}</div>
-    {!readOnly&&<p>Click the approximate location of your capital. Scroll to zoom and drag to pan. Diplomatia determines the continent automatically and stores the coordinates for future distance-based mechanics.</p>}
+    <div className="location-heading"><div><span className="eyebrow">{mode==='fob'?'BASE LOCATION':'NATIONAL LOCATION'}</span><h3>{readOnly?'Position in the world':mode==='fob'?'Select a Forward Operating Base site':'Pick a position on the world map'}</h3></div>{value&&<strong>{value.continent}</strong>}</div>
+    {!readOnly&&<p>{mode==='fob'?'Select a land position for the base. Scroll to zoom and drag to pan.':'Click the approximate location of your capital. Scroll to zoom and drag to pan. Diplomatia determines the continent automatically and stores the coordinates for future distance-based mechanics.'}</p>}
     <div className="map-viewport">
       <svg ref={svg} viewBox="0 0 1000 500" onClick={choose} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} role="img" aria-labelledby={labelId} className={disabled?'disabled':''}>
         <title id={labelId}>Interactive zoomable world map location picker</title>
@@ -48,6 +49,7 @@ export default function WorldLocationPicker({value,onChange,disabled=false,readO
         <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
           <image href="/world-map.svg" x="0" y="0" width="1000" height="500" preserveAspectRatio="none" className="detailed-world-map"/>
           {value&&<g className="map-marker" transform={`translate(${markerX} ${markerY}) scale(${1/camera.zoom})`}><circle r="14"/><circle r="5"/></g>}
+          {markers.map(marker=>{const x=(marker.longitude+180)/360*1000,y=(90-marker.latitude)/180*500;return <g className="map-fob-marker" transform={`translate(${x} ${y}) scale(${1/camera.zoom})`} key={`${marker.label}-${marker.latitude}-${marker.longitude}`}><rect x="-9" y="-9" width="18" height="18" rx="2"/><path d="M-4 5V-5H4V5M-6 5H6M0-5V-10"/><title>{marker.label}</title></g>})}
         </g>
       </svg>
       <div className="map-controls" aria-label="Map zoom controls"><button type="button" onClick={()=>setZoom(camera.zoom*1.4)} aria-label="Zoom in">+</button><button type="button" onClick={()=>setZoom(camera.zoom/1.4)} aria-label="Zoom out">−</button><button type="button" onClick={()=>setCamera({zoom:1,x:0,y:0})} disabled={camera.zoom===1} aria-label="Reset map view">Reset</button></div>

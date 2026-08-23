@@ -185,10 +185,32 @@ CREATE TABLE IF NOT EXISTS war_deployments (
   remaining BIGINT NOT NULL,
   arrives_round INT NOT NULL DEFAULT 0,
   deployment_group_id CHAR(36) NULL,
+  origin_type ENUM('homeland','fob') NOT NULL DEFAULT 'homeland',
+  origin_fob_id CHAR(36) NULL,
+  origin_name VARCHAR(180) NOT NULL DEFAULT 'Homeland',
+  origin_lat DECIMAL(9,6) NULL,
+  origin_lng DECIMAL(9,6) NULL,
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   CONSTRAINT fk_war_deployments_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
   CONSTRAINT fk_war_deployments_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE,
   INDEX idx_war_deployments_force(conflict_id,nation_id,arrives_round)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS forward_operating_base_status (
+  nation_id CHAR(36) PRIMARY KEY,
+  rebuild_after TIMESTAMP(6) NULL,
+  next_sequence INT NOT NULL DEFAULT 0,
+  CONSTRAINT fk_fob_status_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS forward_operating_bases (
+  id CHAR(36) PRIMARY KEY,
+  nation_id CHAR(36) NOT NULL,
+  name VARCHAR(180) NOT NULL,
+  latitude DECIMAL(9,6) NOT NULL,
+  longitude DECIMAL(9,6) NOT NULL,
+  continent VARCHAR(30) NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_fob_nation(nation_id),
+  CONSTRAINT fk_fob_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS war_orders (
   conflict_id CHAR(36) NOT NULL,
