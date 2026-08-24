@@ -5,16 +5,37 @@ import (
 	"time"
 )
 
-func TestInfrastructurePricingCompoundsAndBulkDiscounts(t *testing.T) {
+func TestInfrastructurePricingCompoundsContinuously(t *testing.T) {
 	low := infraPurchaseCost(100, 50, 0)
 	high := infraPurchaseCost(1000, 50, 0)
 	if high <= low {
 		t.Fatalf("expected developed city infrastructure to cost more: low=%v high=%v", low, high)
 	}
-	individual := infraPurchaseCost(100, 99, 0) / 99
-	bulk := infraPurchaseCost(100, 100, 0) / 100
-	if bulk >= individual {
-		t.Fatalf("expected 100-unit purchase discount: individual=%v bulk=%v", individual, bulk)
+	if infraUnitCost(101, 0) <= infraUnitCost(100, 0) || infraUnitCost(1001, 0) <= infraUnitCost(1000, 0) {
+		t.Fatal("every successive Infrastructure point should cost more than the previous point")
+	}
+}
+
+func TestInfrastructureIncomeHasContinuousDiminishingReturns(t *testing.T) {
+	if incomeEffectiveInfrastructure(100) != 100 {
+		t.Fatal("starter Infrastructure should retain its full income benefit")
+	}
+	earlyGain := incomeEffectiveInfrastructure(200) - incomeEffectiveInfrastructure(100)
+	lateGain := incomeEffectiveInfrastructure(1100) - incomeEffectiveInfrastructure(1000)
+	veryLateGain := incomeEffectiveInfrastructure(5100) - incomeEffectiveInfrastructure(5000)
+	if !(earlyGain > lateGain && lateGain > veryLateGain && veryLateGain > 0) {
+		t.Fatalf("Infrastructure gains must stay positive while diminishing: early=%v late=%v veryLate=%v", earlyGain, lateGain, veryLateGain)
+	}
+	base := ModelNation{TaxRate: 25, Happiness: 65, Education: 40, EmploymentRate: 72, Technology: 20, Cities: []ModelCity{{Infra: 100, Land: 10000, Buildings: map[string]int{}, Upgrades: map[string]int{}}}}
+	earlyTax := calculateEconomy(base).DailyTax
+	base.Cities[0].Infra = 200
+	earlyTaxGain := calculateEconomy(base).DailyTax - earlyTax
+	base.Cities[0].Infra = 1000
+	lateTax := calculateEconomy(base).DailyTax
+	base.Cities[0].Infra = 1100
+	lateTaxGain := calculateEconomy(base).DailyTax - lateTax
+	if lateTaxGain <= 0 || lateTaxGain >= earlyTaxGain {
+		t.Fatalf("late Infrastructure should add less tax than early Infrastructure: early=%v late=%v", earlyTaxGain, lateTaxGain)
 	}
 }
 
