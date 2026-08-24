@@ -173,12 +173,19 @@ func infraPurchaseCost(current, amount float64, tech int) float64 {
 	for i := 0.0; i < steps; i++ {
 		total += infraUnitCost(current+i, tech)
 	}
-	if amount >= 100 {
-		total *= .97
-	} else if amount >= 50 {
-		total *= .98
-	}
 	return math.Ceil(total)
+}
+
+// Infrastructure keeps expanding the taxable population base without allowing
+// mature Provinces to scale linearly forever. The curve is linear through the
+// starter level, then its marginal population benefit declines continuously.
+func incomeEffectiveInfrastructure(infrastructure float64) float64 {
+	const starterLevel = 100.0
+	const diminishingScale = 800.0
+	if infrastructure <= starterLevel {
+		return math.Max(0, infrastructure)
+	}
+	return starterLevel + diminishingScale*math.Log1p((infrastructure-starterLevel)/diminishingScale)
 }
 
 func landPurchaseCost(current, amount float64, tech int) float64 {
@@ -238,7 +245,8 @@ func calculateEconomy(n ModelNation) NationResult {
 		militaryIndustry := provinceUpgradeEffect(c.Upgrades["military_industry"])
 		commerceUpgrade := provinceUpgradeEffect(c.Upgrades["commerce"])
 		civil := provinceUpgradeEffect(c.Upgrades["civil"])
-		r.BasePopulation = c.Infra * balance.PopulationPerInfra * (1 + agriculture*.008 + civil*.0125)
+		incomeInfrastructure := incomeEffectiveInfrastructure(c.Infra)
+		r.BasePopulation = incomeInfrastructure * balance.PopulationPerInfra * (1 + agriculture*.008 + civil*.0125)
 		density := r.BasePopulation / math.Max(1, c.Land*75)
 		r.DensityMultiplier = 1
 		if density > 1 {
@@ -339,7 +347,7 @@ func calculateEconomy(n ModelNation) NationResult {
 		}
 		r.InfrastructureUpkeep = c.Infra * balance.InfraUpkeepBase * (1 + math.Floor(c.Infra/1200)*.12) * upkeepModifier * policyInfrastructureUpkeep
 		r.Upkeep = r.InfrastructureUpkeep + r.CivicUpkeep
-		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.008, "civilPopulationBonus": 1 + civil*.0125, "commerceUpgradeBonus": 1 + commerceUpgrade*.025}
+		r.Contributors = map[string]float64{"happinessMultiplier": happyMult, "educationBonus": eduBonus, "educationEmploymentBonus": educationEmployment, "civicEmploymentBonus": employmentBonus, "employmentMultiplier": r.EmploymentMultiplier, "taxCollectionMultiplier": r.TaxCollectionMultiplier, "densityMultiplier": r.DensityMultiplier, "diseaseMultiplier": 1 - r.Disease, "crimeMultiplier": 1 - r.Crime, "powerMultiplier": r.PowerMultiplier, "incomeEffectiveInfrastructure": incomeInfrastructure, "infrastructureSupportedPopulation": supportedPopulation, "populationCapacity": r.PopulationCapacity, "productionPollution": productionPollution, "productionDiseasePressure": productionDisease, "productionCrimePressure": productionCrime, "agriculturePopulationBonus": 1 + agriculture*.008, "civilPopulationBonus": 1 + civil*.0125, "commerceUpgradeBonus": 1 + commerceUpgrade*.025}
 		out.DailyTax += r.TaxRevenue
 		out.DailyUpkeep += r.Upkeep
 		out.DailyInfrastructureUpkeep += r.InfrastructureUpkeep

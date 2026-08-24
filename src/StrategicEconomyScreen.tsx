@@ -16,7 +16,8 @@ export default function StrategicEconomyScreen(){
  useEffect(()=>{void load()},[]);
  const confirmationFor=(path:string,body:any,method:string)=>{
   if(method==='POST'&&path==='/cities')return `Found ${body.name}? This spends ¥${Number(data?.expansion?.cashCost||0).toLocaleString()}, ${Number(data?.expansion?.constructionMaterials||0).toLocaleString()} Construction Materials, and applies temporary Happiness strain.`;
-  if(path==='/economy/development')return `Invest in ${body.amount} Infrastructure? This spends ¥${Number(data?.provinces?.find((province:any)=>province.ID===body.cityID)?.InfrastructureQuotes?.[String(body.amount)]||0).toLocaleString()} from the Treasury.`;
+  // Infrastructure is intentionally a one-click investment from its quoted button.
+  if(path==='/economy/development'&&body.kind==='infrastructure')return '';
   if(method==='POST'&&path==='/economy/improvements'){
    const institution=data?.civicInstitutions?.find((item:any)=>item.key===body.building);
    if(institution){const resources=Object.entries(institution.resourceCosts||{}).map(([key,value])=>`${Number(value).toLocaleString()} t ${labels[key]||key}`).join(', ');return `Build ${institution.name}? This spends ¥${Number(institution.cashCost||0).toLocaleString()}${resources?` and ${resources}`:''}, and adds ¥${Number(institution.dailyUpkeep||0).toLocaleString()} to daily civic upkeep.`}
