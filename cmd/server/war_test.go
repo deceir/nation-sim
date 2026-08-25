@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-func TestNextWarRoundUsesSixHourUTCWindows(t *testing.T) {
+func TestNextWarRoundUsesThreeHourUTCWindows(t *testing.T) {
 	cases := []struct {
 		at, want string
 	}{
-		{"2026-08-22T00:00:00Z", "2026-08-22T06:00:00Z"},
-		{"2026-08-22T05:59:00Z", "2026-08-22T06:00:00Z"},
-		{"2026-08-22T18:45:00Z", "2026-08-23T00:00:00Z"},
+		{"2026-08-22T00:00:00Z", "2026-08-22T03:00:00Z"},
+		{"2026-08-22T02:59:00Z", "2026-08-22T03:00:00Z"},
+		{"2026-08-22T21:45:00Z", "2026-08-23T00:00:00Z"},
 	}
 	for _, tc := range cases {
 		at, _ := time.Parse(time.RFC3339, tc.at)
@@ -43,6 +43,49 @@ func TestHaversineDistance(t *testing.T) {
 	}
 }
 
+func TestTwoFrontTheatersAndFasterMobilization(t *testing.T) {
+	home, foreign := warTheatersForNation("attacker", "attacker")
+	if home != attackerHomelandTheater || foreign != defenderHomelandTheater {
+		t.Fatalf("attacker theaters = %s/%s", home, foreign)
+	}
+	home, foreign = warTheatersForNation("defender", "attacker")
+	if home != defenderHomelandTheater || foreign != attackerHomelandTheater {
+		t.Fatalf("defender theaters = %s/%s", home, foreign)
+	}
+	if warMobilizationRounds(0) != 1 || warMobilizationRounds(9000) != 2 || warMobilizationRounds(20000) != 4 || warMobilizationRounds(40000) != 4 {
+		t.Fatal("expeditionary mobilization should scale from one to four rounds")
+	}
+}
+
+func TestWarObjectivesHaveMechanics(t *testing.T) {
+	for key, objective := range warObjectives {
+		if objective.Effect == "" {
+			t.Fatalf("objective %s has no displayed mechanical effect", key)
+		}
+	}
+	if operationMultiplier("ground_assault", "soldiers", "land", "military_suppression") <= operationMultiplier("ground_assault", "soldiers", "land", "territorial_pressure") {
+		t.Fatal("military suppression should improve applicable combat operations")
+	}
+	if !combinedArms(map[string]int64{"soldiers": 100, "tanks": 2, "jets": 1}) || combinedArms(map[string]int64{"soldiers": 100, "tanks": 2}) {
+		t.Fatal("territorial combined-arms requirement should require three fielded unit types")
+	}
+}
+
+func TestTwoFrontDamageIsEarnedAndBounded(t *testing.T) {
+	infra, civic := warAccumulatedDamageRates(0, "")
+	if infra != 0 || civic != 0 {
+		t.Fatalf("no foreign pressure should cause no damage: %.4f/%.4f", infra, civic)
+	}
+	infra, civic = warAccumulatedDamageRates(3, "")
+	if infra <= 0 || civic <= 0 {
+		t.Fatalf("successful foreign pressure should threaten both infrastructure and institutions: %.4f/%.4f", infra, civic)
+	}
+	infra, civic = warAccumulatedDamageRates(100, "decisive")
+	if infra != .06 || civic != warInstitutionRiskCap {
+		t.Fatalf("war damage exceeded its recovery-safe caps: %.4f/%.4f", infra, civic)
+	}
+}
+
 func TestAutomaticDefenseCommitment(t *testing.T) {
 	cases := []struct {
 		available int64
@@ -63,34 +106,7 @@ func TestAutomaticDefenseCommitment(t *testing.T) {
 	}
 }
 
-func TestWarInfrastructureDamageIsOutcomeScaledAndCapped(t *testing.T) {
-	cases := []struct {
-		outcome         string
-		targeted        bool
-		strategicRounds int
-		want            float64
-	}{
-		{"minor", false, 0, .0075},
-		{"major", false, 8, .015},
-		{"decisive", false, 20, .025},
-		{"minor", true, 1, .02},
-		{"major", true, 0, .0275},
-		{"decisive", true, 6, .06},
-	}
-	for _, tc := range cases {
-		if got := warInfrastructureDamageRate(tc.outcome, tc.targeted, tc.strategicRounds); math.Abs(got-tc.want) > 0.000001 {
-			t.Fatalf("damage rate for %s targeted=%v strikes=%d was %.4f; want %.4f", tc.outcome, tc.targeted, tc.strategicRounds, got, tc.want)
-		}
-	}
-}
-
 func TestWarInstitutionDamageIsSeparateAndBounded(t *testing.T) {
-	if got := warInstitutionDestructionChance("minor", false, 0); math.Abs(got-.004) > 0.000001 {
-		t.Fatalf("minor institution risk = %.4f; want .004", got)
-	}
-	if got := warInstitutionDestructionChance("decisive", true, 100); math.Abs(got-warInstitutionRiskCap) > 0.000001 {
-		t.Fatalf("institution risk = %.4f; want cap %.4f", got, warInstitutionRiskCap)
-	}
 	if got := deterministicInstitutionLosses("war", "province", "school", 12, 0); got != 0 {
 		t.Fatalf("zero-risk damage destroyed %d institutions", got)
 	}
@@ -109,7 +125,7 @@ func TestWarDeploymentArrivalUsesScheduledRoundWindows(t *testing.T) {
 	if got := warDeploymentArrival(next, 2, 3); !got.Equal(next) {
 		t.Fatalf("next-round deployment arrives at %s; want %s", got, next)
 	}
-	if got := warDeploymentArrival(next, 2, 5); !got.Equal(next.Add(12 * time.Hour)) {
-		t.Fatalf("round-five deployment arrives at %s; want %s", got, next.Add(12*time.Hour))
+	if got := warDeploymentArrival(next, 2, 5); !got.Equal(next.Add(6 * time.Hour)) {
+		t.Fatalf("round-five deployment arrives at %s; want %s", got, next.Add(6*time.Hour))
 	}
 }

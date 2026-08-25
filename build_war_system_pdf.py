@@ -200,7 +200,7 @@ def build():
 
     story = [
         P("The basic shape of a war", "Section"),
-        P("A war is a scheduled contest between two nations. Each side commits real military inventory, chooses an operation and posture for the next round, pays the supply cost of the force in the field, and receives a report after resolution. Rounds occur every six hours at 00:00, 06:00, 12:00, and 18:00 UTC. A war lasts no more than 20 rounds, or five days."),
+        P("A war is a scheduled contest between two nations. Each side commits real military inventory, chooses an operation and posture for the next round, pays the supply cost of the force in the field, and receives a report after resolution. Rounds occur every three hours beginning at 00:00 UTC. A war lasts no more than 20 rounds, or two and a half days."),
         data_table(
             ["Rule", "Current value", "What it means"],
             [

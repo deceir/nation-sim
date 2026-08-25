@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	warRoundHours            = 6
+	warRoundHours            = 3
 	warMaximumRounds         = 20
 	warOffensiveSlots        = 3
 	warDefensiveSlots        = 3
@@ -23,14 +23,12 @@ const (
 	warMinimumCapitulate     = 4
 	warMinimumInfrastructure = 50
 	warInstitutionRiskCap    = .03
+	attackerHomelandTheater  = "attacker_homeland"
+	defenderHomelandTheater  = "defender_homeland"
 )
 
 var warInfrastructureBaseDamage = map[string]float64{
 	"minor": .0075, "major": .015, "decisive": .025,
-}
-
-var warInfrastructureCampaignBonus = map[string]float64{
-	"minor": .0125, "major": .025, "decisive": .035,
 }
 
 var warInstitutionBaseRisk = map[string]float64{
@@ -40,15 +38,16 @@ var warInstitutionBaseRisk = map[string]float64{
 type warObjective struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	Effect      string `json:"effect"`
 }
 
 var warObjectives = map[string]warObjective{
-	"resource_seizure":        {"Resource Seizure", "Win a limited transfer of strategic stockpiles. War remains a poor substitute for trade or raiding."},
-	"military_suppression":    {"Military Suppression", "Prioritize destruction of the opposing armed forces and their readiness."},
-	"infrastructure_campaign": {"Infrastructure Campaign", "Use strategic operations to pressure productive infrastructure. Permanent province destruction is not part of this first release."},
-	"blockade":                {"Blockade", "Reward naval and air control, particularly on maritime approaches."},
-	"territorial_pressure":    {"Territorial Pressure", "Apply broad pressure through sustained combined-arms control."},
-	"regime_pressure":         {"Regime Pressure", "Target national resolve through sustained political and military pressure."},
+	"resource_seizure":        {"Resource Seizure", "Capture a limited share of strategic stockpiles if victorious.", "Expeditionary control earns 10% more score; the winner seizes 1–3% of capped strategic stockpiles."},
+	"military_suppression":    {"Military Suppression", "Prioritize destruction of opposing armed forces and readiness.", "Ground Assault and Air Campaign receive 10% more effective strength."},
+	"infrastructure_campaign": {"Infrastructure Campaign", "Use strategic operations to pressure productive infrastructure.", "Successful foreign-front pressure causes 35% more post-war infrastructure damage."},
+	"blockade":                {"Blockade", "Reward naval and air control on maritime approaches.", "Naval Blockade receives 18% more strength; ships receive an additional maritime-route bonus."},
+	"territorial_pressure":    {"Territorial Pressure", "Apply broad pressure through sustained combined-arms control.", "Foreign forces containing at least three unit types earn 20% more score and 15% more damage pressure."},
+	"regime_pressure":         {"Regime Pressure", "Target national resolve through sustained political and military pressure.", "Successful attacks in enemy territory inflict 35% more resolve damage."},
 }
 
 var warOperations = map[string]string{
@@ -58,24 +57,43 @@ var warOperations = map[string]string{
 var warPostures = map[string]string{"entrenched": "Entrenched", "balanced": "Balanced", "aggressive": "Aggressive"}
 var warUnitStrength = map[string]float64{"soldiers": 1, "tanks": 34, "ships": 85, "jets": 62, "drones": 18}
 
+func warRules() map[string]any {
+	return map[string]any{
+		"roundHours": warRoundHours, "maximumRounds": warMaximumRounds,
+		"offensiveSlots": warOffensiveSlots, "defensiveSlots": warDefensiveSlots,
+		"minimumCapitulationRound": warMinimumCapitulate, "earlyCapitulationResolve": 35,
+		"stalemateScoreMargin": 3, "majorVictoryMargin": 15, "decisiveVictoryMargin": 35,
+		"maximumInfrastructureDamagePercent": 6, "maximumInstitutionRiskPercent": 3,
+		"maximumMobilizationRounds": 4,
+	}
+}
+
 type warNation struct {
 	ID, Name, Continent string
 	Lat, Lng            float64
 }
 
 type warState struct {
-	ConflictID                                 string
-	AttackerID, DefenderID                     string
-	Objective, Stage                           string
-	AttackerScore, DefenderScore               float64
-	AttackerResolve, DefenderResolve           float64
-	AttackerReadiness, DefenderReadiness       float64
-	AttackerOrganization, DefenderOrganization float64
-	Rounds                                     int
-	NextRound, EndsAt                          time.Time
-	Distance, SupplyFactor                     float64
-	Route                                      string
-	Mobilization                               int
+	ConflictID                                     string
+	AttackerID, DefenderID                         string
+	Objective, Stage                               string
+	AttackerScore, DefenderScore                   float64
+	AttackerResolve, DefenderResolve               float64
+	AttackerReadiness, DefenderReadiness           float64
+	AttackerOrganization, DefenderOrganization     float64
+	Rounds                                         int
+	NextRound, EndsAt                              time.Time
+	Distance, SupplyFactor                         float64
+	AttackerDamagePressure, DefenderDamagePressure float64
+	Route                                          string
+	Mobilization                                   int
+}
+
+func warTheatersForNation(nationID, attackerID string) (home, foreign string) {
+	if nationID == attackerID {
+		return attackerHomelandTheater, defenderHomelandTheater
+	}
+	return defenderHomelandTheater, attackerHomelandTheater
 }
 
 func nextWarRound(t time.Time) time.Time {
@@ -93,6 +111,10 @@ func haversineKM(aLat, aLng, bLat, bLng float64) float64 {
 	dLat, dLng := (bLat-aLat)*toRad, (bLng-aLng)*toRad
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(aLat*toRad)*math.Cos(bLat*toRad)*math.Sin(dLng/2)*math.Sin(dLng/2)
 	return radius * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+}
+
+func warMobilizationRounds(distanceKM float64) int {
+	return min(4, 1+int(math.Floor(math.Max(0, distanceKM)/5000)))
 }
 
 func warRoute(from, to string) string {
@@ -164,7 +186,7 @@ func (a *app) warsDashboard(w http.ResponseWriter, r *http.Request, u user) {
 			status["reconstructionUntil"] = reconstruction.Time
 		}
 	}
-	write(w, 200, map[string]any{"nationID": me.ID, "wars": wars, "objectives": warObjectives, "operations": warOperations, "postures": warPostures, "status": status, "rules": map[string]any{"roundHours": warRoundHours, "maximumRounds": warMaximumRounds, "offensiveSlots": warOffensiveSlots, "defensiveSlots": warDefensiveSlots, "minimumCapitulationRound": warMinimumCapitulate}})
+	write(w, 200, map[string]any{"nationID": me.ID, "wars": wars, "objectives": warObjectives, "operations": warOperations, "postures": warPostures, "status": status, "rules": warRules()})
 }
 
 func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
@@ -276,10 +298,7 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	distance := haversineKM(attacker.Lat, attacker.Lng, defender.Lat, defender.Lng)
-	mobilization := 1 + int(math.Floor(distance/3500))
-	if mobilization > 5 {
-		mobilization = 5
-	}
+	mobilization := warMobilizationRounds(distance)
 	supplyFactor := 1 + math.Min(1.25, distance/12000)
 	next := nextWarRound(time.Now().UTC())
 	ends := next.Add(time.Duration(warMaximumRounds*warRoundHours) * time.Hour)
@@ -339,46 +358,70 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	id := r.PathValue("id")
 	var aid, an, did, dn, objective, stage, route, winner, outcome, endReason string
-	var as, ds, ar, dr, ard, drd, aorg, dorg, distance, supply, attackerLat, attackerLng, defenderLat, defenderLng float64
-	var rounds, mobilization int
+	var as, ds, ar, dr, ard, drd, aorg, dorg, distance, supply, attackerLat, attackerLng, defenderLat, defenderLng, attackerDamagePressure, defenderDamagePressure, attackerInfrastructureDamage, defenderInfrastructureDamage float64
+	var rounds, mobilization, attackerInstitutionsDestroyed, defenderInstitutionsDestroyed int
 	var next, ends time.Time
 	var ended sql.NullTime
-	err = a.db.QueryRowContext(r.Context(), `SELECT c.attacker_id,an.name,c.defender_id,dn.name,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,COALESCE(w.attacker_lat,an.location_lat,0),COALESCE(w.attacker_lng,an.location_lng,0),COALESCE(w.defender_lat,dn.location_lat,0),COALESCE(w.defender_lng,dn.location_lng,0),w.mobilization_rounds,w.supply_factor,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at FROM conflicts c JOIN wars w ON w.conflict_id=c.id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id WHERE c.id=? AND (c.attacker_id=? OR c.defender_id=?)`, id, me.ID, me.ID).Scan(&aid, &an, &did, &dn, &objective, &stage, &as, &ds, &ar, &dr, &ard, &drd, &aorg, &dorg, &rounds, &next, &ends, &distance, &route, &attackerLat, &attackerLng, &defenderLat, &defenderLng, &mobilization, &supply, &winner, &outcome, &endReason, &ended)
+	err = a.db.QueryRowContext(r.Context(), `SELECT c.attacker_id,an.name,c.defender_id,dn.name,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,COALESCE(w.attacker_lat,an.location_lat,0),COALESCE(w.attacker_lng,an.location_lng,0),COALESCE(w.defender_lat,dn.location_lat,0),COALESCE(w.defender_lng,dn.location_lng,0),w.mobilization_rounds,w.supply_factor,w.attacker_damage_pressure,w.defender_damage_pressure,w.attacker_infrastructure_damage,w.defender_infrastructure_damage,w.attacker_institutions_destroyed,w.defender_institutions_destroyed,COALESCE(w.winner_nation_id,''),COALESCE(w.outcome,''),COALESCE(w.end_reason,''),w.ended_at FROM conflicts c JOIN wars w ON w.conflict_id=c.id JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id WHERE c.id=? AND (c.attacker_id=? OR c.defender_id=?)`, id, me.ID, me.ID).Scan(&aid, &an, &did, &dn, &objective, &stage, &as, &ds, &ar, &dr, &ard, &drd, &aorg, &dorg, &rounds, &next, &ends, &distance, &route, &attackerLat, &attackerLng, &defenderLat, &defenderLng, &mobilization, &supply, &attackerDamagePressure, &defenderDamagePressure, &attackerInfrastructureDamage, &defenderInfrastructureDamage, &attackerInstitutionsDestroyed, &defenderInstitutionsDestroyed, &winner, &outcome, &endReason, &ended)
 	if err != nil {
 		problem(w, 404, "War not found.")
 		return
 	}
 	forces := map[string]map[string]any{"attacker": {}, "defender": {}}
-	rows, _ := a.db.QueryContext(r.Context(), `SELECT nation_id,unit_type,SUM(quantity),SUM(remaining),MIN(arrives_round) FROM war_deployments WHERE conflict_id=? GROUP BY nation_id,unit_type`, id)
+	rows, _ := a.db.QueryContext(r.Context(), `SELECT nation_id,unit_type,deployment_theater,SUM(quantity),SUM(remaining),MIN(arrives_round),SUM(CASE WHEN arrives_round<=? THEN remaining ELSE 0 END),SUM(CASE WHEN arrives_round>? THEN remaining ELSE 0 END) FROM war_deployments WHERE conflict_id=? GROUP BY nation_id,unit_type,deployment_theater`, rounds, rounds, id)
 	if rows != nil {
 		defer rows.Close()
 		for rows.Next() {
-			var nid, unit string
-			var qty, remaining int64
+			var nid, unit, theater string
+			var qty, remaining, inTheater, enRoute int64
 			var arrives int
-			if rows.Scan(&nid, &unit, &qty, &remaining, &arrives) == nil {
+			if rows.Scan(&nid, &unit, &theater, &qty, &remaining, &arrives, &inTheater, &enRoute) == nil {
 				side := "defender"
 				if nid == aid {
 					side = "attacker"
 				}
-				forces[side][unit] = map[string]any{"deployed": qty, "remaining": remaining, "arrivesRound": arrives}
+				force, ok := forces[side][unit].(map[string]any)
+				if !ok {
+					force = map[string]any{"deployed": int64(0), "remaining": int64(0), "arrivesRound": arrives, "homeTheater": int64(0), "foreignTheater": int64(0), "enRoute": int64(0)}
+					forces[side][unit] = force
+				}
+				force["deployed"] = force["deployed"].(int64) + qty
+				force["remaining"] = force["remaining"].(int64) + remaining
+				force["enRoute"] = force["enRoute"].(int64) + enRoute
+				homeTheater, _ := warTheatersForNation(nid, aid)
+				key := "foreignTheater"
+				if theater == homeTheater {
+					key = "homeTheater"
+				}
+				force[key] = force[key].(int64) + inTheater
 			}
 		}
 	}
+	for side, nationID := range map[string]string{"attacker": aid, "defender": did} {
+		for _, unit := range militaryUnitKeys() {
+			force, ok := forces[side][unit].(map[string]any)
+			if !ok {
+				force = map[string]any{"deployed": int64(0), "remaining": int64(0), "arrivesRound": 0, "homeTheater": int64(0), "foreignTheater": int64(0), "enRoute": int64(0)}
+				forces[side][unit] = force
+			}
+			force["reserve"] = committedAvailable(r.Context(), a.db, nationID, unit)
+			force["lost"] = max(int64(0), force["deployed"].(int64)-force["remaining"].(int64))
+		}
+	}
 	reports := []map[string]any{}
-	rr, _ := a.db.QueryContext(r.Context(), `SELECT round_number,resolved_at,attacker_operation,defender_operation,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary FROM war_reports WHERE conflict_id=? ORDER BY round_number DESC`, id)
+	rr, _ := a.db.QueryContext(r.Context(), `SELECT round_number,resolved_at,attacker_operation,defender_operation,attacker_foreign_posture,defender_foreign_posture,attacker_home_operation,attacker_home_posture,defender_home_operation,defender_home_posture,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary FROM war_reports WHERE conflict_id=? ORDER BY round_number DESC`, id)
 	if rr != nil {
 		defer rr.Close()
 		for rr.Next() {
 			var round int
 			var at time.Time
-			var ao, do_, al, dl, summary string
+			var ao, do_, afp, dfp, aho, ahp, dho, dhp, al, dl, summary string
 			var ast, dst, asu, dsu, asc, dsc, arc, drc float64
-			if rr.Scan(&round, &at, &ao, &do_, &ast, &dst, &al, &dl, &asu, &dsu, &asc, &dsc, &arc, &drc, &summary) == nil {
+			if rr.Scan(&round, &at, &ao, &do_, &afp, &dfp, &aho, &ahp, &dho, &dhp, &ast, &dst, &al, &dl, &asu, &dsu, &asc, &dsc, &arc, &drc, &summary) == nil {
 				var alm, dlm map[string]int64
 				_ = json.Unmarshal([]byte(al), &alm)
 				_ = json.Unmarshal([]byte(dl), &dlm)
-				reports = append(reports, map[string]any{"round": round, "resolvedAt": at, "attackerOperation": ao, "defenderOperation": do_, "attackerStrength": ast, "defenderStrength": dst, "attackerLosses": alm, "defenderLosses": dlm, "attackerSupply": asu, "defenderSupply": dsu, "attackerScoreChange": asc, "defenderScoreChange": dsc, "attackerResolveChange": arc, "defenderResolveChange": drc, "summary": summary})
+				reports = append(reports, map[string]any{"round": round, "resolvedAt": at, "attackerOperation": ao, "defenderOperation": do_, "attackerForeignPosture": afp, "defenderForeignPosture": dfp, "attackerHomeOperation": aho, "attackerHomePosture": ahp, "defenderHomeOperation": dho, "defenderHomePosture": dhp, "attackerStrength": ast, "defenderStrength": dst, "attackerLosses": alm, "defenderLosses": dlm, "attackerSupply": asu, "defenderSupply": dsu, "attackerScoreChange": asc, "defenderScoreChange": dsc, "attackerResolveChange": arc, "defenderResolveChange": drc, "summary": summary})
 			}
 		}
 	}
@@ -388,18 +431,19 @@ func (a *app) warDetails(w http.ResponseWriter, r *http.Request, u user) {
 		availableForDeployment[unit] = committedAvailable(r.Context(), a.db, me.ID, unit)
 	}
 	var currentOrder any
-	var orderOperation, orderPosture string
+	var orderOperation, orderPosture, homeOperation, homePosture string
 	var orderSubmittedAt time.Time
-	if a.db.QueryRowContext(r.Context(), `SELECT operation,posture,submitted_at FROM war_orders WHERE conflict_id=? AND nation_id=? AND round_number=?`, id, me.ID, rounds+1).Scan(&orderOperation, &orderPosture, &orderSubmittedAt) == nil {
-		currentOrder = map[string]any{"round": rounds + 1, "operation": orderOperation, "posture": orderPosture, "submittedAt": orderSubmittedAt}
+	if a.db.QueryRowContext(r.Context(), `SELECT operation,posture,home_operation,home_posture,submitted_at FROM war_orders WHERE conflict_id=? AND nation_id=? AND round_number=?`, id, me.ID, rounds+1).Scan(&orderOperation, &orderPosture, &homeOperation, &homePosture, &orderSubmittedAt) == nil {
+		currentOrder = map[string]any{"round": rounds + 1, "foreignOperation": orderOperation, "foreignPosture": orderPosture, "homeOperation": homeOperation, "homePosture": homePosture, "submittedAt": orderSubmittedAt}
 	}
-	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures, "currentOrder": currentOrder, "attackerFOBs": a.fobsForNation(r.Context(), aid), "defenderFOBs": a.fobsForNation(r.Context(), did)})
+	write(w, 200, map[string]any{"id": id, "attackerID": aid, "attackerName": an, "attackerLat": attackerLat, "attackerLng": attackerLng, "defenderID": did, "defenderName": dn, "defenderLat": defenderLat, "defenderLng": defenderLng, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "objectiveEffect": warObjectives[objective].Effect, "stage": stage, "attackerScore": as, "defenderScore": ds, "attackerResolve": ar, "defenderResolve": dr, "attackerReadiness": ard, "defenderReadiness": drd, "attackerOrganization": aorg, "defenderOrganization": dorg, "attackerDamagePressure": attackerDamagePressure, "defenderDamagePressure": defenderDamagePressure, "attackerInfrastructureDamage": attackerInfrastructureDamage, "defenderInfrastructureDamage": defenderInfrastructureDamage, "attackerInstitutionsDestroyed": attackerInstitutionsDestroyed, "defenderInstitutionsDestroyed": defenderInstitutionsDestroyed, "roundsResolved": rounds, "nextRoundAt": next, "endsAt": ends, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supply, "winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "availableForDeployment": availableForDeployment, "myNationID": me.ID, "isAttacker": me.ID == aid, "operations": warOperations, "postures": warPostures, "currentOrder": currentOrder, "attackerFOBs": a.fobsForNation(r.Context(), aid), "defenderFOBs": a.fobsForNation(r.Context(), did), "theaters": map[string]any{"attackerHomeland": attackerHomelandTheater, "defenderHomeland": defenderHomelandTheater}, "rules": warRules()})
 }
 
 func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 	var in struct {
 		Forces      map[string]int64
 		OriginFOBID string
+		Theater     string
 	}
 	if !decode(w, r, &in) {
 		return
@@ -418,8 +462,8 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 	id := r.PathValue("id")
 	var aid, did, stage string
 	var rounds, mobilization int
-	var battlefieldLat, battlefieldLng sql.NullFloat64
-	if tx.QueryRowContext(r.Context(), `SELECT c.attacker_id,c.defender_id,w.stage,w.rounds_resolved,w.mobilization_rounds,w.defender_lat,w.defender_lng FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=? FOR UPDATE`, id).Scan(&aid, &did, &stage, &rounds, &mobilization, &battlefieldLat, &battlefieldLng) != nil || (me.ID != aid && me.ID != did) {
+	var attackerLat, attackerLng, defenderLat, defenderLng sql.NullFloat64
+	if tx.QueryRowContext(r.Context(), `SELECT c.attacker_id,c.defender_id,w.stage,w.rounds_resolved,w.mobilization_rounds,w.attacker_lat,w.attacker_lng,w.defender_lat,w.defender_lng FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=? FOR UPDATE`, id).Scan(&aid, &did, &stage, &rounds, &mobilization, &attackerLat, &attackerLng, &defenderLat, &defenderLng) != nil || (me.ID != aid && me.ID != did) {
 		problem(w, 404, "War not found.")
 		return
 	}
@@ -436,11 +480,40 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This war has ended.")
 		return
 	}
+	homeTheater, foreignTheater := warTheatersForNation(me.ID, aid)
+	theater := strings.TrimSpace(in.Theater)
+	if theater == "" {
+		theater = foreignTheater
+	}
+	if theater != homeTheater && theater != foreignTheater {
+		problem(w, 400, "Choose a valid deployment theater.")
+		return
+	}
 	originType, originFOBID, originName := "homeland", "", me.Name+" Homeland"
 	originLat, originLng := me.Lat, me.Lng
-	travelRounds := 1
-	if me.ID == aid {
-		travelRounds = mobilization
+	targetNationID := did
+	targetLat, targetLng := defenderLat.Float64, defenderLng.Float64
+	targetValid := defenderLat.Valid && defenderLng.Valid
+	if me.ID == did {
+		targetNationID = aid
+		targetLat, targetLng = attackerLat.Float64, attackerLng.Float64
+		targetValid = attackerLat.Valid && attackerLng.Valid
+	}
+	if !targetValid {
+		targetNation, targetErr := loadWarNation(r.Context(), tx, "id", targetNationID)
+		if targetErr != nil {
+			problem(w, 409, "The opposing homeland location is unavailable.")
+			return
+		}
+		targetLat, targetLng = targetNation.Lat, targetNation.Lng
+	}
+	travelRounds := 0
+	if theater == foreignTheater {
+		travelRounds = warMobilizationRounds(haversineKM(me.Lat, me.Lng, targetLat, targetLng))
+	}
+	if strings.TrimSpace(in.OriginFOBID) != "" && theater == homeTheater {
+		problem(w, 400, "Forward Operating Bases can only support expeditionary deployments.")
+		return
 	}
 	if strings.TrimSpace(in.OriginFOBID) != "" {
 		if tx.QueryRowContext(r.Context(), `SELECT id,name,latitude,longitude FROM forward_operating_bases WHERE id=? AND nation_id=?`, in.OriginFOBID, me.ID).Scan(&originFOBID, &originName, &originLat, &originLng) != nil {
@@ -448,18 +521,12 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		originType = "fob"
-		targetLat, targetLng := battlefieldLat.Float64, battlefieldLng.Float64
-		if !battlefieldLat.Valid || !battlefieldLng.Valid {
-			defender, defenderErr := loadWarNation(r.Context(), tx, "id", did)
-			if defenderErr != nil {
-				problem(w, 409, "The campaign battlefield location is unavailable.")
-				return
-			}
-			targetLat, targetLng = defender.Lat, defender.Lng
-		}
-		travelRounds = 1 + int(math.Floor(haversineKM(originLat, originLng, targetLat, targetLng)/3500))
+		travelRounds = warMobilizationRounds(haversineKM(originLat, originLng, targetLat, targetLng))
 	}
-	arrives := rounds + max(1, travelRounds)
+	arrives := rounds
+	if theater == foreignTheater {
+		arrives = rounds + max(1, travelRounds)
+	}
 	deploymentGroup := uuid()
 	total := int64(0)
 	for _, unit := range militaryUnitKeys() {
@@ -469,7 +536,7 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 			return
 		}
 		if amount > 0 {
-			_, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_type,origin_fob_id,origin_name,origin_lat,origin_lng) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, uuid(), id, me.ID, unit, amount, amount, arrives, deploymentGroup, originType, nullString(originFOBID), originName, originLat, originLng)
+			_, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_type,origin_fob_id,origin_name,origin_lat,origin_lng,deployment_theater) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, uuid(), id, me.ID, unit, amount, amount, arrives, deploymentGroup, originType, nullString(originFOBID), originName, originLat, originLng, theater)
 			if err != nil {
 				problem(w, 500, "Could not deploy forces.")
 				return
@@ -485,21 +552,27 @@ func (a *app) deployWarForces(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 500, "Could not complete deployment.")
 		return
 	}
-	write(w, 201, map[string]any{"ok": true, "arrivesRound": arrives, "originName": originName, "travelRounds": travelRounds})
+	write(w, 201, map[string]any{"ok": true, "arrivesRound": arrives, "originName": originName, "travelRounds": travelRounds, "theater": theater})
 }
 
 func (a *app) submitWarOrders(w http.ResponseWriter, r *http.Request, u user) {
-	var in struct{ Operation, Posture string }
+	var in struct {
+		HomeOperation, HomePosture, ForeignOperation, ForeignPosture string
+	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if _, ok := warOperations[in.Operation]; !ok {
-		problem(w, 400, "Choose a valid operation.")
-		return
+	for _, operation := range []string{in.HomeOperation, in.ForeignOperation} {
+		if _, ok := warOperations[operation]; !ok {
+			problem(w, 400, "Choose a valid operation for both fronts.")
+			return
+		}
 	}
-	if _, ok := warPostures[in.Posture]; !ok {
-		problem(w, 400, "Choose a valid posture.")
-		return
+	for _, posture := range []string{in.HomePosture, in.ForeignPosture} {
+		if _, ok := warPostures[posture]; !ok {
+			problem(w, 400, "Choose a valid posture for both fronts.")
+			return
+		}
 	}
 	me, err := loadWarNation(r.Context(), a.db, "owner_id", u.ID)
 	if err != nil {
@@ -519,12 +592,12 @@ func (a *app) submitWarOrders(w http.ResponseWriter, r *http.Request, u user) {
 		problem(w, 409, "This war has ended.")
 		return
 	}
-	_, err = a.db.ExecContext(r.Context(), `INSERT INTO war_orders(conflict_id,nation_id,round_number,operation,posture) VALUES(?,?,?,?,?) ON DUPLICATE KEY UPDATE operation=VALUES(operation),posture=VALUES(posture),submitted_at=CURRENT_TIMESTAMP(6)`, id, me.ID, rounds+1, in.Operation, in.Posture)
+	_, err = a.db.ExecContext(r.Context(), `INSERT INTO war_orders(conflict_id,nation_id,round_number,operation,posture,home_operation,home_posture) VALUES(?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE operation=VALUES(operation),posture=VALUES(posture),home_operation=VALUES(home_operation),home_posture=VALUES(home_posture),submitted_at=CURRENT_TIMESTAMP(6)`, id, me.ID, rounds+1, in.ForeignOperation, in.ForeignPosture, in.HomeOperation, in.HomePosture)
 	if err != nil {
 		problem(w, 500, "Could not save orders.")
 		return
 	}
-	write(w, 200, map[string]any{"ok": true, "round": rounds + 1, "operation": in.Operation, "posture": in.Posture})
+	write(w, 200, map[string]any{"ok": true, "round": rounds + 1, "foreignOperation": in.ForeignOperation, "foreignPosture": in.ForeignPosture, "homeOperation": in.HomeOperation, "homePosture": in.HomePosture})
 }
 
 func (a *app) capitulateWar(w http.ResponseWriter, r *http.Request, u user) {
@@ -579,7 +652,7 @@ func loadWarState(ctx context.Context, q interface {
 	if lock {
 		suffix = " FOR UPDATE"
 	}
-	err := q.QueryRowContext(ctx, `SELECT c.id,c.attacker_id,c.defender_id,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,w.mobilization_rounds,w.supply_factor FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=?`+suffix, id).Scan(&s.ConflictID, &s.AttackerID, &s.DefenderID, &s.Objective, &s.Stage, &s.AttackerScore, &s.DefenderScore, &s.AttackerResolve, &s.DefenderResolve, &s.AttackerReadiness, &s.DefenderReadiness, &s.AttackerOrganization, &s.DefenderOrganization, &s.Rounds, &s.NextRound, &s.EndsAt, &s.Distance, &s.Route, &s.Mobilization, &s.SupplyFactor)
+	err := q.QueryRowContext(ctx, `SELECT c.id,c.attacker_id,c.defender_id,w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.attacker_readiness,w.defender_readiness,w.attacker_organization,w.defender_organization,w.rounds_resolved,w.next_round_at,w.ends_at,w.distance_km,w.route_type,w.mobilization_rounds,w.supply_factor,w.attacker_damage_pressure,w.defender_damage_pressure FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE c.id=?`+suffix, id).Scan(&s.ConflictID, &s.AttackerID, &s.DefenderID, &s.Objective, &s.Stage, &s.AttackerScore, &s.DefenderScore, &s.AttackerResolve, &s.DefenderResolve, &s.AttackerReadiness, &s.DefenderReadiness, &s.AttackerOrganization, &s.DefenderOrganization, &s.Rounds, &s.NextRound, &s.EndsAt, &s.Distance, &s.Route, &s.Mobilization, &s.SupplyFactor, &s.AttackerDamagePressure, &s.DefenderDamagePressure)
 	return s, err
 }
 
@@ -642,27 +715,6 @@ func deterministicWarJitter(id string, round int, side string) float64 {
 	return .92 + float64(sum[0])/255*.16
 }
 
-func warInfrastructureDamageRate(outcome string, targetedCampaign bool, strategicRounds int) float64 {
-	rate := warInfrastructureBaseDamage[outcome]
-	if targetedCampaign {
-		bonus := warInfrastructureCampaignBonus[outcome]
-		if strategicRounds == 0 {
-			bonus *= .5
-		}
-		rate += bonus
-	}
-	return rate
-}
-
-func warInstitutionDestructionChance(outcome string, targetedCampaign bool, strategicRounds int) float64 {
-	chance := warInstitutionBaseRisk[outcome]
-	chance += math.Min(.012, float64(strategicRounds)*.001)
-	if targetedCampaign {
-		chance += .006
-	}
-	return math.Min(warInstitutionRiskCap, chance)
-}
-
 func deterministicWarDamageRoll(conflictID, cityID, buildingType string, index int) float64 {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%s:%d:civic-damage", conflictID, cityID, buildingType, index)))
 	value := uint32(sum[0])<<24 | uint32(sum[1])<<16 | uint32(sum[2])<<8 | uint32(sum[3])
@@ -679,9 +731,9 @@ func deterministicInstitutionLosses(conflictID, cityID, buildingType string, qua
 	return lost
 }
 
-func warForces(ctx context.Context, tx *sql.Tx, id, nid string, round int) (map[string]int64, error) {
+func warForces(ctx context.Context, tx *sql.Tx, id, nid, theater string, round int) (map[string]int64, error) {
 	result := map[string]int64{}
-	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(remaining) FROM war_deployments WHERE conflict_id=? AND nation_id=? AND arrives_round<=? AND remaining>0 GROUP BY unit_type`, id, nid, round)
+	rows, err := tx.QueryContext(ctx, `SELECT unit_type,SUM(remaining) FROM war_deployments WHERE conflict_id=? AND nation_id=? AND deployment_theater=? AND arrives_round<=? AND remaining>0 GROUP BY unit_type`, id, nid, theater, round)
 	if err != nil {
 		return result, err
 	}
@@ -704,17 +756,17 @@ func warDeploymentArrival(nextRound time.Time, roundsResolved, arrivesRound int)
 func warDeploymentBatches(ctx context.Context, q interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }, conflictID, attackerID, stage string, roundsResolved int, nextRound time.Time) ([]map[string]any, error) {
-	rows, err := q.QueryContext(ctx, `SELECT COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,SUM(quantity),SUM(remaining),arrives_round,MIN(created_at),COALESCE(MAX(origin_type),'homeland'),COALESCE(MAX(origin_name),'Homeland'),COALESCE(MAX(origin_lat),0),COALESCE(MAX(origin_lng),0) FROM war_deployments WHERE conflict_id=? GROUP BY COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,arrives_round ORDER BY MIN(created_at),arrives_round,nation_id,unit_type`, conflictID)
+	rows, err := q.QueryContext(ctx, `SELECT COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,SUM(quantity),SUM(remaining),arrives_round,MIN(created_at),COALESCE(MAX(origin_type),'homeland'),COALESCE(MAX(origin_name),'Homeland'),COALESCE(MAX(origin_lat),0),COALESCE(MAX(origin_lng),0),deployment_theater FROM war_deployments WHERE conflict_id=? GROUP BY COALESCE(deployment_group_id,CONCAT(nation_id,':',arrives_round)),nation_id,unit_type,arrives_round,deployment_theater ORDER BY MIN(created_at),arrives_round,nation_id,unit_type`, conflictID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	type deploymentBatch struct {
-		ID, NationID, OriginType, OriginName string
-		Arrives                              int
-		Departed                             time.Time
-		OriginLat, OriginLng                 float64
-		Units                                map[string]map[string]int64
+		ID, NationID, OriginType, OriginName, Theater string
+		Arrives                                       int
+		Departed                                      time.Time
+		OriginLat, OriginLng                          float64
+		Units                                         map[string]map[string]int64
 	}
 	byID := map[string]*deploymentBatch{}
 	ordered := []*deploymentBatch{}
@@ -723,14 +775,14 @@ func warDeploymentBatches(ctx context.Context, q interface {
 		var quantity, remaining int64
 		var arrives int
 		var departed time.Time
-		var originType, originName string
+		var originType, originName, theater string
 		var originLat, originLng float64
-		if err := rows.Scan(&groupID, &nationID, &unit, &quantity, &remaining, &arrives, &departed, &originType, &originName, &originLat, &originLng); err != nil {
+		if err := rows.Scan(&groupID, &nationID, &unit, &quantity, &remaining, &arrives, &departed, &originType, &originName, &originLat, &originLng, &theater); err != nil {
 			return nil, err
 		}
 		batch := byID[groupID]
 		if batch == nil {
-			batch = &deploymentBatch{ID: groupID, NationID: nationID, Arrives: arrives, Departed: departed, OriginType: originType, OriginName: originName, OriginLat: originLat, OriginLng: originLng, Units: map[string]map[string]int64{}}
+			batch = &deploymentBatch{ID: groupID, NationID: nationID, Arrives: arrives, Departed: departed, OriginType: originType, OriginName: originName, OriginLat: originLat, OriginLng: originLng, Theater: theater, Units: map[string]map[string]int64{}}
 			byID[groupID] = batch
 			ordered = append(ordered, batch)
 		}
@@ -751,20 +803,22 @@ func warDeploymentBatches(ctx context.Context, q interface {
 			status = "concluded"
 		} else if batch.Arrives > roundsResolved {
 			status = "in_transit"
-			if side == "defender" {
-				status = "preparing"
-			}
 			arrivalAt = warDeploymentArrival(nextRound, roundsResolved, batch.Arrives)
 		}
-		result = append(result, map[string]any{"id": batch.ID, "side": side, "status": status, "arrivesRound": batch.Arrives, "departedAt": batch.Departed, "arrivalAt": arrivalAt, "originType": batch.OriginType, "originName": batch.OriginName, "originLat": batch.OriginLat, "originLng": batch.OriginLng, "units": batch.Units})
+		result = append(result, map[string]any{"id": batch.ID, "side": side, "status": status, "theater": batch.Theater, "arrivesRound": batch.Arrives, "departedAt": batch.Departed, "arrivalAt": arrivalAt, "originType": batch.OriginType, "originName": batch.OriginName, "originLat": batch.OriginLat, "originLng": batch.OriginLng, "units": batch.Units})
 	}
 	return result, nil
 }
 
-func warOrder(ctx context.Context, tx *sql.Tx, id, nid string, round int) (string, string) {
-	op, posture := "hold", "entrenched"
-	_ = tx.QueryRowContext(ctx, `SELECT operation,posture FROM war_orders WHERE conflict_id=? AND nation_id=? AND round_number=?`, id, nid, round).Scan(&op, &posture)
-	return op, posture
+type warFrontOrders struct {
+	HomeOperation, HomePosture       string
+	ForeignOperation, ForeignPosture string
+}
+
+func warOrder(ctx context.Context, tx *sql.Tx, id, nid string, round int) warFrontOrders {
+	orders := warFrontOrders{HomeOperation: "hold", HomePosture: "entrenched", ForeignOperation: "hold", ForeignPosture: "entrenched"}
+	_ = tx.QueryRowContext(ctx, `SELECT operation,posture,home_operation,home_posture FROM war_orders WHERE conflict_id=? AND nation_id=? AND round_number=?`, id, nid, round).Scan(&orders.ForeignOperation, &orders.ForeignPosture, &orders.HomeOperation, &orders.HomePosture)
+	return orders
 }
 
 func consumeWarSupply(ctx context.Context, tx *sql.Tx, nid string, forces map[string]int64, distanceFactor float64) (float64, error) {
@@ -847,7 +901,7 @@ func forceStrength(forces map[string]int64, operation, posture, route, objective
 	return total * postureMultiplier(posture) * (readiness / 100) * (organization / 100) * supply * exhaustionFactor
 }
 
-func applyWarLosses(ctx context.Context, tx *sql.Tx, id, nid string, round int, forces map[string]int64, rate float64) (map[string]int64, error) {
+func applyWarLosses(ctx context.Context, tx *sql.Tx, id, nid, theater string, round int, forces map[string]int64, rate float64) (map[string]int64, error) {
 	losses := map[string]int64{}
 	keys := militaryUnitKeys()
 	sort.Strings(keys)
@@ -864,7 +918,7 @@ func applyWarLosses(ctx context.Context, tx *sql.Tx, id, nid string, round int, 
 		if loss <= 0 {
 			continue
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT id,remaining FROM war_deployments WHERE conflict_id=? AND nation_id=? AND unit_type=? AND arrives_round<=? AND remaining>0 ORDER BY created_at,id FOR UPDATE`, id, nid, unit, round)
+		rows, err := tx.QueryContext(ctx, `SELECT id,remaining FROM war_deployments WHERE conflict_id=? AND nation_id=? AND unit_type=? AND deployment_theater=? AND arrives_round<=? AND remaining>0 ORDER BY created_at,id FOR UPDATE`, id, nid, unit, theater, round)
 		if err != nil {
 			return losses, err
 		}
@@ -929,91 +983,167 @@ func (a *app) processWarRounds(ctx context.Context, turn time.Time) {
 	}
 }
 
+type theaterCombatResult struct {
+	InvaderStrength, HomeStrength                     float64
+	InvaderScore, HomeScore                           float64
+	InvaderResolveChange, HomeResolveChange, Pressure float64
+	InvaderLosses, HomeLosses                         map[string]int64
+	InvaderSupply, HomeSupply                         float64
+	Summary                                           string
+}
+
+func mergeWarLosses(into map[string]int64, from map[string]int64) {
+	for unit, amount := range from {
+		into[unit] += amount
+	}
+}
+
+func combinedArms(forces map[string]int64) bool {
+	types := 0
+	for _, amount := range forces {
+		if amount > 0 {
+			types++
+		}
+	}
+	return types >= 3
+}
+
+func resolveWarTheater(ctx context.Context, tx *sql.Tx, s *warState, round int, theater, invaderID, homeID string, invaderForces, homeForces map[string]int64, invaderOperation, invaderPosture, homeOperation, homePosture string, invaderReadiness, invaderOrganization, homeReadiness, homeOrganization, invaderExhaustion, homeExhaustion, distanceFactor float64, jitterSide string) (theaterCombatResult, error) {
+	result := theaterCombatResult{InvaderLosses: map[string]int64{}, HomeLosses: map[string]int64{}, InvaderSupply: 1, HomeSupply: 1}
+	if len(invaderForces) == 0 {
+		result.Summary = "No expeditionary forces contested this theater."
+		return result, nil
+	}
+	var err error
+	result.InvaderSupply, err = consumeWarSupply(ctx, tx, invaderID, invaderForces, distanceFactor)
+	if err != nil {
+		return result, err
+	}
+	result.HomeSupply, err = consumeWarSupply(ctx, tx, homeID, homeForces, 1)
+	if err != nil {
+		return result, err
+	}
+	result.InvaderStrength = forceStrength(invaderForces, invaderOperation, invaderPosture, s.Route, s.Objective, invaderReadiness, invaderOrganization, result.InvaderSupply, invaderExhaustion, false) * deterministicWarJitter(s.ConflictID, round, jitterSide+"i")
+	result.HomeStrength = forceStrength(homeForces, homeOperation, homePosture, s.Route, s.Objective, homeReadiness, homeOrganization, result.HomeSupply, homeExhaustion, true) * deterministicWarJitter(s.ConflictID, round, jitterSide+"h")
+	total := math.Max(1, result.InvaderStrength+result.HomeStrength)
+	invaderShare, homeShare := result.InvaderStrength/total, result.HomeStrength/total
+	invaderLossRate, homeLossRate := .004+.03*homeShare, .004+.03*invaderShare
+	if invaderPosture == "aggressive" {
+		invaderLossRate *= 1.15
+	}
+	if homePosture == "aggressive" {
+		homeLossRate *= 1.15
+	}
+	result.InvaderLosses, err = applyWarLosses(ctx, tx, s.ConflictID, invaderID, theater, round, invaderForces, invaderLossRate)
+	if err != nil {
+		return result, err
+	}
+	result.HomeLosses, err = applyWarLosses(ctx, tx, s.ConflictID, homeID, theater, round, homeForces, homeLossRate)
+	if err != nil {
+		return result, err
+	}
+	result.InvaderScore = 1 + invaderShare*5
+	result.HomeScore = 1 + homeShare*4
+	if result.HomeStrength == 0 {
+		result.HomeScore = 0
+	}
+	result.InvaderResolveChange = -(.25 + 2*homeShare)
+	result.HomeResolveChange = -(.5 + 4.5*invaderShare)
+	result.Pressure = math.Max(0, invaderShare-.42)
+	if invaderOperation == "strategic_strike" {
+		result.Pressure *= 1.35
+	}
+	switch s.Objective {
+	case "territorial_pressure":
+		if combinedArms(invaderForces) {
+			result.InvaderScore *= 1.2
+			result.Pressure *= 1.15
+		}
+	case "regime_pressure":
+		result.HomeResolveChange *= 1.35
+	case "resource_seizure":
+		result.InvaderScore *= 1.1
+	case "infrastructure_campaign":
+		result.Pressure *= 1.35
+	}
+	result.Summary = fmt.Sprintf("%s met %s; expeditionary strength %.0f versus %.0f local strength.", warOperations[invaderOperation], warOperations[homeOperation], result.InvaderStrength, result.HomeStrength)
+	return result, nil
+}
+
 func resolveWarRound(ctx context.Context, tx *sql.Tx, s *warState) error {
 	round := s.Rounds + 1
-	af, err := warForces(ctx, tx, s.ConflictID, s.AttackerID, round)
+	attackerForeign, err := warForces(ctx, tx, s.ConflictID, s.AttackerID, defenderHomelandTheater, round)
 	if err != nil {
 		return err
 	}
-	df, err := warForces(ctx, tx, s.ConflictID, s.DefenderID, round)
+	attackerHome, err := warForces(ctx, tx, s.ConflictID, s.AttackerID, attackerHomelandTheater, round)
 	if err != nil {
 		return err
 	}
-	ao, ap := warOrder(ctx, tx, s.ConflictID, s.AttackerID, round)
-	do, dp := warOrder(ctx, tx, s.ConflictID, s.DefenderID, round)
-	asupply, err := consumeWarSupply(ctx, tx, s.AttackerID, af, s.SupplyFactor)
+	defenderForeign, err := warForces(ctx, tx, s.ConflictID, s.DefenderID, attackerHomelandTheater, round)
 	if err != nil {
 		return err
 	}
-	dsupply, err := consumeWarSupply(ctx, tx, s.DefenderID, df, 1)
+	defenderHome, err := warForces(ctx, tx, s.ConflictID, s.DefenderID, defenderHomelandTheater, round)
 	if err != nil {
 		return err
 	}
-	var ae, de float64
-	_ = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT war_exhaustion FROM nation_war_status WHERE nation_id=?),0),COALESCE((SELECT war_exhaustion FROM nation_war_status WHERE nation_id=?),0)`, s.AttackerID, s.DefenderID).Scan(&ae, &de)
-	astr := forceStrength(af, ao, ap, s.Route, s.Objective, s.AttackerReadiness, s.AttackerOrganization, asupply, ae, false) * deterministicWarJitter(s.ConflictID, round, "a")
-	dstr := forceStrength(df, do, dp, s.Route, s.Objective, s.DefenderReadiness, s.DefenderOrganization, dsupply, de, true) * deterministicWarJitter(s.ConflictID, round, "d")
-	total := astr + dstr
-	if total < 1 {
-		total = 1
-	}
-	ashare := astr / total
-	dshare := dstr / total
-	alossRate := .004 + .03*dshare
-	dlossRate := .004 + .03*ashare
-	if ap == "aggressive" {
-		alossRate *= 1.15
-	}
-	if dp == "aggressive" {
-		dlossRate *= 1.15
-	}
-	aloss, err := applyWarLosses(ctx, tx, s.ConflictID, s.AttackerID, round, af, alossRate)
+	attackerOrders := warOrder(ctx, tx, s.ConflictID, s.AttackerID, round)
+	defenderOrders := warOrder(ctx, tx, s.ConflictID, s.DefenderID, round)
+	var attackerExhaustion, defenderExhaustion float64
+	_ = tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT war_exhaustion FROM nation_war_status WHERE nation_id=?),0),COALESCE((SELECT war_exhaustion FROM nation_war_status WHERE nation_id=?),0)`, s.AttackerID, s.DefenderID).Scan(&attackerExhaustion, &defenderExhaustion)
+	defenderTheater, err := resolveWarTheater(ctx, tx, s, round, defenderHomelandTheater, s.AttackerID, s.DefenderID, attackerForeign, defenderHome, attackerOrders.ForeignOperation, attackerOrders.ForeignPosture, defenderOrders.HomeOperation, defenderOrders.HomePosture, s.AttackerReadiness, s.AttackerOrganization, s.DefenderReadiness, s.DefenderOrganization, attackerExhaustion, defenderExhaustion, s.SupplyFactor, "d")
 	if err != nil {
 		return err
 	}
-	dloss, err := applyWarLosses(ctx, tx, s.ConflictID, s.DefenderID, round, df, dlossRate)
+	attackerTheater, err := resolveWarTheater(ctx, tx, s, round, attackerHomelandTheater, s.DefenderID, s.AttackerID, defenderForeign, attackerHome, defenderOrders.ForeignOperation, defenderOrders.ForeignPosture, attackerOrders.HomeOperation, attackerOrders.HomePosture, s.DefenderReadiness, s.DefenderOrganization, s.AttackerReadiness, s.AttackerOrganization, defenderExhaustion, attackerExhaustion, s.SupplyFactor, "a")
 	if err != nil {
 		return err
 	}
-	asc := 2 + ashare*7
-	dsc := 2 + dshare*7
-	if astr == 0 {
-		asc = 0
-	}
-	if dstr == 0 {
-		dsc = 0
-	}
-	arChange := -(1 + 7*dshare)
-	drChange := -(1 + 7*ashare)
-	if ao == "resupply" {
-		s.AttackerReadiness = math.Min(100, s.AttackerReadiness+7)
-		s.AttackerOrganization = math.Min(100, s.AttackerOrganization+9)
+	attackerLosses, defenderLosses := map[string]int64{}, map[string]int64{}
+	mergeWarLosses(attackerLosses, defenderTheater.InvaderLosses)
+	mergeWarLosses(attackerLosses, attackerTheater.HomeLosses)
+	mergeWarLosses(defenderLosses, defenderTheater.HomeLosses)
+	mergeWarLosses(defenderLosses, attackerTheater.InvaderLosses)
+	attackerScoreChange := defenderTheater.InvaderScore + attackerTheater.HomeScore
+	defenderScoreChange := defenderTheater.HomeScore + attackerTheater.InvaderScore
+	attackerResolveChange := defenderTheater.InvaderResolveChange + attackerTheater.HomeResolveChange
+	defenderResolveChange := defenderTheater.HomeResolveChange + attackerTheater.InvaderResolveChange
+	s.AttackerDamagePressure += defenderTheater.Pressure
+	s.DefenderDamagePressure += attackerTheater.Pressure
+	attackerResupplying := (attackerOrders.HomeOperation == "resupply" && len(attackerHome) > 0) || (attackerOrders.ForeignOperation == "resupply" && len(attackerForeign) > 0)
+	if attackerResupplying {
+		s.AttackerReadiness = math.Min(100, s.AttackerReadiness+4)
+		s.AttackerOrganization = math.Min(100, s.AttackerOrganization+5)
 	} else {
-		s.AttackerReadiness = math.Max(25, s.AttackerReadiness-1.5)
-		s.AttackerOrganization = math.Max(20, s.AttackerOrganization-2*dshare)
+		s.AttackerReadiness = math.Max(25, s.AttackerReadiness-1.25)
+		s.AttackerOrganization = math.Max(20, s.AttackerOrganization-1.5)
 	}
-	if do == "resupply" {
-		s.DefenderReadiness = math.Min(100, s.DefenderReadiness+7)
-		s.DefenderOrganization = math.Min(100, s.DefenderOrganization+9)
+	defenderResupplying := (defenderOrders.HomeOperation == "resupply" && len(defenderHome) > 0) || (defenderOrders.ForeignOperation == "resupply" && len(defenderForeign) > 0)
+	if defenderResupplying {
+		s.DefenderReadiness = math.Min(100, s.DefenderReadiness+4)
+		s.DefenderOrganization = math.Min(100, s.DefenderOrganization+5)
 	} else {
-		s.DefenderReadiness = math.Max(25, s.DefenderReadiness-1.5)
-		s.DefenderOrganization = math.Max(20, s.DefenderOrganization-2*ashare)
+		s.DefenderReadiness = math.Max(25, s.DefenderReadiness-1.25)
+		s.DefenderOrganization = math.Max(20, s.DefenderOrganization-1.5)
 	}
-	s.AttackerScore += asc
-	s.DefenderScore += dsc
-	s.AttackerResolve = math.Max(0, s.AttackerResolve+arChange)
-	s.DefenderResolve = math.Max(0, s.DefenderResolve+drChange)
-	s.Rounds = round
-	s.Stage = "active"
-	s.NextRound = s.NextRound.Add(warRoundHours * time.Hour)
-	alj, _ := json.Marshal(aloss)
-	dlj, _ := json.Marshal(dloss)
-	summary := fmt.Sprintf("Round %d: %s met %s. Effective strength was %.0f to %.0f.", round, warOperations[ao], warOperations[do], astr, dstr)
-	_, err = tx.ExecContext(ctx, `INSERT INTO war_reports(id,conflict_id,round_number,attacker_operation,defender_operation,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, uuid(), s.ConflictID, round, ao, do, astr, dstr, alj, dlj, asupply, dsupply, asc, dsc, arChange, drChange, summary)
+	s.AttackerScore += attackerScoreChange
+	s.DefenderScore += defenderScoreChange
+	s.AttackerResolve = math.Max(0, s.AttackerResolve+attackerResolveChange)
+	s.DefenderResolve = math.Max(0, s.DefenderResolve+defenderResolveChange)
+	s.Rounds, s.Stage, s.NextRound = round, "active", s.NextRound.Add(warRoundHours*time.Hour)
+	attackerLossesJSON, _ := json.Marshal(attackerLosses)
+	defenderLossesJSON, _ := json.Marshal(defenderLosses)
+	summary := fmt.Sprintf("Round %d — Defender homeland: %s Attacker homeland: %s", round, defenderTheater.Summary, attackerTheater.Summary)
+	attackerStrength := defenderTheater.InvaderStrength + attackerTheater.HomeStrength
+	defenderStrength := defenderTheater.HomeStrength + attackerTheater.InvaderStrength
+	attackerSupply := (defenderTheater.InvaderSupply + attackerTheater.HomeSupply) / 2
+	defenderSupply := (defenderTheater.HomeSupply + attackerTheater.InvaderSupply) / 2
+	_, err = tx.ExecContext(ctx, `INSERT INTO war_reports(id,conflict_id,round_number,attacker_operation,defender_operation,attacker_foreign_posture,defender_foreign_posture,attacker_home_operation,attacker_home_posture,defender_home_operation,defender_home_posture,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, uuid(), s.ConflictID, round, attackerOrders.ForeignOperation, defenderOrders.ForeignOperation, attackerOrders.ForeignPosture, defenderOrders.ForeignPosture, attackerOrders.HomeOperation, attackerOrders.HomePosture, defenderOrders.HomeOperation, defenderOrders.HomePosture, attackerStrength, defenderStrength, attackerLossesJSON, defenderLossesJSON, attackerSupply, defenderSupply, attackerScoreChange, defenderScoreChange, attackerResolveChange, defenderResolveChange, summary)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE wars SET stage=?,attacker_score=?,defender_score=?,attacker_resolve=?,defender_resolve=?,attacker_readiness=?,defender_readiness=?,attacker_organization=?,defender_organization=?,rounds_resolved=?,next_round_at=? WHERE conflict_id=?`, s.Stage, s.AttackerScore, s.DefenderScore, s.AttackerResolve, s.DefenderResolve, s.AttackerReadiness, s.DefenderReadiness, s.AttackerOrganization, s.DefenderOrganization, s.Rounds, s.NextRound, s.ConflictID)
+	_, err = tx.ExecContext(ctx, `UPDATE wars SET stage=?,attacker_score=?,defender_score=?,attacker_resolve=?,defender_resolve=?,attacker_readiness=?,defender_readiness=?,attacker_organization=?,defender_organization=?,attacker_damage_pressure=?,defender_damage_pressure=?,rounds_resolved=?,next_round_at=? WHERE conflict_id=?`, s.Stage, s.AttackerScore, s.DefenderScore, s.AttackerResolve, s.DefenderResolve, s.AttackerReadiness, s.DefenderReadiness, s.AttackerOrganization, s.DefenderOrganization, s.AttackerDamagePressure, s.DefenderDamagePressure, s.Rounds, s.NextRound, s.ConflictID)
 	if err != nil {
 		return err
 	}
@@ -1084,7 +1214,7 @@ func endWar(ctx context.Context, tx *sql.Tx, s *warState, winner, outcome, reaso
 			return err
 		}
 	}
-	if winner == s.AttackerID && s.Objective == "resource_seizure" {
+	if winner != "" && loser != "" && s.Objective == "resource_seizure" {
 		pct := .01
 		if outcome == "major" {
 			pct = .02
@@ -1102,40 +1232,32 @@ func endWar(ctx context.Context, tx *sql.Tx, s *warState, winner, outcome, reaso
 			}
 		}
 	}
-	if loser != "" {
-		var strategicRounds int
-		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM war_orders WHERE conflict_id=? AND nation_id=? AND operation='strategic_strike'`, s.ConflictID, winner).Scan(&strategicRounds); err != nil {
+	var attackerInfrastructureDamage, defenderInfrastructureDamage float64
+	var attackerInstitutionsDestroyed, defenderInstitutionsDestroyed int
+	for _, damage := range []struct {
+		target   string
+		pressure float64
+	}{
+		{target: s.DefenderID, pressure: s.AttackerDamagePressure},
+		{target: s.AttackerID, pressure: s.DefenderDamagePressure},
+	} {
+		defeatOutcome := ""
+		if damage.target == loser {
+			defeatOutcome = outcome
+		}
+		infrastructureDamage, institutionsDestroyed, damageErr := assessWarDamage(ctx, tx, s.ConflictID, damage.target, defeatOutcome, damage.pressure)
+		if damageErr != nil {
+			err = damageErr
 			return err
 		}
-		targetedCampaign := winner == s.AttackerID && s.Objective == "infrastructure_campaign"
-		damageRate := warInfrastructureDamageRate(outcome, targetedCampaign, strategicRounds)
-		var infrastructureBefore, infrastructureAfter float64
-		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, loser).Scan(&infrastructureBefore); err != nil {
-			return err
-		}
-		if damageRate > 0 {
-			_, err = tx.ExecContext(ctx, `UPDATE cities SET infrastructure=GREATEST(?,FLOOR(infrastructure*(1-?))) WHERE nation_id=?`, warMinimumInfrastructure, damageRate, loser)
-			if err != nil {
-				return err
-			}
-		}
-		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, loser).Scan(&infrastructureAfter); err != nil {
-			return err
-		}
-
-		institutionChance := warInstitutionDestructionChance(outcome, targetedCampaign, strategicRounds)
-		destroyed, destroyedNames, destroyErr := destroyWarDamagedInstitutions(ctx, tx, s.ConflictID, loser, institutionChance)
-		if destroyErr != nil {
-			return destroyErr
-		}
-		messageParts := []string{fmt.Sprintf("The defeat destroyed %.0f Infrastructure across your Provinces (%.1f%% of the pre-war total).", math.Max(0, infrastructureBefore-infrastructureAfter), actualDamagePercent(infrastructureBefore, infrastructureAfter))}
-		if destroyed > 0 {
-			messageParts = append(messageParts, fmt.Sprintf("Separate combat damage destroyed %d civic institution(s): %s.", destroyed, strings.Join(destroyedNames, ", ")))
+		if damage.target == s.AttackerID {
+			attackerInfrastructureDamage, attackerInstitutionsDestroyed = infrastructureDamage, institutionsDestroyed
 		} else {
-			messageParts = append(messageParts, "No civic institutions were destroyed.")
+			defenderInfrastructureDamage, defenderInstitutionsDestroyed = infrastructureDamage, institutionsDestroyed
 		}
-		messageParts = append(messageParts, fmt.Sprintf("Infrastructure cannot be reduced below %d, and reduced capacity never removes existing institutions.", warMinimumInfrastructure))
-		_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War damage assessed',?)`, uuid(), loser, strings.Join(messageParts, " "))
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE wars SET attacker_infrastructure_damage=?,defender_infrastructure_damage=?,attacker_institutions_destroyed=?,defender_institutions_destroyed=? WHERE conflict_id=?`, attackerInfrastructureDamage, defenderInfrastructureDamage, attackerInstitutionsDestroyed, defenderInstitutionsDestroyed, s.ConflictID); err != nil {
+		return err
 	}
 	message := "The war ended in a stalemate."
 	if winner != "" {
@@ -1143,6 +1265,48 @@ func endWar(ctx context.Context, tx *sql.Tx, s *warState, winner, outcome, reaso
 	}
 	_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War concluded',?),(?,?,'war','War concluded',?)`, uuid(), s.AttackerID, message, uuid(), s.DefenderID, message)
 	return nil
+}
+
+func warAccumulatedDamageRates(pressure float64, defeatOutcome string) (float64, float64) {
+	damageRate := math.Min(.035, math.Max(0, pressure)*.004)
+	institutionChance := math.Min(.018, math.Max(0, pressure)*.0015)
+	if defeatOutcome != "" && defeatOutcome != "stalemate" {
+		damageRate += warInfrastructureBaseDamage[defeatOutcome]
+		institutionChance += warInstitutionBaseRisk[defeatOutcome]
+	}
+	damageRate = math.Min(.06, damageRate)
+	institutionChance = math.Min(warInstitutionRiskCap, institutionChance)
+	return damageRate, institutionChance
+}
+
+func assessWarDamage(ctx context.Context, tx *sql.Tx, conflictID, targetNationID, defeatOutcome string, pressure float64) (float64, int, error) {
+	damageRate, institutionChance := warAccumulatedDamageRates(pressure, defeatOutcome)
+	if damageRate <= 0 && institutionChance <= 0 {
+		return 0, 0, nil
+	}
+	var infrastructureBefore, infrastructureAfter float64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, targetNationID).Scan(&infrastructureBefore); err != nil {
+		return 0, 0, err
+	}
+	if damageRate > 0 {
+		if _, err := tx.ExecContext(ctx, `UPDATE cities SET infrastructure=GREATEST(?,FLOOR(infrastructure*(1-?))) WHERE nation_id=?`, warMinimumInfrastructure, damageRate, targetNationID); err != nil {
+			return 0, 0, err
+		}
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, targetNationID).Scan(&infrastructureAfter); err != nil {
+		return 0, 0, err
+	}
+	destroyed, destroyedNames, err := destroyWarDamagedInstitutions(ctx, tx, conflictID, targetNationID, institutionChance)
+	if err != nil {
+		return 0, 0, err
+	}
+	messageParts := []string{fmt.Sprintf("Enemy operations destroyed %.0f Infrastructure across your Provinces (%.1f%% of the pre-war total).", math.Max(0, infrastructureBefore-infrastructureAfter), actualDamagePercent(infrastructureBefore, infrastructureAfter))}
+	if destroyed > 0 {
+		messageParts = append(messageParts, fmt.Sprintf("Combat also destroyed %d civic institution(s): %s.", destroyed, strings.Join(destroyedNames, ", ")))
+	}
+	messageParts = append(messageParts, fmt.Sprintf("Infrastructure cannot be reduced below %d, and reduced capacity never removes existing institutions.", warMinimumInfrastructure))
+	_, _ = tx.ExecContext(ctx, `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War damage assessed',?)`, uuid(), targetNationID, strings.Join(messageParts, " "))
+	return math.Max(0, infrastructureBefore-infrastructureAfter), destroyed, nil
 }
 
 func actualDamagePercent(before, after float64) float64 {
