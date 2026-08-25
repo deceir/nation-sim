@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {Activity,CheckCircle2,Clock3,Crosshair,Flag,MapPinned,Shield,ShieldCheck,Swords,Truck} from 'lucide-react';
 import WarTheaterMap from './WarTheaterMap';
+import {WarDamageSummary,WarRulesPanel} from './WarInformation';
 import './war-system.css';
 import './war-reinforcements.css';
 
@@ -29,7 +30,7 @@ function WarOverview(){
 <div>
 <span className="eyebrow">STRATEGIC COMMAND</span>
 <h2>War Room</h2>
-<p>Direct finite campaigns through six-hour strategic rounds. Distance delays deployment, supply affects combat power, and every war reaches a firm conclusion.</p>
+<p>Direct finite campaigns through three-hour strategic rounds. Distance delays deployment, supply affects combat power, and every war reaches a firm conclusion.</p>
 </div>
 </section>{error&&<p className="error notice">{error}</p>}<section className="war-status-strip">
 <div>
@@ -91,11 +92,11 @@ function WarOverview(){
 <div className="war-objectives">{Object.entries(data.objectives).map(([key,value]:any)=>
 <button type="button" className={objective===key?'selected':''} onClick={()=>{setObjective(key);setReview(false)}} key={key}>
 <b>{value.name}</b>
-<span>{value.description}</span>
+<span>{value.description}</span><small>{value.effect}</small>
 </button>)}</div>
 <div className="deployment-editor">
 <h3>Initial force commitment</h3>
-<p>Committed forces cannot be sold, decommissioned, or used in another war. The force arrives after the distance-based mobilization period.</p>{military.units.map((unit:any)=>
+<p>The initial force enters the opposing homeland immediately. Committed units cannot be sold, decommissioned, or used in another war.</p>{military.units.map((unit:any)=>
 <label key={unit.key}>
 <span>
 <b>{unit.name}</b>
@@ -111,11 +112,11 @@ function WarOverview(){
 }
 
 function WarDetail({id}:{id:string}){
- const[data,setData]=useState<any>(),[error,setError]=useState(''),[operation,setOperation]=useState('hold'),[posture,setPosture]=useState('entrenched'),[forces,setForces]=useState<Record<string,number>>({}),[originFOBID,setOriginFOBID]=useState(''),[busy,setBusy]=useState(''),[confirmCapitulation,setConfirmCapitulation]=useState(false),[ordersSaved,setOrdersSaved]=useState(false),[,setClock]=useState(0);
- const load=(syncOrders=false)=>api('/wars/'+encodeURIComponent(id)).then(result=>{setData(result);if(syncOrders){setOperation(result.currentOrder?.operation||'hold');setPosture(result.currentOrder?.posture||'entrenched')}}).catch(e=>setError(e.message));
+ const[data,setData]=useState<any>(),[error,setError]=useState(''),[homeOperation,setHomeOperation]=useState('hold'),[homePosture,setHomePosture]=useState('entrenched'),[foreignOperation,setForeignOperation]=useState('hold'),[foreignPosture,setForeignPosture]=useState('entrenched'),[forces,setForces]=useState<Record<string,number>>({}),[originFOBID,setOriginFOBID]=useState(''),[deploymentTheater,setDeploymentTheater]=useState('foreign'),[busy,setBusy]=useState(''),[confirmCapitulation,setConfirmCapitulation]=useState(false),[ordersSaved,setOrdersSaved]=useState(false),[,setClock]=useState(0);
+ const load=(syncOrders=false)=>api('/wars/'+encodeURIComponent(id)).then(result=>{setData(result);if(syncOrders){setHomeOperation(result.currentOrder?.homeOperation||'hold');setHomePosture(result.currentOrder?.homePosture||'entrenched');setForeignOperation(result.currentOrder?.foreignOperation||'hold');setForeignPosture(result.currentOrder?.foreignPosture||'entrenched')}}).catch(e=>setError(e.message));
  useEffect(()=>{void load(true);const refreshTimer=setInterval(()=>void load(false),30000),clockTimer=setInterval(()=>setClock(value=>value+1),1000);return()=>{clearInterval(refreshTimer);clearInterval(clockTimer)}},[id]);
- const saveOrders=async()=>{setBusy('orders');setError('');setOrdersSaved(false);try{await api(`/wars/${id}/orders`,{method:'PUT',body:JSON.stringify({operation,posture})});await load(true);setOrdersSaved(true)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
- const deploy=async()=>{setBusy('deploy');setError('');try{await api(`/wars/${id}/deploy`,{method:'POST',body:JSON.stringify({forces,originFOBID})});setForces({});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ const saveOrders=async()=>{setBusy('orders');setError('');setOrdersSaved(false);try{await api(`/wars/${id}/orders`,{method:'PUT',body:JSON.stringify({homeOperation,homePosture,foreignOperation,foreignPosture})});await load(true);setOrdersSaved(true)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ const deploy=async()=>{setBusy('deploy');setError('');try{const homeTheater=data.isAttacker?data.theaters.attackerHomeland:data.theaters.defenderHomeland,foreignTheater=data.isAttacker?data.theaters.defenderHomeland:data.theaters.attackerHomeland;await api(`/wars/${id}/deploy`,{method:'POST',body:JSON.stringify({forces,originFOBID:deploymentTheater==='home'?'':originFOBID,theater:deploymentTheater==='home'?homeTheater:foreignTheater})});setForces({});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  const capitulate=async()=>{setBusy('capitulate');setError('');try{await api(`/wars/${id}/capitulate`,{method:'POST'});await load();setConfirmCapitulation(false)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  if(!data)return <section className="panel wide">Loading the campaign record…{error&&<p className="error notice">{error}</p>}</section>;
  const mySide=data.isAttacker?'attacker':'defender',enemySide=data.isAttacker?'defender':'attacker',myForces=data.forces[mySide]||{},enemyForces=data.forces[enemySide]||{},myFobs=data.isAttacker?data.attackerFOBs||[]:data.defenderFOBs||[];
@@ -125,26 +126,27 @@ function WarDetail({id}:{id:string}){
 <div>
 <span className={'war-stage '+data.stage}>{data.stage}</span>
 <h2>{data.attackerName} <small>versus</small> {data.defenderName}</h2>
-<p>{data.objectiveName} · {data.objectiveDescription}</p>
+<p>{data.objectiveName} · {data.objectiveDescription}</p><small className="war-objective-effect">{data.objectiveEffect}</small>
 </div>
 <div>
-<b>Round {data.roundsResolved} / 20</b>
+	<b>Round {data.roundsResolved} / {data.rules?.maximumRounds||20}</b>
 <span>{data.stage==='ended'?`${label(data.outcome||'concluded')} · ${label(data.endReason||'ended')}`:`Next resolution ${when(data.nextRoundAt)}`}</span>
 </div>
 </section>{error&&<p className="error notice">{error}</p>}<section className="war-balance">
-<WarSide name={data.attackerName} score={data.attackerScore} resolve={data.attackerResolve} readiness={data.attackerReadiness} organization={data.attackerOrganization} active={data.isAttacker}/>
+<WarSide name={data.attackerName} score={data.attackerScore} resolve={data.attackerResolve} readiness={data.attackerReadiness} organization={data.attackerOrganization} damagePressure={data.attackerDamagePressure} active={data.isAttacker}/>
 <div className="war-versus">
 <Swords/>
 <span>{Math.round(Number(data.distanceKm)).toLocaleString()} km</span>
 <small>{label(data.routeType)} route · {data.mobilizationRounds} round mobilization</small>
 </div>
-<WarSide name={data.defenderName} score={data.defenderScore} resolve={data.defenderResolve} readiness={data.defenderReadiness} organization={data.defenderOrganization} active={!data.isAttacker}/>
-</section>
-<WarTheaterMap attacker={{name:data.attackerName,lat:data.attackerLat,lng:data.attackerLng,fobs:data.attackerFOBs||[]}} defender={{name:data.defenderName,lat:data.defenderLat,lng:data.defenderLng,fobs:data.defenderFOBs||[]}} routeType={data.routeType} stage={data.stage} distanceKm={data.distanceKm} roundsResolved={data.roundsResolved} deployments={data.deployments||[]}/>
-<section className="war-force-comparison">
-<ForceTable title="Your committed forces" forces={myForces}/>
-<ForceTable title="Opposing observed forces" forces={enemyForces}/>
-</section>{data.stage!=='ended'&&<>
+<WarSide name={data.defenderName} score={data.defenderScore} resolve={data.defenderResolve} readiness={data.defenderReadiness} organization={data.defenderOrganization} damagePressure={data.defenderDamagePressure} active={!data.isAttacker}/>
+	</section>
+	<WarRulesPanel rules={data.rules}/>
+	<WarTheaterMap attacker={{name:data.attackerName,lat:data.attackerLat,lng:data.attackerLng,fobs:data.attackerFOBs||[]}} defender={{name:data.defenderName,lat:data.defenderLat,lng:data.defenderLng,fobs:data.defenderFOBs||[]}} routeType={data.routeType} stage={data.stage} distanceKm={data.distanceKm} roundsResolved={data.roundsResolved} deployments={data.deployments||[]}/>
+	<section className="war-force-comparison">
+	<ForceTable title="Your forces" forces={myForces}/>
+	<ForceTable title="Opposing observed forces" forces={enemyForces}/>
+	</section><WarDamageSummary ended={data.stage==='ended'} attacker={{name:data.attackerName,forces:data.forces.attacker||{},incomingPressure:data.defenderDamagePressure,infrastructureDamage:data.attackerInfrastructureDamage,institutionsDestroyed:data.attackerInstitutionsDestroyed}} defender={{name:data.defenderName,forces:data.forces.defender||{},incomingPressure:data.attackerDamagePressure,infrastructureDamage:data.defenderInfrastructureDamage,institutionsDestroyed:data.defenderInstitutionsDestroyed}}/>{data.stage!=='ended'&&<>
 <section className="panel war-orders">
 <div className="war-section-heading">
 <div>
@@ -156,7 +158,8 @@ function WarDetail({id}:{id:string}){
 <CheckCircle2/>
 <div>
 <span>LOCKED IN FOR ROUND {data.currentOrder.round}</span>
-<b>{data.operations[data.currentOrder.operation]} · {data.postures[data.currentOrder.posture]}</b>
+<b>Homeland: {data.operations[data.currentOrder.homeOperation]} · {data.postures[data.currentOrder.homePosture]}</b>
+<b>Expeditionary: {data.operations[data.currentOrder.foreignOperation]} · {data.postures[data.currentOrder.foreignPosture]}</b>
 <small>Saved {when(data.currentOrder.submittedAt)}</small>
 </div>
 </div>:<div className="war-locked-order empty">
@@ -166,15 +169,18 @@ function WarDetail({id}:{id:string}){
 <b>Default: Hold Position · Entrenched</b>
 <small>Submit orders before the next resolution to replace the default.</small>
 </div>
-</div>}<div className="war-order-grid">
-<label>Operation<select value={operation} onChange={e=>{setOperation(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.operations).map(([key,value]:any)=>
+</div>}<div className="war-front-order-grid"><section><span className="eyebrow">HOMELAND FRONT</span><h3>Defensive command</h3><div className="war-order-grid">
+<label>Operation<select value={homeOperation} onChange={e=>{setHomeOperation(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.operations).map(([key,value]:any)=>
 <option value={key} key={key}>{value}</option>)}</select>
 </label>
-<label>Posture<select value={posture} onChange={e=>{setPosture(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.postures).map(([key,value]:any)=>
+<label>Posture<select value={homePosture} onChange={e=>{setHomePosture(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.postures).map(([key,value]:any)=>
 <option value={key} key={key}>{value}</option>)}</select>
-</label>
+</label></div></section><section><span className="eyebrow">EXPEDITIONARY FRONT</span><h3>Foreign command</h3><div className="war-order-grid">
+<label>Operation<select value={foreignOperation} onChange={e=>{setForeignOperation(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.operations).map(([key,value]:any)=><option value={key} key={key}>{value}</option>)}</select></label>
+<label>Posture<select value={foreignPosture} onChange={e=>{setForeignPosture(e.target.value);setOrdersSaved(false)}}>{Object.entries(data.postures).map(([key,value]:any)=><option value={key} key={key}>{value}</option>)}</select></label>
+</div></section>
 </div>
-<p>Orders can be revised until the round resolves. If no order is submitted, forces hold an entrenched posture.</p>{ordersSaved&&<p className="war-order-saved">
+<p>Each front resolves independently. Orders can be revised until the round resolves; an unordered front holds an entrenched posture.</p>{ordersSaved&&<p className="war-order-saved">
 <CheckCircle2/>Your orders are confirmed for the next round.</p>}<button className="primary" disabled={busy!==''} onClick={()=>void saveOrders()}>{busy==='orders'?'Saving orders…':data.currentOrder?'Update locked orders':'Save round orders'}</button>
 </section>
 <section className="panel war-reinforcements">
@@ -185,14 +191,14 @@ function WarDetail({id}:{id:string}){
 </div>
 <Truck/>
 </div>
-<label className="reinforcement-origin">Deployment origin<select value={originFOBID} onChange={event=>setOriginFOBID(event.target.value)}><option value="">{data.isAttacker?data.attackerName:data.defenderName} Homeland</option>{myFobs.map((base:any)=><option value={base.id} key={base.id}>{base.name} · {base.continent}</option>)}</select></label>
+<div className="reinforcement-route"><label>Destination<select value={deploymentTheater} onChange={event=>{setDeploymentTheater(event.target.value);if(event.target.value==='home')setOriginFOBID('')}}><option value="home">Homeland defense</option><option value="foreign">Expedition into {data.isAttacker?data.defenderName:data.attackerName}</option></select></label><label className="reinforcement-origin">Deployment origin<select disabled={deploymentTheater==='home'} value={originFOBID} onChange={event=>setOriginFOBID(event.target.value)}><option value="">{data.isAttacker?data.attackerName:data.defenderName} Homeland</option>{myFobs.map((base:any)=><option value={base.id} key={base.id}>{base.name} · {base.continent}</option>)}</select></label></div>
 <div className="reinforcement-inputs">{units.map(unit=>{const maximum=Number(data.availableForDeployment?.[unit]||0);return <label key={unit}>
 <span>{names[unit]}</span>
 <input type="number" min="0" max={maximum} step="1" inputMode="numeric" value={forces[unit]||''} onChange={e=>setForces({...forces,[unit]:Math.min(maximum,Math.max(0,Math.floor(Number(e.target.value))))})}/>
 <small>Maximum deployable <b>{maximum.toLocaleString()}</b>
 </small>
 </label>})}</div>
-<p>Arrival time is calculated from the selected origin to the opposing nation.</p>
+<p>{deploymentTheater==='home'?'Homeland reinforcements are available for the next resolution.':'Expeditionary arrival time is calculated from the selected origin to the opposing homeland.'}</p>
 <button disabled={busy!==''||Object.values(forces).reduce((sum,value)=>sum+Number(value||0),0)<1} onClick={()=>void deploy()}>{busy==='deploy'?'Deploying…':'Commit reinforcements'}</button>
 </section>
 </>}<section className="war-reports">
@@ -210,8 +216,8 @@ function WarDetail({id}:{id:string}){
 </header>
 <p>{report.summary}</p>
 <div>
-<span>{label(report.attackerOperation)} · {Number(report.attackerSupply*100).toFixed(0)}% supplied</span>
-<span>{label(report.defenderOperation)} · {Number(report.defenderSupply*100).toFixed(0)}% supplied</span>
+<span>{data.attackerName}: H {label(report.attackerHomeOperation)} / {label(report.attackerHomePosture)} · E {label(report.attackerOperation)} / {label(report.attackerForeignPosture)} · {Number(report.attackerSupply*100).toFixed(0)}% supplied</span>
+<span>{data.defenderName}: H {label(report.defenderHomeOperation)} / {label(report.defenderHomePosture)} · E {label(report.defenderOperation)} / {label(report.defenderForeignPosture)} · {Number(report.defenderSupply*100).toFixed(0)}% supplied</span>
 </div>
 <small>Losses: {lossText(report.attackerLosses)} / {lossText(report.defenderLosses)}</small>
 </article>):<div className="war-empty compact">No strategic rounds have resolved yet.</div>}</section>{data.stage!=='ended'&&<section className="war-capitulation">{confirmCapitulation?<>
@@ -224,13 +230,14 @@ function WarDetail({id}:{id:string}){
 </>:<button className="danger" onClick={()=>setConfirmCapitulation(true)}>Capitulate</button>}</section>}</div>
 }
 
-function WarSide({name,score,resolve,readiness,organization,active}:{name:string;score:number;resolve:number;readiness:number;organization:number;active:boolean}){return <article className={active?'my-side':''}>
+function WarSide({name,score,resolve,readiness,organization,damagePressure,active}:{name:string;score:number;resolve:number;readiness:number;organization:number;damagePressure:number;active:boolean}){return <article className={active?'my-side':''}>
 <span>{active?'YOUR COMMAND':'BELLIGERENT'}</span>
 <h3>{name}</h3>
 <b>{Number(score).toFixed(1)} score</b>
 <Meter label="Resolve" value={resolve}/>
 <Meter label="Readiness" value={readiness}/>
 <Meter label="Organization" value={organization}/>
+	<span className="war-damage-pressure">Damage pressure inflicted <b>{Number(damagePressure||0).toFixed(2)}</b></span>
 </article>}
 function Meter({label:meterLabel,value}:{label:string;value:number}){return <div className="war-meter">
 <span>{meterLabel}<b>{Number(value).toFixed(0)}%</b>
@@ -239,10 +246,12 @@ function Meter({label:meterLabel,value}:{label:string;value:number}){return <div
 <em style={{width:`${Math.max(0,Math.min(100,Number(value)))}%`}}/>
 </i>
 </div>}
-function ForceTable({title,forces}:{title:string;forces:Record<string,any>}){return <article>
-<h3>{title}</h3>{units.map(unit=>{const force=forces[unit];return <div key={unit}>
+function ForceTable({title,forces}:{title:string;forces:Record<string,any>}){return <article className="two-front-force-table">
+<h3>{title}</h3><div className="war-force-heading"><span>Unit</span><b>Homeland</b><b>Expeditionary</b><b>En Route</b><b>Strategic Reserve</b></div>{units.map(unit=>{const force=forces[unit];return <div className="war-force-row" key={unit}>
 <span>{names[unit]}</span>
-<b>{Number(force?.remaining||0).toLocaleString()}</b>
-<small>{force&&Number(force.arrivesRound)>0?`Arrives round ${force.arrivesRound}`:'In theater'}</small>
+<b>{Number(force?.homeTheater||0).toLocaleString()}</b>
+<b>{Number(force?.foreignTheater||0).toLocaleString()}</b>
+<b>{Number(force?.enRoute||0).toLocaleString()}</b>
+<b>{Number(force?.reserve||0).toLocaleString()}</b>
 </div>})}</article>}
 function lossText(losses:Record<string,number>){const parts=Object.entries(losses||{}).filter(([,value])=>Number(value)>0).map(([unit,value])=>`${Number(value).toLocaleString()} ${names[unit]}`);return parts.length?parts.join(', '):'none'}

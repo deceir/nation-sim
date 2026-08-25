@@ -1,0 +1,39 @@
+.conflict-force-legend {
+  display: flex;
+  gap: 12px;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.conflict-detail-hero .war-objective-effect {
+  color: var(--gold);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.conflict-front-counts {
+  display: grid !important;
+  grid-template-columns: repeat(3, auto);
+  justify-content: end;
+  gap: 3px 7px;
+}
+
+.conflict-front-counts > span {
+  font-size: 10px;
+}
+
+.conflict-front-counts > small {
+  grid-column: 1 / -1;
+}
+
+.conflict-side-stats {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 700px) {
+  .conflict-side-stats {
+    grid-template-columns: 1fr;
+  }
+}

@@ -51,7 +51,7 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	q := strings.TrimSpace(r.URL.Query().Get("search"))
 	q = strings.ReplaceAll(strings.ReplaceAll(q, "\\", "\\\\"), "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
-	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,a.id,a.name ORDER BY n.population DESC,n.name LIMIT 100`, q, q, q, q)
+	rows, e := a.db.Query(r.Context(), `SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,count(DISTINCT c.id),COALESCE(a.id,''),COALESCE(a.name,'') FROM nations n LEFT JOIN cities c ON c.nation_id=n.id LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%',?,'%') ESCAPE '\\' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') GROUP BY n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,a.id,a.name ORDER BY n.population DESC,n.name LIMIT 100`, q, q, q, q)
 	if e != nil {
 		problem(w, 500, "Nation directory unavailable.")
 		return
@@ -62,8 +62,9 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 		var id, name, leader, government, continent, motto, userType, allianceID, allianceName string
 		var cityCount int
 		var population int64
-		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &cityCount, &allianceID, &allianceName)
-		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "cityCount": cityCount, "allianceID": allianceID, "allianceName": allianceName})
+		var createdAt time.Time
+		rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &createdAt, &cityCount, &allianceID, &allianceName)
+		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "createdAt": createdAt, "cityCount": cityCount, "allianceID": allianceID, "allianceName": allianceName})
 	}
 	write(w, 200, out)
 }
