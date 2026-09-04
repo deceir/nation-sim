@@ -391,7 +391,17 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		applyProvincialOperatingConditions(&in, economicResult)
 	}
 	result := calculateStrategy(in)
-	applyCrisisTurnModifiers(&result, a.loadCrisisModifiers(r.Context(), nid))
+	crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
+	applyCrisisTurnModifiers(&result, crisisModifiers)
+	militaryCashUpkeep, _ := militaryUpkeepProjection(r.Context(), a.db, nid)
+	militaryFoodUpkeep := militaryFoodUpkeepProjection(r.Context(), a.db, nid)
+	distress := assessEconomicDistress(r.Context(), a.db, nid,
+		(economicResult.DailyCivilianFoodConsumption+militaryFoodUpkeep)/balance.TurnsPerDay,
+		result.Production["foodstuffs"]/balance.TurnsPerDay,
+		economicResult.DailyTax*result.IncomeMultiplier/balance.TurnsPerDay,
+		(economicResult.DailyUpkeep*(1-crisisModifiers.UpkeepReductionPct/100)+militaryCashUpkeep)/balance.TurnsPerDay,
+	)
+	applyEconomicDistress(&result, distress)
 	var political float64
 	var changed, disruption sql.NullTime
 	a.db.QueryRowContext(r.Context(), `SELECT political_capital,gear_changed_at,disruption_until FROM nation_economic_strategy WHERE nation_id=?`, nid).Scan(&political, &changed, &disruption)
@@ -459,7 +469,7 @@ func (a *app) strategyDashboard(w http.ResponseWriter, r *http.Request, u user) 
 			provinceCivicMetrics[city.ID] = map[string]any{"employmentRate": city.EmploymentRate, "taxCollectionMultiplier": city.TaxCollectionMultiplier, "disease": city.Disease, "crime": city.Crime, "dailyUpkeep": city.CivicUpkeep}
 		}
 	}
-	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "technology": in.Technology, "gearChangedAt": changed, "disruptionUntil": disruption, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "civicInstitutions": institutionList, "provinceCivicMetrics": provinceCivicMetrics, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
+	write(w, 200, map[string]any{"gear": in.Gear, "gears": gearList, "policies": policyList, "politicalCapital": political, "technology": in.Technology, "gearChangedAt": changed, "disruptionUntil": disruption, "distress": distress, "provinces": in.Provinces, "provinceUpgradeTypes": upgradeList, "civicInstitutions": institutionList, "provinceCivicMetrics": provinceCivicMetrics, "expansion": expansion, "quotas": in.Quotas, "recipes": commodityRecipes, "stockpiles": stock, "result": result})
 }
 
 func (a *app) setGear(w http.ResponseWriter, r *http.Request, u user) {
@@ -607,7 +617,7 @@ func (a *app) setQuotas(w http.ResponseWriter, r *http.Request, u user) {
 	write(w, 200, map[string]bool{"ok": true})
 }
 
-func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult, foodNeed float64) error {
+func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategicInput, result strategicResult, civilianFoodNeed, militaryFoodNeed float64) error {
 	produced := []string{}
 	producedAmounts := map[string]float64{}
 	for _, commodity := range []string{"foodstuffs", "timber", "fibers", "basic_metals", "energy", "strategic_minerals"} {
@@ -629,7 +639,9 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 	if e := tx.QueryRowContext(ctx, `SELECT amount FROM nation_stockpiles WHERE nation_id=? AND commodity='foodstuffs' FOR UPDATE`, nid).Scan(&foodAvailable); e != nil {
 		return e
 	}
-	foodConsumed := math.Min(foodNeed, foodAvailable)
+	civilianFoodConsumed := math.Min(civilianFoodNeed, foodAvailable)
+	militaryFoodConsumed := math.Min(militaryFoodNeed, math.Max(0, foodAvailable-civilianFoodConsumed))
+	foodConsumed := civilianFoodConsumed + militaryFoodConsumed
 	if _, e := tx.ExecContext(ctx, `UPDATE nation_stockpiles SET amount=amount-? WHERE nation_id=? AND commodity='foodstuffs'`, foodConsumed, nid); e != nil {
 		return e
 	}
@@ -676,8 +688,9 @@ func applyStrategicTurn(ctx context.Context, tx *sql.Tx, nid string, in strategi
 	}
 	var turnRevenueNotifications bool
 	tx.QueryRowContext(ctx, `SELECT u.turn_revenue_notifications FROM users u JOIN nations n ON n.owner_id=u.id WHERE n.id=?`, nid).Scan(&turnRevenueNotifications)
+	foodNeed := civilianFoodNeed + militaryFoodNeed
 	if turnRevenueNotifications && (len(produced) > 0 || foodNeed > 0) {
-		message := fmt.Sprintf("Population upkeep consumed %.2f Foodstuffs.", foodConsumed)
+		message := fmt.Sprintf("Domestic demand consumed %.2f Foodstuffs (%.2f civilian, %.2f standing military).", foodConsumed, civilianFoodConsumed, militaryFoodConsumed)
 		if len(produced) > 0 {
 			message = "Last turn you produced: " + strings.Join(produced, ", ") + ". " + message
 		}

@@ -234,6 +234,24 @@ func militaryUpkeepProjection(ctx context.Context, q interface {
 	return cash, energy
 }
 
+func militaryFoodUpkeepProjection(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, nationID string) float64 {
+	var soldiers int64
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(quantity,0) FROM military_inventory WHERE nation_id=? AND unit_type='soldiers'`, nationID).Scan(&soldiers)
+	return float64(soldiers) * balance.SoldierFoodPerDay
+}
+
+// This is a daily-equivalent budget projection. War resolution still deducts
+// the actual operational ration cost once per three-hour combat round.
+func warFoodUpkeepProjection(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, nationID string) float64 {
+	var deployed int64
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(d.remaining),0) FROM war_deployments d JOIN wars w ON w.conflict_id=d.conflict_id WHERE d.nation_id=? AND d.unit_type='soldiers' AND w.stage<>'ended'`, nationID).Scan(&deployed)
+	return float64(deployed) * balance.SoldierWarFoodPerRound * (24 / float64(warRoundHours))
+}
+
 func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var nid string
 	var population int64
@@ -254,7 +272,13 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 		capacity := militaryCapacity(spec, population, provinces)
 		dailyLimit := militaryDailyProductionLimit(key, capacity)
 		committed := committedMilitary(r.Context(), a.db, nid, key)
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday), "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
+		dailyFood := 0.0
+		foodEach := 0.0
+		if key == "soldiers" {
+			foodEach = balance.SoldierFoodPerDay
+			dailyFood = float64(totalOwned) * foodEach
+		}
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "dailyFoodUpkeep": dailyFood, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "foodUpkeepEach": foodEach, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday), "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
 	}
 	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
 }

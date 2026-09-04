@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {Anchor,Box,Coins,Factory,MapPinned,Shield,Trash2,Users,Zap} from 'lucide-react';
+import {Anchor,Box,Coins,Factory,MapPinned,Shield,Trash2,Users,Wheat,Zap} from 'lucide-react';
 import WorldLocationPicker,{type WorldLocation} from './WorldLocationPicker';
 import './military-system.css';
 import './military-defense-settings.css';
@@ -25,7 +25,7 @@ export default function MilitaryScreen(){
  const buildFob=async()=>{if(!fobLocation||!confirm('Build this Forward Operating Base for ¥25,000,000?'))return;setBusy('fob');setError('');try{await api('/fobs',{method:'POST',body:JSON.stringify(fobLocation)});setFobLocation(null);window.dispatchEvent(new Event('diplomatia:resources'));await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  const demolishFob=async(id:string)=>{if(!confirm('Demolish this Forward Operating Base? There is no refund and construction will be locked for 60 days.'))return;setBusy('fob');setError('');try{await api('/fobs/'+encodeURIComponent(id),{method:'DELETE'});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  if(!data||!fobs)return <section className="panel wide">Reviewing military readiness…</section>;
- const dailyCash=data.units.reduce((sum:number,u:any)=>sum+Number(u.dailyCashUpkeep||0),0),dailyEnergy=data.units.reduce((sum:number,u:any)=>sum+Number(u.dailyEnergyUpkeep||0),0);
+ const dailyCash=data.units.reduce((sum:number,u:any)=>sum+Number(u.dailyCashUpkeep||0),0),dailyEnergy=data.units.reduce((sum:number,u:any)=>sum+Number(u.dailyEnergyUpkeep||0),0),dailyFood=data.units.reduce((sum:number,u:any)=>sum+Number(u.dailyFoodUpkeep||0),0);
  return <div className="military-page">
   <section className="military-hero">
 <Shield/>
@@ -58,6 +58,11 @@ export default function MilitaryScreen(){
 <Zap/>
 <span>Daily Energy upkeep</span>
 <b>{dailyEnergy.toLocaleString(undefined,{maximumFractionDigits:2})} t</b>
+</div>
+<div>
+<Wheat/>
+<span>Standing army rations</span>
+<b>{dailyFood.toLocaleString(undefined,{maximumFractionDigits:2})} t/day</b>
 </div>
 </div>
   <section className="panel automatic-defense">
@@ -122,7 +127,8 @@ export default function MilitaryScreen(){
    <div className="unit-facts">
 <span>
 <Coins/> {yen(unit.dailyCashUpkeep)} daily upkeep</span>{Number(unit.dailyEnergyUpkeep)>0&&<span>
-<Zap/> {Number(unit.dailyEnergyUpkeep).toLocaleString(undefined,{maximumFractionDigits:2})} t Energy daily</span>}<span>
+<Zap/> {Number(unit.dailyEnergyUpkeep).toLocaleString(undefined,{maximumFractionDigits:2})} t Energy daily</span>}{Number(unit.dailyFoodUpkeep)>0&&<span>
+<Wheat/> {Number(unit.dailyFoodUpkeep).toLocaleString(undefined,{maximumFractionDigits:2})} t Foodstuffs daily</span>}<span>
 <Factory/> {yen(unit.cashCost)} each</span>
 </div>
    <div className="unit-costs">{Object.entries(unit.resourceCosts||{}).map(([resource,cost])=>

@@ -829,7 +829,7 @@ func consumeWarSupply(ctx context.Context, tx *sql.Tx, nid string, forces map[st
 		switch unit {
 		case "soldiers":
 			cash += int64(v * 2)
-			food += v * .001
+			food += v * balance.SoldierWarFoodPerRound
 		case "tanks":
 			cash += int64(v * 100)
 			energy += v * .02

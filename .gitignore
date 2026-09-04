@@ -2,6 +2,7 @@ node_modules/
 dist/
 .npm-cache/
 .gocache/
+.cache/
 .tmp-go-cache/
 .gopath/
 .docker-config/
