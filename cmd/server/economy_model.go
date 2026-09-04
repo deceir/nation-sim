@@ -6,13 +6,35 @@ import "math"
 // Values are daily; the hourly turn resolver divides flows by TurnsPerDay.
 type EconomyConfig struct {
 	TurnsPerDay, PopulationPerInfra, InfraPerSlot, BaseCitizenIncome float64
-	FoodPerCitizen, HappinessIncomePerPoint, PopulationGrowthRate    float64
+	FoodPerCitizen, FoodScalingReferencePopulation                   float64
+	FoodScalingStrength, FoodScalingExponent                         float64
+	SoldierFoodPerDay, SoldierWarFoodPerRound                        float64
+	HappinessIncomePerPoint, PopulationGrowthRate                    float64
 	EducationIncomeMax, TechnologyIncomePerLevel, InfraUpkeepBase    float64
 }
 
 const yenScale int64 = 100
 
-var balance = EconomyConfig{24, 90, 50, 500, .001, .018, .0020, .55, .0025, 32}
+var balance = EconomyConfig{
+	TurnsPerDay: 24, PopulationPerInfra: 90, InfraPerSlot: 50, BaseCitizenIncome: 500,
+	FoodPerCitizen: .00065, FoodScalingReferencePopulation: 100000,
+	FoodScalingStrength: .45, FoodScalingExponent: .35,
+	SoldierFoodPerDay: .0025, SoldierWarFoodPerRound: .0015,
+	HappinessIncomePerPoint: .018, PopulationGrowthRate: .0020,
+	EducationIncomeMax: .55, TechnologyIncomePerLevel: .0025, InfraUpkeepBase: 32,
+}
+
+// Civilian food demand rises faster than population. A new nation remains
+// self-sufficient, while dense and geographically broad nations become an
+// increasingly important market for dedicated agricultural exporters.
+func dailyCivilianFoodDemand(population float64) (float64, float64) {
+	if population <= 0 {
+		return 0, 1
+	}
+	reference := math.Max(1, balance.FoodScalingReferencePopulation)
+	sizeMultiplier := 1 + balance.FoodScalingStrength*math.Pow(population/reference, balance.FoodScalingExponent)
+	return population * balance.FoodPerCitizen * sizeMultiplier, sizeMultiplier
+}
 
 // startingNationPopulation uses the same model as the hourly turn so a newly
 // founded nation never presents a temporary placeholder population.
@@ -144,6 +166,14 @@ type NationResult struct {
 	Production                       map[string]float64 `json:"production"`
 	Contributors                     map[string]float64 `json:"contributors"`
 	DailyFoodConsumption             float64            `json:"dailyFoodConsumption"`
+	DailyCivilianFoodConsumption     float64            `json:"dailyCivilianFoodConsumption"`
+	DailyMilitaryFoodConsumption     float64            `json:"dailyMilitaryFoodConsumption"`
+	ProjectedDailyWarFoodConsumption float64            `json:"projectedDailyWarFoodConsumption"`
+	ProjectedDailyTotalFoodDemand    float64            `json:"projectedDailyTotalFoodDemand"`
+	FoodDemandSizeMultiplier         float64            `json:"foodDemandSizeMultiplier"`
+	FoodShortage                     bool               `json:"foodShortage"`
+	UpkeepDefault                    bool               `json:"upkeepDefault"`
+	ProductivityMultiplier           float64            `json:"productivityMultiplier"`
 	HourlyFoodConsumption            float64            `json:"hourlyFoodConsumption"`
 	DailyFoodProduction              float64            `json:"dailyFoodProduction"`
 	NetDailyFood                     float64            `json:"netDailyFood"`
@@ -395,8 +425,11 @@ func calculateEconomy(n ModelNation) NationResult {
 		out.EffectiveEmploymentRate = weightedEmployment / out.Population
 		out.EffectiveTaxCollectionMultiplier = weightedTaxCollection / out.Population
 	}
-	out.DailyFoodConsumption = out.Population * balance.FoodPerCitizen * policyFood
+	out.DailyCivilianFoodConsumption, out.FoodDemandSizeMultiplier = dailyCivilianFoodDemand(out.Population)
+	out.DailyCivilianFoodConsumption *= policyFood
+	out.DailyFoodConsumption = out.DailyCivilianFoodConsumption
+	out.ProjectedDailyTotalFoodDemand = out.DailyFoodConsumption
 	out.HourlyFoodConsumption = out.DailyFoodConsumption / balance.TurnsPerDay
-	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "effectiveEmploymentRate": out.EffectiveEmploymentRate, "taxCollectionMultiplier": out.EffectiveTaxCollectionMultiplier, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget, "socialPolicyDisease": policyDisease, "socialPolicyCrime": policyCrime, "socialPolicyEmployment": policyEmployment, "socialPolicyFoodConsumption": policyFood, "socialPolicyInfrastructureUpkeep": policyInfrastructureUpkeep}
+	out.Contributors = map[string]float64{"localConditions": local, "taxPenalty": -taxPenalty, "educationHappiness": n.Education * .12, "effectiveEmploymentRate": out.EffectiveEmploymentRate, "taxCollectionMultiplier": out.EffectiveTaxCollectionMultiplier, "currentHappiness": n.Happiness, "targetHappiness": out.HappinessTarget, "socialPolicyDisease": policyDisease, "socialPolicyCrime": policyCrime, "socialPolicyEmployment": policyEmployment, "socialPolicyFoodConsumption": policyFood, "foodDemandSizeMultiplier": out.FoodDemandSizeMultiplier, "socialPolicyInfrastructureUpkeep": policyInfrastructureUpkeep}
 	return out
 }

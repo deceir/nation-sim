@@ -23,8 +23,19 @@ func (a *app) projectedGDPForOwner(ctx context.Context, ownerID string) (int64, 
 	result := calculateEconomy(nation)
 	multiplier := 1.0
 	if strategy, strategyErr := a.loadStrategy(ctx, nationID); strategyErr == nil {
+		applyProvincialOperatingConditions(&strategy, result)
 		strategic := calculateStrategy(strategy)
-		applyCrisisTurnModifiers(&strategic, a.loadCrisisModifiers(ctx, nationID))
+		crisisModifiers := a.loadCrisisModifiers(ctx, nationID)
+		applyCrisisTurnModifiers(&strategic, crisisModifiers)
+		militaryCashUpkeep, _ := militaryUpkeepProjection(ctx, a.db, nationID)
+		militaryFoodUpkeep := militaryFoodUpkeepProjection(ctx, a.db, nationID)
+		distress := assessEconomicDistress(ctx, a.db, nationID,
+			(result.DailyCivilianFoodConsumption+militaryFoodUpkeep)/balance.TurnsPerDay,
+			strategic.Production["foodstuffs"]/balance.TurnsPerDay,
+			result.DailyTax*strategic.IncomeMultiplier/balance.TurnsPerDay,
+			(result.DailyUpkeep*(1-crisisModifiers.UpkeepReductionPct/100)+militaryCashUpkeep)/balance.TurnsPerDay,
+		)
+		applyEconomicDistress(&strategic, distress)
 		multiplier = strategic.IncomeMultiplier
 	}
 	return annualizedGDP(result.DailyTax * multiplier), nationID, nil
@@ -37,15 +48,29 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	result := calculateEconomy(n)
+	militaryCashUpkeep, militaryEnergyUpkeep := militaryUpkeepProjection(r.Context(), a.db, nid)
+	result.DailyMilitaryFoodConsumption = militaryFoodUpkeepProjection(r.Context(), a.db, nid)
+	result.ProjectedDailyWarFoodConsumption = warFoodUpkeepProjection(r.Context(), a.db, nid)
+	result.DailyFoodConsumption = result.DailyCivilianFoodConsumption + result.DailyMilitaryFoodConsumption
+	result.HourlyFoodConsumption = result.DailyFoodConsumption / balance.TurnsPerDay
+	result.ProjectedDailyTotalFoodDemand = result.DailyFoodConsumption + result.ProjectedDailyWarFoodConsumption
 	populationGrowthMultiplier := 1.0
+	distress := economicDistressStatus{ProductivityMultiplier: 1}
 	if strategy, e := a.loadStrategy(r.Context(), nid); e == nil {
 		applyProvincialOperatingConditions(&strategy, result)
 		strategic := calculateStrategy(strategy)
 		crisisModifiers := a.loadCrisisModifiers(r.Context(), nid)
 		applyCrisisTurnModifiers(&strategic, crisisModifiers)
+		upkeepMultiplier := 1 - crisisModifiers.UpkeepReductionPct/100
+		distress = assessEconomicDistress(r.Context(), a.db, nid,
+			result.HourlyFoodConsumption,
+			strategic.Production["foodstuffs"]/balance.TurnsPerDay,
+			result.DailyTax*strategic.IncomeMultiplier/balance.TurnsPerDay,
+			(result.DailyUpkeep*upkeepMultiplier+militaryCashUpkeep)/balance.TurnsPerDay,
+		)
+		applyEconomicDistress(&strategic, distress)
 		populationGrowthMultiplier = strategic.PopulationMultiplier
 		result.DailyTax *= strategic.IncomeMultiplier
-		upkeepMultiplier := 1 - crisisModifiers.UpkeepReductionPct/100
 		result.DailyUpkeep *= upkeepMultiplier
 		result.DailyInfrastructureUpkeep *= upkeepMultiplier
 		result.DailyCivicUpkeep *= upkeepMultiplier
@@ -58,9 +83,13 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 		result.EducationChange = policyAdjustedEducationChange(result.EducationChange, strategic.EducationMultiplier)
 		result.Contributors["dailyCrisisIncome"] = 1 + crisisModifiers.CashIncomePct/100
 		result.Contributors["dailyCrisisUpkeepReduction"] = crisisModifiers.UpkeepReductionPct
+		result.Contributors["economicDistressProductivity"] = distress.ProductivityMultiplier
 		result.DailyFoodProduction = strategic.Production["foodstuffs"]
-		result.NetDailyFood = result.DailyFoodProduction - result.DailyFoodConsumption
 	}
+	result.FoodShortage = distress.FoodShortage
+	result.UpkeepDefault = distress.UpkeepDefault
+	result.ProductivityMultiplier = distress.ProductivityMultiplier
+	result.NetDailyFood = result.DailyFoodProduction - result.ProjectedDailyTotalFoodDemand
 	_, result.ProjectedHourlyPopulationGrowth = nationalPopulationGrowth(nid, result.Cities, n.Happiness, n.Education, populationGrowthMultiplier, nextHour())
 	result.ProjectedDailyPopulationGrowth = result.ProjectedHourlyPopulationGrowth * int64(balance.TurnsPerDay)
 	alliance := map[string]any{"name": "", "taxRate": float64(0), "projectedDailyTax": int64(0)}
@@ -68,7 +97,6 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	if allianceID != "" {
 		alliance = map[string]any{"name": allianceName, "taxRate": allianceRate, "resourceRate": resourceRate, "projectedDailyTax": int64(math.Max(0, result.NetDailyCash) * allianceRate / 100)}
 	}
-	militaryCashUpkeep, militaryEnergyUpkeep := militaryUpkeepProjection(r.Context(), a.db, nid)
 	result.NetDailyCash -= militaryCashUpkeep
 	luxury := a.luxuryConsumptionDashboard(r.Context(), nid, result.Population, len(result.Cities))
 	result.NetDailyCash += float64(luxury.ProjectedIncome)
@@ -95,7 +123,7 @@ func (a *app) economyDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var totalInfra float64
 	a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, nid).Scan(&totalInfra)
 	slots := int(totalInfra / 300)
-	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "alliance": alliance, "military": map[string]any{"dailyCashUpkeep": militaryCashUpkeep, "dailyEnergyUpkeep": militaryEnergyUpkeep}, "luxuryConsumption": luxury, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
+	write(w, 200, map[string]any{"nation": map[string]any{"taxRate": n.TaxRate, "happiness": n.Happiness, "education": n.Education, "technology": n.Technology, "doctrine": n.Doctrine, "treasury": cash}, "result": result, "distress": distress, "alliance": alliance, "military": map[string]any{"dailyCashUpkeep": militaryCashUpkeep, "dailyEnergyUpkeep": militaryEnergyUpkeep, "dailyFoodUpkeep": result.DailyMilitaryFoodConsumption, "projectedDailyWarFoodUpkeep": result.ProjectedDailyWarFoodConsumption}, "luxuryConsumption": luxury, "buildings": types, "projects": projects, "projectSlots": slots, "projectsCompleted": len(n.Projects), "nextTurnAt": nextHour()})
 }
 
 func (a *app) loadEconomicNationContext(ctx context.Context, owner string) (ModelNation, string, int64, error) {

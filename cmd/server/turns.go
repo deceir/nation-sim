@@ -102,6 +102,26 @@ func (a *app) processHourlyTurn(turn time.Time) {
 		}
 		crisisModifiers := a.loadCrisisModifiers(ctx, nid)
 		applyCrisisTurnModifiers(&strategyResult, crisisModifiers)
+		militaryCashProjection, _ := militaryUpkeepProjection(ctx, a.db, nid)
+		result.DailyMilitaryFoodConsumption = militaryFoodUpkeepProjection(ctx, a.db, nid)
+		result.ProjectedDailyWarFoodConsumption = warFoodUpkeepProjection(ctx, a.db, nid)
+		result.DailyFoodConsumption = result.DailyCivilianFoodConsumption + result.DailyMilitaryFoodConsumption
+		result.HourlyFoodConsumption = result.DailyFoodConsumption / balance.TurnsPerDay
+		result.ProjectedDailyTotalFoodDemand = result.DailyFoodConsumption + result.ProjectedDailyWarFoodConsumption
+		upkeepMultiplier := 1 - crisisModifiers.UpkeepReductionPct/100
+		distress := assessEconomicDistress(ctx, a.db, nid,
+			result.HourlyFoodConsumption,
+			strategyResult.Production["foodstuffs"]/balance.TurnsPerDay,
+			result.DailyTax*strategyResult.IncomeMultiplier/balance.TurnsPerDay,
+			(result.DailyUpkeep*upkeepMultiplier+militaryCashProjection)/balance.TurnsPerDay,
+		)
+		applyEconomicDistress(&strategyResult, distress)
+		result.FoodShortage = distress.FoodShortage
+		result.UpkeepDefault = distress.UpkeepDefault
+		result.ProductivityMultiplier = distress.ProductivityMultiplier
+		result.Contributors["economicDistressProductivity"] = distress.ProductivityMultiplier
+		result.DailyFoodProduction = strategyResult.Production["foodstuffs"]
+		result.NetDailyFood = result.DailyFoodProduction - result.ProjectedDailyTotalFoodDemand
 		cash := int64(math.Floor((result.DailyTax*strategyResult.IncomeMultiplier - result.DailyUpkeep) / balance.TurnsPerDay))
 		cash += int64(math.Floor(result.DailyUpkeep / balance.TurnsPerDay * crisisModifiers.UpkeepReductionPct / 100))
 		allianceID, allianceName, allianceRate, _ := applicableAllianceTax(ctx, a.db, nid)
@@ -158,7 +178,7 @@ func (a *app) processHourlyTurn(turn time.Time) {
 			tx.ExecContext(ctx, `INSERT INTO alliance_bank_transactions(id,alliance_id,actor_nation_id,kind,resource,amount,memo) VALUES(?,?,?,'tax','cash',?,?)`, uuid(), allianceID, nid, allianceTax, "Hourly Alliance tax from "+allianceName)
 		}
 		if strategyErr == nil {
-			if e = applyStrategicTurn(ctx, tx, nid, strategy, strategyResult, result.HourlyFoodConsumption); e != nil {
+			if e = applyStrategicTurn(ctx, tx, nid, strategy, strategyResult, result.DailyCivilianFoodConsumption/balance.TurnsPerDay, result.DailyMilitaryFoodConsumption/balance.TurnsPerDay); e != nil {
 				tx.Rollback()
 				continue
 			}

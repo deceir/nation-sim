@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -156,6 +157,35 @@ func TestNewSocialPoliciesAffectCoreEconomy(t *testing.T) {
 	managed := calculateEconomy(base)
 	if managed.EffectiveEmploymentRate <= normal.EffectiveEmploymentRate || managed.DailyInfrastructureUpkeep >= normal.DailyInfrastructureUpkeep || managed.DailyFoodConsumption >= normal.DailyFoodConsumption {
 		t.Fatal("public works and food security must affect employment, Infrastructure upkeep, and food use")
+	}
+}
+
+func TestFoodDemandScalesFasterThanPopulation(t *testing.T) {
+	smallDemand, smallMultiplier := dailyCivilianFoodDemand(10000)
+	largeDemand, largeMultiplier := dailyCivilianFoodDemand(1000000)
+	if smallDemand <= 0 || smallMultiplier <= 1 {
+		t.Fatalf("starter food demand should be positive and scaled: %.2f / %.2f", smallDemand, smallMultiplier)
+	}
+	if largeDemand/smallDemand <= 100 || largeMultiplier <= smallMultiplier {
+		t.Fatalf("large-nation food demand must grow faster than population: small %.2f large %.2f", smallDemand, largeDemand)
+	}
+}
+
+func TestSoldiersNeedMoreFoodDuringWar(t *testing.T) {
+	if balance.SoldierFoodPerDay <= 0 || balance.SoldierWarFoodPerRound <= 0 {
+		t.Fatal("soldiers must consume standing and operational rations")
+	}
+	warDaily := balance.SoldierWarFoodPerRound * (24 / float64(warRoundHours))
+	if warDaily <= balance.SoldierFoodPerDay {
+		t.Fatalf("wartime operational rations %.4f should exceed standing daily rations %.4f", warDaily, balance.SoldierFoodPerDay)
+	}
+}
+
+func TestEconomicDistressPenaltiesDoNotStack(t *testing.T) {
+	result := strategicResult{IncomeMultiplier: 1.2, CommerceMultiplier: 1.2, ExtractionMultiplier: 1.1, IndustryMultiplier: 1.1, MilitaryMultiplier: 1, Production: map[string]float64{"foodstuffs": 100}, ProvinceProduction: map[string]map[string]float64{"p": {"foodstuffs": 100}}}
+	applyEconomicDistress(&result, economicDistressStatus{FoodShortage: true, UpkeepDefault: true, ProductivityMultiplier: .5})
+	if math.Abs(result.IncomeMultiplier-.6) > .0001 || math.Abs(result.Production["foodstuffs"]-50) > .0001 || math.Abs(result.ProvinceProduction["p"]["foodstuffs"]-50) > .0001 {
+		t.Fatalf("multiple distress causes should retain 50%% productivity: %#v", result)
 	}
 }
 
