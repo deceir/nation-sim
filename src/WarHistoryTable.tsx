@@ -9,7 +9,7 @@ type WarHistoryData={items:WarHistoryItem[];page:number;pageSize:number;pages:nu
 const navigate=(path:string)=>{history.pushState(null,'',path);window.dispatchEvent(new PopStateEvent('popstate'))};
 const label=(value:string)=>value.replaceAll('_',' ').replace(/\b\w/g,letter=>letter.toUpperCase());
 
-function NationCell({nation}:{nation:WarNation}){return <div className="war-history-nation"><a href={`/nation/${encodeURIComponent(nation.id)}`} onClick={event=>{event.preventDefault();navigate(`/nation/${encodeURIComponent(nation.id)}`)}}>{nation.name}</a><span>{nation.leaderName}</span>{nation.allianceID&&nation.allianceName?<a className="war-history-alliance" href={`/alliance/${encodeURIComponent(nation.allianceID)}`} onClick={event=>{event.preventDefault();navigate(`/alliance/${encodeURIComponent(nation.allianceID!)}`)}}>{nation.allianceName}</a>:<small>Independent</small>}</div>}
+function NationCell({nation}:{nation:WarNation}){return <div className="war-history-nation"><a href={`/nation/${encodeURIComponent(nation.id)}`} onClick={event=>{event.preventDefault();navigate(`/nation/${encodeURIComponent(nation.id)}`)}}>{nation.name}</a><span>{nation.leaderName}</span>{nation.allianceID&&nation.allianceName?<a className="war-history-alliance" href={`/alliance/${encodeURIComponent(nation.allianceID)}`} onClick={event=>{event.preventDefault();navigate(`/alliance/${encodeURIComponent(nation.allianceID!)}`)}}>{nation.allianceName}</a>:null}</div>}
 
 function resultFor(item:WarHistoryItem,perspectiveNationID?:string){
  if(item.stage!=='ended')return{label:'Active war',tone:'active'};
