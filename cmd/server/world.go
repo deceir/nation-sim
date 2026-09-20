@@ -3,7 +3,7 @@ package main
 import "net/http"
 
 func (a *app) worldStats(w http.ResponseWriter, r *http.Request) {
-	var nations, cities, openOrders, active, active24, activeTwoWeeks, alliances, totalTrades, completedTrades, activeShipments, delayedTrades int64
+	var nations, cities, openOrders, active, active24, activeTwoWeeks, alliances, totalTrades, completedTrades, activeShipments, delayedTrades, activeWars int64
 	var population int64
 	if err := a.db.QueryRowContext(r.Context(), `SELECT COUNT(*),COALESCE(SUM(population),0) FROM nations`).Scan(&nations, &population); err != nil {
 		problem(w, 500, "World statistics unavailable.")
@@ -15,6 +15,7 @@ func (a *app) worldStats(w http.ResponseWriter, r *http.Request) {
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(DISTINCT user_id) FROM sessions WHERE last_action_at>=DATE_SUB(NOW(),INTERVAL 24 HOUR)`).Scan(&active24)
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(DISTINCT user_id) FROM sessions WHERE last_action_at>=DATE_SUB(NOW(),INTERVAL 14 DAY)`).Scan(&activeTwoWeeks)
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM alliances`).Scan(&alliances)
+	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*) FROM wars WHERE stage IN('mobilizing','active')`).Scan(&activeWars)
 	a.db.QueryRowContext(r.Context(), `SELECT COUNT(*),COALESCE(SUM(status='delivered'),0),COALESCE(SUM(status IN('in_transit','delayed')),0),COALESCE(SUM(delay_count>0),0) FROM trade_shipments`).Scan(&totalTrades, &completedTrades, &activeShipments, &delayedTrades)
 	military := map[string]int64{"soldiers": 0, "tanks": 0, "ships": 0, "jets": 0, "drones": 0}
 	rows, militaryErr := a.db.QueryContext(r.Context(), `SELECT unit_type,CAST(SUM(quantity) AS SIGNED) FROM (
@@ -34,5 +35,5 @@ func (a *app) worldStats(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	write(w, 200, map[string]any{"nations": nations, "cities": cities, "population": population, "alliances": alliances, "openMarketOrders": openOrders, "activePlayers": active, "activePlayers24Hours": active24, "activePlayersTwoWeeks": activeTwoWeeks, "totalTrades": totalTrades, "completedTrades": completedTrades, "activeShipments": activeShipments, "delayedTrades": delayedTrades, "military": military})
+	write(w, 200, map[string]any{"nations": nations, "cities": cities, "population": population, "alliances": alliances, "openMarketOrders": openOrders, "activeWars": activeWars, "activePlayers": active, "activePlayers24Hours": active24, "activePlayersTwoWeeks": activeTwoWeeks, "totalTrades": totalTrades, "completedTrades": completedTrades, "activeShipments": activeShipments, "delayedTrades": delayedTrades, "military": military})
 }
