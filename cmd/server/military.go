@@ -254,23 +254,55 @@ func warFoodUpkeepProjection(ctx context.Context, q interface {
 
 func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) {
 	var nid string
-	var population int64
+	var population, treasury int64
 	var provinces int
-	if err := a.db.QueryRowContext(r.Context(), `SELECT n.id,n.population,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) FROM nations n WHERE n.owner_id=?`, u.ID).Scan(&nid, &population, &provinces); err != nil {
+	if err := a.db.QueryRowContext(r.Context(), `SELECT n.id,n.population,n.treasury,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) FROM nations n WHERE n.owner_id=?`, u.ID).Scan(&nid, &population, &treasury, &provinces); err != nil {
 		problem(w, http.StatusNotFound, "Nation not found.")
 		return
 	}
+	stockpiles := map[string]float64{}
+	rows, err := a.db.QueryContext(r.Context(), `SELECT commodity,amount FROM nation_stockpiles WHERE nation_id=?`, nid)
+	if err != nil {
+		problem(w, http.StatusInternalServerError, "Could not calculate military production availability.")
+		return
+	}
+	for rows.Next() {
+		var commodity string
+		var amount float64
+		if err = rows.Scan(&commodity, &amount); err != nil {
+			rows.Close()
+			problem(w, http.StatusInternalServerError, "Could not calculate military production availability.")
+			return
+		}
+		stockpiles[commodity] = amount
+	}
+	rows.Close()
 	projects := loadLongTermProjectSet(r.Context(), a.db, nid)
 	requireProjects := militaryProjectRequirementsEnabled()
 	items := []map[string]any{}
 	for _, key := range militaryUnitKeys() {
 		spec := militaryUnits[key]
-		var quantity, escrowed, producedToday int64
+		var quantity, inbound, escrowed, producedToday int64
 		a.db.QueryRowContext(r.Context(), `SELECT COALESCE((SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type=?),0),COALESCE((SELECT quantity FROM military_production_daily WHERE nation_id=? AND unit_type=? AND production_date=UTC_DATE()),0)`, nid, key, nid, key).Scan(&quantity, &producedToday)
+		a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(quantity),0) FROM trade_shipments WHERE buyer_nation_id=? AND resource=? AND status IN('in_transit','delayed')`, nid, key).Scan(&inbound)
 		a.db.QueryRowContext(r.Context(), `SELECT COALESCE(SUM(escrow_goods),0) FROM market_orders WHERE nation_id=? AND resource=? AND side='sell' AND status IN('open','pending')`, nid, key).Scan(&escrowed)
 		totalOwned := quantity + escrowed
 		capacity := militaryCapacity(spec, population, provinces)
 		dailyLimit := militaryDailyProductionLimit(key, capacity)
+		dailyRemaining := max(int64(0), dailyLimit-producedToday)
+		maximumProductionNow := min(dailyRemaining, max(int64(0), capacity-totalOwned-inbound))
+		if spec.Cash > 0 {
+			maximumProductionNow = min(maximumProductionNow, treasury/spec.Cash)
+		}
+		for resource, each := range spec.Resources {
+			if each > 0 {
+				maximumProductionNow = min(maximumProductionNow, int64(math.Floor(stockpiles[resource]/each)))
+			}
+		}
+		canProduce := !requireProjects || spec.Project == "" || projects[spec.Project]
+		if !canProduce {
+			maximumProductionNow = 0
+		}
 		committed := committedMilitary(r.Context(), a.db, nid, key)
 		dailyFood := 0.0
 		foodEach := 0.0
@@ -278,7 +310,7 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 			foodEach = balance.SoldierFoodPerDay
 			dailyFood = float64(totalOwned) * foodEach
 		}
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "dailyFoodUpkeep": dailyFood, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "foodUpkeepEach": foodEach, "requiredProject": spec.Project, "canProduce": !requireProjects || spec.Project == "" || projects[spec.Project], "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": max(int64(0), dailyLimit-producedToday), "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "dailyFoodUpkeep": dailyFood, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "foodUpkeepEach": foodEach, "requiredProject": spec.Project, "canProduce": canProduce, "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": dailyRemaining, "maximumProductionNow": maximumProductionNow, "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
 	}
 	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
 }
