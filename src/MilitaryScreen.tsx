@@ -136,7 +136,7 @@ export default function MilitaryScreen(){
 <Box/>{cost as number} t {names[resource]||resource} each</span>)}</div>
    <p className="military-mobilization">Daily mobilization: <b>{Number(unit.producedToday).toLocaleString()} / {Number(unit.dailyProductionLimit).toLocaleString()}</b> · {Number(unit.dailyProductionRemaining).toLocaleString()} remaining today</p>
    {!unit.canProduce&&<p className="project-gate">Domestic production requires the <b>{projects[unit.requiredProject]||unit.requiredProject}</b>. Market and private purchases remain available.</p>}
-   <label>Whole units<input type="number" min="1" max={unit.dailyProductionRemaining} step="1" value={amounts[unit.key]||''} onChange={e=>setAmounts({...amounts,[unit.key]:Number(e.target.value)})}/>
+   <label className="military-quantity">Whole units<div><input type="number" min="1" max={unit.dailyProductionRemaining} step="1" value={amounts[unit.key]||''} onChange={e=>setAmounts({...amounts,[unit.key]:Number(e.target.value)})}/><button type="button" disabled={!unit.canProduce||Number(unit.maximumProductionNow)<=0||busy!==''} onClick={()=>setAmounts({...amounts,[unit.key]:Number(unit.maximumProductionNow)})}>Daily max</button></div>
 </label>
    <div className="military-actions">
 <button className="primary" disabled={!unit.canProduce||Number(unit.dailyProductionRemaining)<=0||busy!==''} onClick={()=>act(unit.key,'produce')}>{busy===unit.key+'produce'?'Producing…':'Produce domestically'}</button>

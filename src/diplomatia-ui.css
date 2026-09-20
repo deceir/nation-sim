@@ -1,0 +1,63 @@
+:root{--ui-bg:#0b1118;--ui-sidebar:#0a0f15;--ui-panel:#101821;--ui-panel-2:#121c27;--ui-panel-raised:#16212d;--ui-line:#273544;--ui-line-soft:#1c2834;--ui-text:#e6ebf0;--ui-muted:#8795a4;--ui-accent:#a9c4df;--ui-gold:#c9a560;--ui-good:#61bd8a;--ui-bad:#d36f73;--ui-control:#0d151e;--ui-serif:'Libre Caslon Display',serif;--ui-sans:'DM Sans',sans-serif}
+[data-theme="dark"] body,[data-theme="dark"] .shell{background:var(--ui-bg);color:var(--ui-text)}
+[data-theme="dark"] .shell{grid-template-columns:224px minmax(0,1fr);background:linear-gradient(120deg,#0c131b,#0b1118 55%,#0d151e)}
+[data-theme="dark"] .game-sidebar{padding:22px 17px;background:linear-gradient(180deg,#0b1118,#080d12);border-right:1px solid var(--ui-line);box-shadow:none}
+[data-theme="dark"] .brand{padding:0 2px 18px;border-bottom:1px solid var(--ui-line-soft);font-family:var(--ui-serif);letter-spacing:.13em}
+[data-theme="dark"] .brand b::after{content:'PERSISTENT WORLD';color:#647487;font-size:6px;letter-spacing:.24em}
+[data-theme="dark"] .game-sidebar nav{gap:2px}
+[data-theme="dark"] .world-nav{margin-top:22px!important}
+[data-theme="dark"] .nav-heading{padding:12px 8px 7px;color:#5e6d7c;font-size:7px;letter-spacing:.25em}
+[data-theme="dark"] .game-sidebar nav button,[data-theme="dark"] .game-sidebar .logout{min-height:38px;padding:9px 10px;border:1px solid transparent;border-radius:0;color:#9aa8b6;font-size:12px;letter-spacing:.01em}
+[data-theme="dark"] .game-sidebar nav button:hover,[data-theme="dark"] .game-sidebar .logout:hover{background:#111a24;color:#e3e9ef;border-color:#1e2b38}
+[data-theme="dark"] .game-sidebar nav button.active{background:linear-gradient(90deg,#182534,#111b25);border-color:#29394a;color:#f0f4f7;box-shadow:inset 3px 0 var(--ui-accent)}
+[data-theme="dark"] .game-sidebar nav button.active svg{color:var(--ui-accent)}
+[data-theme="dark"] main{padding:22px clamp(20px,2.6vw,46px) 100px;background:transparent}
+[data-theme="dark"] main>header{min-height:80px;margin:0 0 14px;padding:0 0 14px;border-color:var(--ui-line)}
+[data-theme="dark"] header h1{font-size:36px;line-height:1}
+[data-theme="dark"] .header-nation-flag{width:62px;height:42px;border:1px solid #5e6c79}
+[data-theme="dark"] .nation-header-identity{gap:16px}
+[data-theme="dark"] .guardian{background:#101821;border-color:#665537;color:#d9b873}
+[data-theme="dark"] .resource-dock{margin-bottom:16px;background:#0d151e;border-color:var(--ui-line);box-shadow:none}
+[data-theme="dark"] .dock-title,[data-theme="dark"] .dock-item{border-color:var(--ui-line-soft)}
+[data-theme="dark"] .panel,[data-theme="dark"] .nation-card{background:var(--ui-panel);border:1px solid var(--ui-line);border-radius:0;box-shadow:none}
+[data-theme="dark"] .panel{padding:20px}
+[data-theme="dark"] .panel:hover{box-shadow:none}
+[data-theme="dark"] .section-intro,[data-theme="dark"] .panel>header{border-color:var(--ui-line)}
+[data-theme="dark"] h1,[data-theme="dark"] h2,[data-theme="dark"] h3{color:#edf1f4}
+[data-theme="dark"] h3{font-weight:500}
+[data-theme="dark"] p{color:var(--ui-muted)}
+[data-theme="dark"] .eyebrow,[data-theme="dark"] .kicker{color:var(--ui-gold);font-size:8px;letter-spacing:.22em}
+[data-theme="dark"] button,[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{border-radius:0!important}
+[data-theme="dark"] input,[data-theme="dark"] select,[data-theme="dark"] textarea{background:var(--ui-control);border:1px solid #344454;color:var(--ui-text);box-shadow:none}
+[data-theme="dark"] input:focus,[data-theme="dark"] select:focus,[data-theme="dark"] textarea:focus{outline:1px solid var(--ui-accent);outline-offset:0;border-color:var(--ui-accent)}
+[data-theme="dark"] button:not(.primary):not(.mobile-nav-backdrop){border-color:#344454;background:#111b25;color:#bac5cf}
+[data-theme="dark"] button:not(.primary):not(.mobile-nav-backdrop):hover{border-color:#71879c;background:#172331;color:#f2f5f7}
+[data-theme="dark"] .primary{background:#adc3d8;border:1px solid #c0d1e1;color:#0b1118;font-weight:700}
+[data-theme="dark"] .primary:hover{background:#c4d5e5;border-color:#d5e0ea}
+[data-theme="dark"] .danger,[data-theme="dark"] .danger-action{border-color:#75464a!important;background:#24171b!important;color:#e2a2a4!important}
+[data-theme="dark"] table,[data-theme="dark"] .directory-table,[data-theme="dark"] .leaderboard-table{border-radius:0;box-shadow:none}
+[data-theme="dark"] .directory-table-head,[data-theme="dark"] .leaderboard-head{background:#17222e;color:#aebbc7}
+[data-theme="dark"] .directory-table-row,[data-theme="dark"] .leaderboard-row{background:#101821}
+[data-theme="dark"] .directory-table-row:nth-child(odd),[data-theme="dark"] .leaderboard-row:nth-child(odd){background:#121b25}
+[data-theme="dark"] .directory-table-row:hover,[data-theme="dark"] .leaderboard-row:hover{background:#172330;box-shadow:inset 2px 0 var(--ui-accent)}
+[data-theme="dark"] details,[data-theme="dark"] fieldset{border-color:var(--ui-line)}
+[data-theme="dark"] main :is(.strategy-hero,.trade-hero,.military-hero,.war-hero,.war-detail-hero,.conflicts-hero,.conflict-detail-hero,.crisis-hero,.ventures-hero,.projects-hero,.leaderboards-hero,.notification-hero,.changelog-hero,.world-data-hero,.income-hero){background:linear-gradient(100deg,#121c27,#0f1720);border:1px solid var(--ui-line);border-radius:0;box-shadow:none}
+[data-theme="dark"] main :is(.strategy-hero,.trade-hero,.military-hero,.war-hero,.war-detail-hero,.conflicts-hero,.conflict-detail-hero,.crisis-hero,.ventures-hero,.projects-hero,.leaderboards-hero,.notification-hero,.changelog-hero,.world-data-hero,.income-hero) h2{font-size:clamp(26px,2.3vw,38px)}
+[data-theme="dark"] main :is(.economy-tabs,.trade-tabs,.war-tabs,.alliance-tabs,.nation-profile-tabs,.project-category-tabs,.editor-tabs,.bank-operation-tabs,.bank-card-tabs,.trade-history-tabs){margin:0;border:1px solid var(--ui-line);border-radius:0;background:#0e161f;box-shadow:none}
+[data-theme="dark"] main :is(.economy-tabs,.trade-tabs,.war-tabs,.alliance-tabs,.nation-profile-tabs,.project-category-tabs,.editor-tabs,.bank-operation-tabs,.bank-card-tabs,.trade-history-tabs) button{border:0;border-right:1px solid var(--ui-line);border-radius:0;background:transparent;color:#8e9ba8;box-shadow:none}
+[data-theme="dark"] main :is(.economy-tabs,.trade-tabs,.war-tabs,.alliance-tabs,.nation-profile-tabs,.project-category-tabs,.editor-tabs,.bank-operation-tabs,.bank-card-tabs,.trade-history-tabs) button.active{background:#172330;color:#eef3f7;box-shadow:inset 0 -2px var(--ui-accent)}
+[data-theme="dark"] main :is(.gear-card,.policy-card,.project-card,.crisis-card,.venture-opportunity,.active-venture,.war-card,.conflict-directory-card,.treaty-card,.province-card,.civic-card){border-radius:0;background:var(--ui-panel);border-color:var(--ui-line);box-shadow:none}
+[data-theme="dark"] main :is(.gear-card,.policy-card,.project-card,.crisis-card,.venture-opportunity,.active-venture,.war-card,.conflict-directory-card,.treaty-card,.province-card,.civic-card):hover{background:var(--ui-panel-2);border-color:#4b5c6c}
+[data-theme="dark"] .positive{color:var(--ui-good)}[data-theme="dark"] .negative{color:var(--ui-bad)}
+[data-theme="dark"] footer{background:#080d12;border-color:var(--ui-line);color:#71808f}
+[data-theme="light"]{--ui-bg:#eef1f3;--ui-sidebar:#f8f9fa;--ui-panel:#fff;--ui-panel-2:#f4f6f7;--ui-panel-raised:#e9eef1;--ui-line:#cbd3da;--ui-line-soft:#dde3e7;--ui-text:#1d2832;--ui-muted:#687582;--ui-accent:#3d6588;--ui-gold:#8b672b;--ui-good:#2f7d51;--ui-bad:#a64a4e;--ui-control:#fff}
+[data-theme="light"] body,[data-theme="light"] .shell,[data-theme="light"] main{background:var(--ui-bg);color:var(--ui-text)}
+[data-theme="light"] .game-sidebar{background:var(--ui-sidebar);border-color:var(--ui-line);box-shadow:none}
+[data-theme="light"] .brand{padding-bottom:18px;border-bottom:1px solid var(--ui-line-soft)}
+[data-theme="light"] .brand b::after{content:'PERSISTENT WORLD';border:0;background:none;padding:0;color:#84909a;font-size:6px;letter-spacing:.22em}
+[data-theme="light"] .panel,[data-theme="light"] .nation-card,[data-theme="light"] .resources,[data-theme="light"] .resource-dock{background:var(--ui-panel);border-color:var(--ui-line);border-radius:0;box-shadow:none}
+[data-theme="light"] button,[data-theme="light"] input,[data-theme="light"] select,[data-theme="light"] textarea{border-radius:0!important}
+[data-theme="light"] .directory-table,[data-theme="light"] .leaderboard-table{border-radius:0;box-shadow:none}
+[data-theme="light"] main :is(.strategy-hero,.trade-hero,.military-hero,.war-hero,.war-detail-hero,.conflicts-hero,.conflict-detail-hero,.crisis-hero,.ventures-hero,.projects-hero,.leaderboards-hero,.notification-hero,.changelog-hero,.world-data-hero,.income-hero){background:#fff;border-color:var(--ui-line);border-radius:0;box-shadow:none}
+[data-theme="light"] main :is(.economy-tabs,.trade-tabs,.war-tabs,.alliance-tabs,.nation-profile-tabs,.project-category-tabs,.editor-tabs,.bank-operation-tabs,.bank-card-tabs,.trade-history-tabs){border-color:var(--ui-line);border-radius:0;background:#f6f8f9;box-shadow:none}
+@media(max-width:850px){[data-theme="dark"] .shell{grid-template-columns:1fr}[data-theme="dark"] main{padding:18px 14px 90px}[data-theme="dark"] .sidebar-mobile-bar{background:#0b1118;border-color:var(--ui-line)}[data-theme="dark"] .game-sidebar .nav-groups{background:#0b1118}}

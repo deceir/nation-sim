@@ -13,7 +13,7 @@ const number=(value:any,digits=0)=>Number(value||0).toLocaleString(undefined,{ma
 const dateTime=(value:string)=>new Date(value).toLocaleString();
 const navigate=(path:string)=>{history.pushState(null,'',path);window.dispatchEvent(new PopStateEvent('popstate'))};
 
-function NationIdentity({nation}:{nation:any}){return <div className="conflict-nation"><img src={`/api/nations/${encodeURIComponent(nation.id)}/flag`} alt=""/><div><a href={`/nation/${encodeURIComponent(nation.id)}`} onClick={event=>{event.preventDefault();navigate(`/nation/${encodeURIComponent(nation.id)}`)}}>{nation.name}</a><span>Led by {nation.leaderName}</span>{nation.allianceName?<a className="conflict-alliance" href={`/alliance/${encodeURIComponent(nation.allianceID)}`} onClick={event=>{event.preventDefault();navigate(`/alliance/${encodeURIComponent(nation.allianceID)}`)}}>{nation.allianceName}</a>:<small>Independent</small>}</div></div>}
+function NationIdentity({nation}:{nation:any}){return <div className="conflict-nation"><img src={`/api/nations/${encodeURIComponent(nation.id)}/flag`} alt=""/><div><a href={`/nation/${encodeURIComponent(nation.id)}`} onClick={event=>{event.preventDefault();navigate(`/nation/${encodeURIComponent(nation.id)}`)}}>{nation.name}</a><span>Led by {nation.leaderName}</span>{nation.allianceName?<a className="conflict-alliance" href={`/alliance/${encodeURIComponent(nation.allianceID)}`} onClick={event=>{event.preventDefault();navigate(`/alliance/${encodeURIComponent(nation.allianceID)}`)}}>{nation.allianceName}</a>:null}</div></div>}
 
 export default function ConflictsScreen({conflictID}:{conflictID?:string}){
  return conflictID?<ConflictDetail id={conflictID}/>:<ConflictDirectory/>;
