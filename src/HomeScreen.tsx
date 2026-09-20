@@ -1,5 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {Activity,Building2,ChevronRight,Globe2,PackageCheck,Plane,RadioTower,Shield,Ship,ShoppingCart,Swords,TimerOff,Users,UsersRound} from 'lucide-react';
+import {calculateMaritimeRoute,type MapPoint} from './maritimeRouting';
 import './world-traffic.css';
 
 type HomeNation={id:string;name:string;leaderName:string;continent:string;population:number;cityCount:number;allianceID?:string;allianceName?:string;locationLat?:number|null;locationLng?:number|null};
@@ -43,17 +44,28 @@ function WorldCommandMap({nations}:{nations:(HomeNation&{rank?:number;isCurrent:
  </svg><div className="world-map-controls"><button onClick={()=>zoom(1.35)} aria-label="Zoom in">+</button><button onClick={()=>zoom(.74)} aria-label="Zoom out">−</button><button onClick={()=>setCamera({zoom:1,x:0,y:0})}>World</button></div><div className="world-map-key"><span><i/>Top nations</span><span><i className="current"/>Your nation</span></div></div>
 }
 
-const trafficRoutes=[
- {kind:'ship',path:'M 82 190 C 176 174 272 183 374 217',duration:29,delay:-11},
- {kind:'ship',path:'M 382 244 C 505 275 639 320 786 331',duration:37,delay:-27},
- {kind:'ship',path:'M 705 212 C 806 188 910 197 982 222',duration:31,delay:-19},
- {kind:'ship',path:'M 214 286 C 247 333 287 376 335 415',duration:25,delay:-8},
- {kind:'plane',path:'M 164 171 Q 423 55 688 174',duration:20,delay:-14},
- {kind:'plane',path:'M 521 167 Q 688 91 856 181',duration:17,delay:-5},
- {kind:'plane',path:'M 126 221 Q 318 105 512 178',duration:23,delay:-18},
+const aircraftRoutes=[
+ {kind:'plane',path:'M 164 171 Q 423 55 688 174',duration:82,delay:-57},
+ {kind:'plane',path:'M 521 167 Q 688 91 856 181',duration:70,delay:-21},
+ {kind:'plane',path:'M 126 221 Q 318 105 512 178',duration:94,delay:-74},
 ] as const;
 
-function WorldTraffic(){return <g className="command-map-traffic" aria-hidden="true">{trafficRoutes.map((route,index)=><g key={`${route.kind}-${index}`}><path className={`traffic-route ${route.kind}`} d={route.path}/><g className={`traffic-vehicle ${route.kind}`}><animateMotion dur={`${route.duration}s`} begin={`${route.delay}s`} repeatCount="indefinite" rotate="auto" path={route.path}/>{route.kind==='ship'?<path d="M-9 1h18l-3 5H-5z M-4 0v-5h7l3 5z"/>:<path d="M-9 1l7-3 3-8 2 1-1 7 8 3v2L2 2l1 6H1l-3-6-7 1z"/>}</g></g>)}</g>}
+const shippingLanes=[
+ {origin:{lat:40.7,lng:-74},destination:{lat:38.7,lng:-9.1},duration:112,delay:-40},
+ {origin:{lat:-23.9,lng:-46.3},destination:{lat:-33.9,lng:18.4},duration:138,delay:-98},
+ {origin:{lat:-4,lng:39.7},destination:{lat:1.3,lng:103.8},duration:126,delay:-68},
+ {origin:{lat:33.7,lng:-118.2},destination:{lat:8.9,lng:-79.6},duration:105,delay:-29},
+] as const;
+
+const pathLength=(points:MapPoint[])=>points.slice(1).reduce((total,point,index)=>total+Math.hypot(point.x-points[index].x,point.y-points[index].y),0);
+const svgPath=(points:MapPoint[])=>points.length?`M ${points.map(point=>`${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' L ')}`:'';
+
+function WorldTraffic(){
+ const[shipRoutes,setShipRoutes]=useState<Array<{kind:'ship';path:string;duration:number;delay:number}>>([]);
+ useEffect(()=>{let active=true;void Promise.all(shippingLanes.map(async lane=>{const route=await calculateMaritimeRoute(lane.origin,lane.destination),segment=[...route.seaSegments].sort((a,b)=>pathLength(b)-pathLength(a))[0]||[];return{kind:'ship' as const,path:svgPath(segment),duration:lane.duration,delay:lane.delay}})).then(routes=>{if(active)setShipRoutes(routes.filter(route=>route.path))}).catch(()=>{if(active)setShipRoutes([])});return()=>{active=false}},[]);
+ const routes=[...shipRoutes,...aircraftRoutes];
+ return <g className="command-map-traffic" aria-hidden="true">{routes.map((route,index)=><g key={`${route.kind}-${index}`}><path className={`traffic-route ${route.kind}`} d={route.path}/><g className={`traffic-vehicle ${route.kind}`}><animateMotion dur={`${route.duration}s`} begin={`${route.delay}s`} repeatCount="indefinite" rotate="auto" path={route.path}/>{route.kind==='ship'?<path d="M-9 1h18l-3 5H-5z M-4 0v-5h7l3 5z"/>:<path d="M12 0 2-3-4-11h-3l3 10-8-2-3-4h-2l1 10-1 10h2l3-4 8-2-3 10h3l6-8 10-3z"/>}</g></g>)}</g>
+}
 
 function WorldLedger({label,value,icon}:{label:string;value:number;icon:React.ReactNode}){return <article>{icon}<span>{label}</span><b title={Number(value).toLocaleString()}>{compact(value)}</b></article>}
 function hash(value:string){let result=0;for(let index=0;index<value.length;index++)result=(result*31+value.charCodeAt(index))|0;return Math.abs(result)}
