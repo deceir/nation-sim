@@ -1,0 +1,4 @@
+.conflict-timeline-scroll .conflict-drone-event {
+  border-left: 2px solid var(--gold);
+  background: color-mix(in srgb, var(--gold) 5%, transparent);
+}

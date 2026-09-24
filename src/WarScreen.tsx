@@ -1,13 +1,14 @@
 import {useEffect,useState} from 'react';
-import {Activity,CheckCircle2,Clock3,Crosshair,Flag,MapPinned,Shield,ShieldCheck,Swords,Truck} from 'lucide-react';
+import {Activity,CheckCircle2,Clock3,Crosshair,Flag,MapPinned,Radar,Shield,ShieldCheck,Swords,Truck} from 'lucide-react';
 import WarTheaterMap from './WarTheaterMap';
 import {WarDamageSummary,WarRulesPanel} from './WarInformation';
 import './war-system.css';
 import './war-reinforcements.css';
 import './war-errors.css';
+import './war-command.css';
 
 const api=async(path:string,options?:RequestInit)=>{const response=await fetch('/api'+path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),text=await response.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{throw Error(`Invalid war response (${response.status}).`)}if(!response.ok)throw Error(data.error||'War action failed.');return data};
-const units=['soldiers','tanks','ships','jets','drones'];
+const units=['soldiers','tanks','ships','jets'];
 const names:Record<string,string>={soldiers:'Soldiers',tanks:'Tanks',ships:'Ships',jets:'Fighter Jets',drones:'Drones'};
 const label=(value:string)=>value.replaceAll('_',' ').replace(/\b\w/g,letter=>letter.toUpperCase());
 const when=(value:string)=>{const date=new Date(value),remaining=date.getTime()-Date.now(),stamp=date.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});if(remaining<=0)return stamp;const total=Math.max(0,Math.ceil(remaining/1000)),hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),seconds=total%60;return `${stamp} · ${hours?`${hours}h `:''}${minutes}m ${seconds}s remaining`};
@@ -117,11 +118,13 @@ function WarOverview(){
 }
 
 function WarDetail({id}:{id:string}){
- const[data,setData]=useState<any>(),[error,setError]=useState(''),[homeOperation,setHomeOperation]=useState('hold'),[homePosture,setHomePosture]=useState('entrenched'),[foreignOperation,setForeignOperation]=useState('hold'),[foreignPosture,setForeignPosture]=useState('entrenched'),[forces,setForces]=useState<Record<string,number>>({}),[originFOBID,setOriginFOBID]=useState(''),[deploymentTheater,setDeploymentTheater]=useState('foreign'),[busy,setBusy]=useState(''),[confirmCapitulation,setConfirmCapitulation]=useState(false),[ordersSaved,setOrdersSaved]=useState(false),[,setClock]=useState(0);
- const load=(syncOrders=false)=>api('/wars/'+encodeURIComponent(id)).then(result=>{setData(result);if(syncOrders){setHomeOperation(result.currentOrder?.homeOperation||'hold');setHomePosture(result.currentOrder?.homePosture||'entrenched');setForeignOperation(result.currentOrder?.foreignOperation||'hold');setForeignPosture(result.currentOrder?.foreignPosture||'entrenched')}}).catch(e=>setError(e.message));
+ const[data,setData]=useState<any>(),[error,setError]=useState(''),[detailTab,setDetailTab]=useState<'command'|'forces'|'timeline'>('command'),[homeOperation,setHomeOperation]=useState('hold'),[homePosture,setHomePosture]=useState('entrenched'),[foreignOperation,setForeignOperation]=useState('hold'),[foreignPosture,setForeignPosture]=useState('entrenched'),[forces,setForces]=useState<Record<string,number>>({}),[originFOBID,setOriginFOBID]=useState(''),[busy,setBusy]=useState(''),[confirmCapitulation,setConfirmCapitulation]=useState(false),[ordersSaved,setOrdersSaved]=useState(false),[droneMission,setDroneMission]=useState('reconnaissance'),[droneTarget,setDroneTarget]=useState('soldiers'),[droneCount,setDroneCount]=useState(0),[droneDefense,setDroneDefense]=useState('interceptor_screen'),[droneResult,setDroneResult]=useState(''),[,setClock]=useState(0);
+ const load=(syncOrders=false)=>api('/wars/'+encodeURIComponent(id)).then(result=>{setData(result);if(syncOrders){setHomeOperation(result.currentOrder?.homeOperation||'hold');setHomePosture(result.currentOrder?.homePosture||'entrenched');setForeignOperation(result.currentOrder?.foreignOperation||'hold');setForeignPosture(result.currentOrder?.foreignPosture||'entrenched');setDroneDefense(result.droneCommand?.defensePosture||'interceptor_screen')}}).catch(e=>setError(e.message));
  useEffect(()=>{void load(true);const refreshTimer=setInterval(()=>void load(false),30000),clockTimer=setInterval(()=>setClock(value=>value+1),1000);return()=>{clearInterval(refreshTimer);clearInterval(clockTimer)}},[id]);
  const saveOrders=async()=>{setBusy('orders');setError('');setOrdersSaved(false);try{await api(`/wars/${id}/orders`,{method:'PUT',body:JSON.stringify({homeOperation,homePosture,foreignOperation,foreignPosture})});await load(true);setOrdersSaved(true)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
- const deploy=async()=>{setBusy('deploy');setError('');try{const homeTheater=data.isAttacker?data.theaters.attackerHomeland:data.theaters.defenderHomeland,foreignTheater=data.isAttacker?data.theaters.defenderHomeland:data.theaters.attackerHomeland;await api(`/wars/${id}/deploy`,{method:'POST',body:JSON.stringify({forces,originFOBID:deploymentTheater==='home'?'':originFOBID,theater:deploymentTheater==='home'?homeTheater:foreignTheater})});setForces({});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ const deploy=async()=>{setBusy('deploy');setError('');try{const foreignTheater=data.isAttacker?data.theaters.defenderHomeland:data.theaters.attackerHomeland;await api(`/wars/${id}/deploy`,{method:'POST',body:JSON.stringify({forces,originFOBID,theater:foreignTheater})});setForces({});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ const saveDroneDefense=async()=>{setBusy('drone-defense');setError('');try{await api(`/wars/${id}/drone-defense`,{method:'PUT',body:JSON.stringify({posture:droneDefense})});await load(true)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
+ const launchDroneStrike=async()=>{setBusy('drone');setError('');setDroneResult('');try{const result=await api(`/wars/${id}/drone-strikes`,{method:'POST',body:JSON.stringify({mission:droneMission,targetUnit:droneTarget,drones:droneCount})});setDroneResult(result.summary);setDroneCount(0);await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  const capitulate=async()=>{setBusy('capitulate');setError('');try{await api(`/wars/${id}/capitulate`,{method:'POST'});await load();setConfirmCapitulation(false)}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  if(!data)return <section className="panel wide">Loading the campaign record…{error&&<p className="error notice">{error}</p>}</section>;
  const mySide=data.isAttacker?'attacker':'defender',enemySide=data.isAttacker?'defender':'attacker',myForces=data.forces[mySide]||{},enemyForces=data.forces[enemySide]||{},myFobs=data.isAttacker?data.attackerFOBs||[]:data.defenderFOBs||[];
@@ -137,21 +140,23 @@ function WarDetail({id}:{id:string}){
 	<b>Round {data.roundsResolved} / {data.rules?.maximumRounds||20}</b>
 <span>{data.stage==='ended'?`${label(data.outcome||'concluded')} · ${label(data.endReason||'ended')}`:`Next resolution ${when(data.nextRoundAt)}`}</span>
 </div>
-</section>{error&&<p className="error notice">{error}</p>}<section className="war-balance">
+</section>{error&&<p className="error notice">{error}</p>}
+<nav className="war-detail-tabs" aria-label="War sections">
+<button className={detailTab==='command'?'active':''} onClick={()=>setDetailTab('command')}>Command</button>
+<button className={detailTab==='forces'?'active':''} onClick={()=>setDetailTab('forces')}>Forces & deployment</button>
+<button className={detailTab==='timeline'?'active':''} onClick={()=>setDetailTab('timeline')}>Timeline <span>{data.reports.length+(data.droneCommand?.strikes?.length||0)}</span></button>
+</nav>
+{detailTab==='command'&&<><section className="war-balance">
 <WarSide name={data.attackerName} score={data.attackerScore} resolve={data.attackerResolve} readiness={data.attackerReadiness} organization={data.attackerOrganization} damagePressure={data.attackerDamagePressure} active={data.isAttacker}/>
 <div className="war-versus">
 <Swords/>
-<span>{Math.round(Number(data.distanceKm)).toLocaleString()} km</span>
-<small>{label(data.routeType)} route · {data.mobilizationRounds} round mobilization</small>
+<span>Round {data.roundsResolved}</span>
+<small>{data.stage==='ended'?'Campaign concluded':when(data.nextRoundAt)}</small>
 </div>
 <WarSide name={data.defenderName} score={data.defenderScore} resolve={data.defenderResolve} readiness={data.defenderReadiness} organization={data.defenderOrganization} damagePressure={data.defenderDamagePressure} active={!data.isAttacker}/>
-	</section>
-	<WarRulesPanel rules={data.rules}/>
-	<WarTheaterMap attacker={{name:data.attackerName,lat:data.attackerLat,lng:data.attackerLng,fobs:data.attackerFOBs||[]}} defender={{name:data.defenderName,lat:data.defenderLat,lng:data.defenderLng,fobs:data.defenderFOBs||[]}} routeType={data.routeType} stage={data.stage} distanceKm={data.distanceKm} roundsResolved={data.roundsResolved} deployments={data.deployments||[]}/>
-	<section className="war-force-comparison">
-	<ForceTable title="Your forces" forces={myForces}/>
-	<ForceTable title="Opposing observed forces" forces={enemyForces}/>
-	</section><WarDamageSummary ended={data.stage==='ended'} attacker={{name:data.attackerName,forces:data.forces.attacker||{},incomingPressure:data.defenderDamagePressure,infrastructureDamage:data.attackerInfrastructureDamage,institutionsDestroyed:data.attackerInstitutionsDestroyed}} defender={{name:data.defenderName,forces:data.forces.defender||{},incomingPressure:data.attackerDamagePressure,infrastructureDamage:data.defenderInfrastructureDamage,institutionsDestroyed:data.defenderInstitutionsDestroyed}}/>{data.stage!=='ended'&&<>
+</section>
+<WarDamageSummary ended={data.stage==='ended'} attacker={{name:data.attackerName,forces:data.forces.attacker||{},incomingPressure:data.defenderDamagePressure,infrastructureDamage:data.attackerInfrastructureDamage,institutionsDestroyed:data.attackerInstitutionsDestroyed}} defender={{name:data.defenderName,forces:data.forces.defender||{},incomingPressure:data.attackerDamagePressure,infrastructureDamage:data.defenderInfrastructureDamage,institutionsDestroyed:data.defenderInstitutionsDestroyed}}/>
+{data.stage!=='ended'&&<div className="war-command-layout">
 <section className="panel war-orders">
 <div className="war-section-heading">
 <div>
@@ -188,6 +193,17 @@ function WarDetail({id}:{id:string}){
 <p>Each front resolves independently. Orders can be revised until the round resolves; an unordered front holds an entrenched posture.</p>{ordersSaved&&<p className="war-order-saved">
 <CheckCircle2/>Your orders are confirmed for the next round.</p>}<button className="primary" disabled={busy!==''} onClick={()=>void saveOrders()}>{busy==='orders'?'Saving orders…':data.currentOrder?'Update locked orders':'Save round orders'}</button>
 </section>
+<DroneCommand command={data.droneCommand||{}} mission={droneMission} setMission={setDroneMission} target={droneTarget} setTarget={setDroneTarget} count={droneCount} setCount={setDroneCount} defense={droneDefense} setDefense={setDroneDefense} busy={busy} result={droneResult} launch={launchDroneStrike} saveDefense={saveDroneDefense}/>
+</div>}
+<WarRulesPanel rules={data.rules}/>
+{data.stage!=='ended'&&<section className="war-capitulation">{confirmCapitulation?<>
+<div><b>Confirm capitulation?</b><p>This immediately concedes the campaign and begins post-war reconstruction.</p></div>
+<button className="danger" disabled={busy!==''} onClick={()=>void capitulate()}>{busy==='capitulate'?'Concluding war…':'Confirm capitulation'}</button>
+<button disabled={busy!==''} onClick={()=>setConfirmCapitulation(false)}>Cancel</button>
+</>:<button className="danger" onClick={()=>setConfirmCapitulation(true)}>Capitulate</button>}</section>}</>}
+{detailTab==='forces'&&<><WarTheaterMap attacker={{name:data.attackerName,lat:data.attackerLat,lng:data.attackerLng,fobs:data.attackerFOBs||[]}} defender={{name:data.defenderName,lat:data.defenderLat,lng:data.defenderLng,fobs:data.defenderFOBs||[]}} routeType={data.routeType} stage={data.stage} distanceKm={data.distanceKm} roundsResolved={data.roundsResolved} deployments={data.deployments||[]}/>
+<section className="war-force-comparison"><ForceTable title="Your conventional forces" forces={myForces}/><ForceTable title="Opposing observed forces" forces={enemyForces}/></section>
+{data.stage!=='ended'&&
 <section className="panel war-reinforcements">
 <div className="war-section-heading">
 <div>
@@ -196,17 +212,18 @@ function WarDetail({id}:{id:string}){
 </div>
 <Truck/>
 </div>
-<div className="reinforcement-route"><label>Destination<select value={deploymentTheater} onChange={event=>{setDeploymentTheater(event.target.value);if(event.target.value==='home')setOriginFOBID('')}}><option value="home">Homeland defense</option><option value="foreign">Expedition into {data.isAttacker?data.defenderName:data.attackerName}</option></select></label><label className="reinforcement-origin">Deployment origin<select disabled={deploymentTheater==='home'} value={originFOBID} onChange={event=>setOriginFOBID(event.target.value)}><option value="">{data.isAttacker?data.attackerName:data.defenderName} Homeland</option>{myFobs.map((base:any)=><option value={base.id} key={base.id}>{base.name} · {base.continent}</option>)}</select></label></div>
+<div className="reinforcement-route"><label>Destination<input value={data.isAttacker?data.defenderName:data.attackerName} disabled/></label><label className="reinforcement-origin">Deployment origin<select value={originFOBID} onChange={event=>setOriginFOBID(event.target.value)}><option value="">{data.isAttacker?data.attackerName:data.defenderName} Homeland</option>{myFobs.map((base:any)=><option value={base.id} key={base.id}>{base.name} · {base.continent}</option>)}</select></label></div>
 <div className="reinforcement-inputs">{units.map(unit=>{const maximum=Number(data.availableForDeployment?.[unit]||0);return <label key={unit}>
 <span>{names[unit]}</span>
 <input type="number" min="0" max={maximum} step="1" inputMode="numeric" value={forces[unit]||''} onChange={e=>setForces({...forces,[unit]:Math.min(maximum,Math.max(0,Math.floor(Number(e.target.value))))})}/>
 <small>Maximum deployable <b>{maximum.toLocaleString()}</b>
 </small>
 </label>})}</div>
-<p>{deploymentTheater==='home'?'Homeland reinforcements are available for the next resolution.':'Expeditionary arrival time is calculated from the selected origin to the opposing homeland.'}</p>
+<p>All forces not deployed abroad defend your homeland in every active war. Expeditionary arrival time is calculated from the selected origin.</p>
 <button disabled={busy!==''||Object.values(forces).reduce((sum,value)=>sum+Number(value||0),0)<1} onClick={()=>void deploy()}>{busy==='deploy'?'Deploying…':'Commit reinforcements'}</button>
 </section>
-</>}<section className="war-reports">
+}</>}
+{detailTab==='timeline'&&<><section className="war-reports">
 <div className="war-section-heading">
 <div>
 <span className="eyebrow">AFTER-ACTION RECORD</span>
@@ -225,14 +242,24 @@ function WarDetail({id}:{id:string}){
 <span>{data.defenderName}: H {label(report.defenderHomeOperation)} / {label(report.defenderHomePosture)} · E {label(report.defenderOperation)} / {label(report.defenderForeignPosture)} · {Number(report.defenderSupply*100).toFixed(0)}% supplied</span>
 </div>
 <small>Losses: {lossText(report.attackerLosses)} / {lossText(report.defenderLosses)}</small>
-</article>):<div className="war-empty compact">No strategic rounds have resolved yet.</div>}</section>{data.stage!=='ended'&&<section className="war-capitulation">{confirmCapitulation?<>
-<div>
-<b>Confirm capitulation?</b>
-<p>This immediately concedes the campaign and begins post-war reconstruction.</p>
+</article>):<div className="war-empty compact">No strategic rounds have resolved yet.</div>}</section>
+<section className="war-drone-history"><div className="war-section-heading"><div><span className="eyebrow">DRONE OPERATIONS</span><h2>Sortie record</h2></div><Radar/></div>{data.droneCommand?.strikes?.length?data.droneCommand.strikes.map((strike:any)=><article key={strike.id}><header><b>{data.droneCommand.missions?.[strike.mission]?.name||label(strike.mission)}</b><time>{when(strike.launchedAt)}</time></header><p>{strike.summary}</p></article>):<div className="war-empty compact">No drone sorties have been launched.</div>}</section></>}
 </div>
-<button className="danger" disabled={busy!==''} onClick={()=>void capitulate()}>{busy==='capitulate'?'Concluding war…':'Confirm capitulation'}</button>
-<button disabled={busy!==''} onClick={()=>setConfirmCapitulation(false)}>Cancel</button>
-</>:<button className="danger" onClick={()=>setConfirmCapitulation(true)}>Capitulate</button>}</section>}</div>
+}
+
+function DroneCommand({command,mission,setMission,target,setTarget,count,setCount,defense,setDefense,busy,result,launch,saveDefense}:{command:any;mission:string;setMission:(value:string)=>void;target:string;setTarget:(value:string)=>void;count:number;setCount:(value:number)=>void;defense:string;setDefense:(value:string)=>void;busy:string;result:string;launch:()=>Promise<void>;saveDefense:()=>Promise<void>}){
+ const[review,setReview]=useState(false);
+ const maximum=Number(command.maxSortie||0),cooling=command.nextAvailableAt&&new Date(command.nextAvailableAt).getTime()>Date.now(),ready=!cooling&&Number(command.dailyUsed||0)<Number(command.dailyLimit||3),targetAvailable=Number(command.targetAvailability?.[target]||0);
+ return <section className="panel war-drone-command">
+  <div className="war-section-heading"><div><span className="eyebrow">IMMEDIATE OPERATIONS</span><h2>Drone Command</h2></div><Radar/></div>
+  <div className="drone-status-row"><div><span>Available</span><b>{Number(command.availableDrones||0).toLocaleString()}</b></div><div><span>Sorties today</span><b>{command.dailyUsed||0} / {command.dailyLimit||3}</b></div><div><span>Next launch</span><b>{cooling?when(command.nextAvailableAt):ready?'Ready':'Daily limit reached'}</b></div></div>
+  <div className="drone-mission-list">{(command.missionOrder||Object.keys(command.missions||{})).map((key:string)=>{const value=command.missions[key];return <button type="button" className={mission===key?'selected':''} onClick={()=>{setMission(key);setReview(false)}} key={key}><b>{value.name}</b><span>{value.description}</span></button>})}</div>
+  <div className="drone-launch-controls"><label>Drones<input type="number" min="1" max={maximum} value={count||''} onChange={event=>{setCount(Math.min(maximum,Math.max(0,Math.floor(Number(event.target.value)))));setReview(false)}} /><small>Maximum sortie: {maximum.toLocaleString()}</small></label>{mission==='precision_strike'&&<label>Target<select value={target} onChange={event=>{setTarget(event.target.value);setReview(false)}}>{units.map(unit=>{const available=Number(command.targetAvailability?.[unit]||0);return <option value={unit} disabled={available<1} key={unit}>{names[unit]} · {available.toLocaleString()} deployed</option>})}</select><small>Only forces already in theater can be hit.</small></label>}</div>
+  <p className="drone-cost">Operating cost: {(count*Number(command.energyPerDrone||0)).toFixed(2)} Energy · {(count*Number(command.equipmentPerDrone||0)).toFixed(2)} Military Equipment</p>
+  {result&&<p className="war-order-saved"><CheckCircle2/>{result}</p>}
+  {review?<div className="drone-confirm"><span><b>Launch {count.toLocaleString()} drones?</b><small>Drones may be intercepted and the operating resources are spent immediately.</small></span><button className="primary" disabled={busy!==''} onClick={()=>{setReview(false);void launch()}}>Confirm launch</button><button disabled={busy!==''} onClick={()=>setReview(false)}>Cancel</button></div>:<button className="primary" disabled={busy!==''||!ready||count<1||count>maximum||(mission==='precision_strike'&&targetAvailable<1)} onClick={()=>setReview(true)}>{busy==='drone'?'Mission underway…':'Review sortie'}</button>}
+  <div className="drone-defense"><label>Air-defense plan<select value={defense} onChange={event=>setDefense(event.target.value)}>{(command.defenseOrder||Object.keys(command.defenses||{})).map((key:string)=><option value={key} key={key}>{command.defenses[key].name}</option>)}</select></label><p>{command.defenses?.[defense]?.description}</p><button disabled={busy!==''||defense===command.defensePosture} onClick={()=>void saveDefense()}>{busy==='drone-defense'?'Saving…':'Save defense plan'}</button></div>
+ </section>
 }
 
 function WarSide({name,score,resolve,readiness,organization,damagePressure,active}:{name:string;score:number;resolve:number;readiness:number;organization:number;damagePressure:number;active:boolean}){return <article className={active?'my-side':''}>
@@ -252,11 +279,10 @@ function Meter({label:meterLabel,value}:{label:string;value:number}){return <div
 </i>
 </div>}
 function ForceTable({title,forces}:{title:string;forces:Record<string,any>}){return <article className="two-front-force-table">
-<h3>{title}</h3><div className="war-force-heading"><span>Unit</span><b>Homeland</b><b>Expeditionary</b><b>En Route</b><b>Strategic Reserve</b></div>{units.map(unit=>{const force=forces[unit];return <div className="war-force-row" key={unit}>
+<h3>{title}</h3><div className="war-force-heading"><span>Unit</span><b>Homeland defense</b><b>Expeditionary</b><b>En Route</b></div>{units.map(unit=>{const force=forces[unit];return <div className="war-force-row" key={unit}>
 <span>{names[unit]}</span>
 <b>{Number(force?.homeTheater||0).toLocaleString()}</b>
 <b>{Number(force?.foreignTheater||0).toLocaleString()}</b>
 <b>{Number(force?.enRoute||0).toLocaleString()}</b>
-<b>{Number(force?.reserve||0).toLocaleString()}</b>
 </div>})}</article>}
 function lossText(losses:Record<string,number>){const parts=Object.entries(losses||{}).filter(([,value])=>Number(value)>0).map(([unit,value])=>`${Number(value).toLocaleString()} ${names[unit]}`);return parts.length?parts.join(', '):'none'}

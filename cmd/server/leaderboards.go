@@ -15,6 +15,7 @@ type leaderboardQuery struct {
 }
 
 var leaderboardMetrics = map[string]string{
+	"powerLevel": "power_level",
 	"population": "n.population",
 	"gdp":        "n.gdp",
 	"provinces":  "province_count",
@@ -28,7 +29,7 @@ var leaderboardMetrics = map[string]string{
 func leaderboardParameters(values url.Values) leaderboardQuery {
 	result := leaderboardQuery{Metric: values.Get("metric"), Order: strings.ToLower(values.Get("order")), Continent: values.Get("continent"), Search: strings.TrimSpace(values.Get("search")), Page: 1, PageSize: 10}
 	if _, ok := leaderboardMetrics[result.Metric]; !ok {
-		result.Metric = "population"
+		result.Metric = "powerLevel"
 	}
 	if result.Order != "asc" {
 		result.Order = "desc"
@@ -68,10 +69,12 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 		return
 	}
 	orderColumn := leaderboardMetrics[filters.Metric]
-	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,n.gdp,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) province_count,COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
+	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,n.gdp,COALESCE(c.province_count,0),COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0),%s power_level
 		FROM nations n
 		LEFT JOIN alliance_members am ON am.nation_id=n.id
 		LEFT JOIN alliances a ON a.id=am.alliance_id
+		LEFT JOIN (SELECT nation_id,COUNT(*) province_count,COALESCE(SUM(infrastructure),0) total_infrastructure FROM cities GROUP BY nation_id) c ON c.nation_id=n.id
+		LEFT JOIN (SELECT nation_id,COUNT(*) project_count FROM (SELECT nation_id FROM national_projects UNION ALL SELECT nation_id FROM national_long_term_projects) completed_projects GROUP BY nation_id) p ON p.nation_id=n.id
 		LEFT JOIN (
 			SELECT nation_id,
 			SUM(CASE WHEN unit_type='soldiers' THEN quantity ELSE 0 END) soldiers,
@@ -86,7 +89,7 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 			) holdings GROUP BY nation_id
 		) m ON m.nation_id=n.id
 		WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.continent=?) AND (?='' OR n.name LIKE ?) AND (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)>=? AND (?=0 OR (SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id)<=?)
-		ORDER BY %s %s,n.name ASC LIMIT ? OFFSET ?`, orderColumn, strings.ToUpper(filters.Order))
+		ORDER BY %s %s,n.name ASC LIMIT ? OFFSET ?`, powerLevelSQL("c", "p", "m"), orderColumn, strings.ToUpper(filters.Order))
 	rows, err := a.db.QueryContext(r.Context(), query, continent, continent, filters.Search, search, filters.MinProvinces, filters.MaxProvinces, filters.MaxProvinces, filters.PageSize, (filters.Page-1)*filters.PageSize)
 	if err != nil {
 		problem(w, 500, "Leaderboards are temporarily unavailable.")
@@ -97,12 +100,12 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 	position := (filters.Page-1)*filters.PageSize + 1
 	for rows.Next() {
 		var id, name, leader, continentName, allianceID, allianceName string
-		var population, gdp, soldiers, tanks, ships, jets, drones int64
+		var population, gdp, soldiers, tanks, ships, jets, drones, powerLevel int64
 		var provinces int
-		if rows.Scan(&id, &name, &leader, &continentName, &population, &gdp, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones) != nil {
+		if rows.Scan(&id, &name, &leader, &continentName, &population, &gdp, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones, &powerLevel) != nil {
 			continue
 		}
-		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "gdp": gdp, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones})
+		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "gdp": gdp, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones, "powerLevel": powerLevel})
 		position++
 	}
 	write(w, 200, map[string]any{"metric": filters.Metric, "order": filters.Order, "page": filters.Page, "pageSize": filters.PageSize, "total": total, "items": items})

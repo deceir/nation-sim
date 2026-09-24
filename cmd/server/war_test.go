@@ -129,3 +129,42 @@ func TestWarDeploymentArrivalUsesScheduledRoundWindows(t *testing.T) {
 		t.Fatalf("round-five deployment arrives at %s; want %s", got, next.Add(6*time.Hour))
 	}
 }
+
+func TestDroneSortiesAreLimitedAndScaleWithInventory(t *testing.T) {
+	cases := []struct {
+		owned, want int64
+	}{
+		{0, 0}, {3, 3}, {10, 5}, {40, 10}, {400, 100}, {1000, 100},
+	}
+	for _, tc := range cases {
+		if got := droneSortieMaximum(tc.owned); got != tc.want {
+			t.Fatalf("droneSortieMaximum(%d)=%d; want %d", tc.owned, got, tc.want)
+		}
+	}
+}
+
+func TestDroneDefenseCounterplay(t *testing.T) {
+	base := droneInterceptionChance(25, "dispersed_forces", "precision_strike")
+	intercept := droneInterceptionChance(25, "interceptor_screen", "precision_strike")
+	recon := droneInterceptionChance(25, "interceptor_screen", "reconnaissance")
+	if intercept <= base {
+		t.Fatal("interceptor screen should increase drone attrition")
+	}
+	if recon >= intercept {
+		t.Fatal("reconnaissance should be harder to intercept than a strike")
+	}
+	if got := droneInterceptionChance(100000, "interceptor_screen", "precision_strike"); got > .5 {
+		t.Fatalf("interception chance exceeded cap: %.3f", got)
+	}
+}
+
+func TestDronesDoNotContributeToRoundCombat(t *testing.T) {
+	without := forceStrength(map[string]int64{"soldiers": 100}, "hold", "balanced", "land", "territorial_pressure", 100, 100, 1, 0, false)
+	with := forceStrength(map[string]int64{"soldiers": 100, "drones": 10000}, "hold", "balanced", "land", "territorial_pressure", 100, 100, 1, 0, false)
+	if with != without {
+		t.Fatalf("drones changed conventional round strength: %.2f vs %.2f", with, without)
+	}
+	if combinedArms(map[string]int64{"soldiers": 100, "tanks": 2, "drones": 50}) {
+		t.Fatal("drones should not satisfy the conventional combined-arms requirement")
+	}
+}
