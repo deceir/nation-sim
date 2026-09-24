@@ -203,7 +203,8 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 	}
 	tx, err := a.db.BeginTx(r.Context(), nil)
 	if err != nil {
-		problem(w, 500, "Could not begin the declaration.")
+		log.Printf("begin war declaration: %v", err)
+		problem(w, 500, "The declaration could not be started because the war service could not open a database transaction. No war or troop commitment was saved. Please try again.")
 		return
 	}
 	defer tx.Rollback()
@@ -287,8 +288,9 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 			problem(w, 400, "Deployment quantities cannot be negative.")
 			return
 		}
-		if amount > committedAvailable(r.Context(), tx, attacker.ID, unit) {
-			problem(w, 409, "You do not have enough available "+militaryUnits[unit].Name+" for that deployment.")
+		available := committedAvailable(r.Context(), tx, attacker.ID, unit)
+		if amount > available {
+			problem(w, 409, fmt.Sprintf("You selected %s %s, but only %s are currently available. Units committed to another war cannot be deployed again.", formatWholeNumber(amount), militaryUnits[unit].Name, formatWholeNumber(available)))
 			return
 		}
 		total += amount
@@ -304,18 +306,21 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 	ends := next.Add(time.Duration(warMaximumRounds*warRoundHours) * time.Hour)
 	id := uuid()
 	if _, err = tx.ExecContext(r.Context(), `INSERT INTO conflicts(id,kind,attacker_id,defender_id,status) VALUES(?,'war',?,?,'active')`, id, attacker.ID, defender.ID); err != nil {
-		problem(w, 500, "Could not create the war.")
+		log.Printf("create war conflict %s: %v", id, err)
+		problem(w, 500, "The declaration could not be recorded. No war was created and no forces were committed. Please try again.")
 		return
 	}
 	if _, err = tx.ExecContext(r.Context(), `INSERT INTO wars(conflict_id,objective,next_round_at,ends_at,distance_km,route_type,attacker_lat,attacker_lng,defender_lat,defender_lng,mobilization_rounds,supply_factor) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, id, in.Objective, next, ends, distance, warRoute(attacker.Continent, defender.Continent), attacker.Lat, attacker.Lng, defender.Lat, defender.Lng, mobilization, supplyFactor); err != nil {
-		problem(w, 500, "Could not establish the war state.")
+		log.Printf("create war state %s: %v", id, err)
+		problem(w, 500, "The declaration was cancelled because the campaign state could not be initialized. No war or troop commitment was saved. Please try again.")
 		return
 	}
 	attackerDeploymentGroup := uuid()
 	for _, unit := range militaryUnitKeys() {
 		if amount := in.Forces[unit]; amount > 0 {
-			if _, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_name,origin_lat,origin_lng) VALUES(?,?,?,?,?,?,0,?,?,?,?,?)`, uuid(), id, attacker.ID, unit, amount, amount, attackerDeploymentGroup, attacker.Name+" Homeland", attacker.Lat, attacker.Lng); err != nil {
-				problem(w, 500, "Could not deploy the attacking force.")
+			if _, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_name,origin_lat,origin_lng) VALUES(?,?,?,?,?,?,0,?,?,?,?)`, uuid(), id, attacker.ID, unit, amount, amount, attackerDeploymentGroup, attacker.Name+" Homeland", attacker.Lat, attacker.Lng); err != nil {
+				log.Printf("initialize attacker deployment for war %s (%s): %v", id, unit, err)
+				problem(w, 500, "The declaration was cancelled because the initial attacking force could not be assigned to the campaign. No units were committed. Refresh the War Room and try again.")
 				return
 			}
 		}
@@ -327,16 +332,22 @@ func (a *app) declareWar(w http.ResponseWriter, r *http.Request, u user) {
 		available := committedAvailable(r.Context(), tx, defender.ID, unit)
 		amount := automaticDefenseCommitment(available, defensiveCommitmentPercent(r.Context(), tx, defender.ID, unit))
 		if amount > 0 {
-			_, _ = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_name,origin_lat,origin_lng) VALUES(?,?,?,?,?,?,0,?,?,?,?)`, uuid(), id, defender.ID, unit, amount, amount, defenderDeploymentGroup, defender.Name+" Homeland", defender.Lat, defender.Lng)
+			if _, err = tx.ExecContext(r.Context(), `INSERT INTO war_deployments(id,conflict_id,nation_id,unit_type,quantity,remaining,arrives_round,deployment_group_id,origin_name,origin_lat,origin_lng) VALUES(?,?,?,?,?,?,0,?,?,?,?)`, uuid(), id, defender.ID, unit, amount, amount, defenderDeploymentGroup, defender.Name+" Homeland", defender.Lat, defender.Lng); err != nil {
+				log.Printf("initialize defender deployment for war %s (%s): %v", id, unit, err)
+				problem(w, 500, "The declaration was cancelled because the defending force could not be initialized. No war or troop commitment was saved. Please try again.")
+				return
+			}
 		}
 	}
 	if _, err = tx.ExecContext(r.Context(), `UPDATE guardian_grants SET revoked_at=UTC_TIMESTAMP(),revoked_reason='initiated_war' WHERE nation_id=? AND revoked_at IS NULL AND starts_at<=UTC_TIMESTAMP() AND expires_at>UTC_TIMESTAMP()`, attacker.ID); err != nil {
-		problem(w, 500, "Could not update the attacking nation's Guardian status.")
+		log.Printf("revoke attacker Guardian status for war %s: %v", id, err)
+		problem(w, 500, "The declaration was cancelled because your Guardian status could not be updated safely. No war or troop commitment was saved. Please try again.")
 		return
 	}
 	_, _ = tx.ExecContext(r.Context(), `INSERT INTO notifications(id,nation_id,category,title,message) VALUES(?,?,'war','War declared',?),(?,?,'war','Your nation is at war',?)`, uuid(), attacker.ID, fmt.Sprintf("You declared war on %s. Your initial force is in theater.", defender.Name), uuid(), defender.ID, fmt.Sprintf("%s declared war on your nation. Your automatic defense settings have been applied.", attacker.Name))
 	if err = tx.Commit(); err != nil {
-		problem(w, 500, "Could not finalize the declaration.")
+		log.Printf("commit war declaration %s: %v", id, err)
+		problem(w, 500, "The declaration could not be finalized. No war or troop commitment was saved. Please try again.")
 		return
 	}
 	write(w, 201, map[string]any{"ok": true, "warID": id, "distanceKm": distance, "mobilizationRounds": mobilization, "nextRoundAt": next})
