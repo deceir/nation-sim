@@ -821,3 +821,30 @@ CREATE TABLE IF NOT EXISTS world_resource_snapshots (
   PRIMARY KEY(recorded_at,resource),
   INDEX idx_world_resource_history(resource,recorded_at)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS world_news_snapshots (
+  slot_at DATETIME PRIMARY KEY,
+  population BIGINT NOT NULL DEFAULT 0,
+  education DECIMAL(9,4) NOT NULL DEFAULT 0,
+  employment DECIMAL(9,4) NOT NULL DEFAULT 0,
+  disease DECIMAL(9,6) NOT NULL DEFAULT 0,
+  crime DECIMAL(9,6) NOT NULL DEFAULT 0,
+  market_prices JSON NOT NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS world_news_items (
+  id CHAR(36) PRIMARY KEY,
+  slot_at DATETIME NOT NULL,
+  category ENUM('war','market','world') NOT NULL,
+  headline VARCHAR(180) NOT NULL,
+  summary VARCHAR(500) NOT NULL,
+  subject_key VARCHAR(180) NOT NULL,
+  fingerprint CHAR(64) NOT NULL,
+  importance SMALLINT NOT NULL DEFAULT 0,
+  link_path VARCHAR(255) NULL,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  expires_at TIMESTAMP(6) NOT NULL,
+  UNIQUE KEY uq_world_news_fingerprint(fingerprint),
+  INDEX idx_world_news_feed(expires_at,created_at,importance)
+) ENGINE=InnoDB;

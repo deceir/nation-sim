@@ -2,17 +2,19 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {Activity,Building2,ChevronRight,Globe2,PackageCheck,Plane,RadioTower,Shield,Ship,ShoppingCart,Swords,TimerOff,Users,UsersRound} from 'lucide-react';
 import {calculateMaritimeRoute,type MapPoint} from './maritimeRouting';
 import './world-traffic.css';
+import './world-news.css';
 
 type HomeNation={id:string;name:string;leaderName:string;continent:string;population:number;cityCount:number;allianceID?:string;allianceName?:string;locationLat?:number|null;locationLng?:number|null};
 type CurrentNation={ID:string;Name:string;LeaderName:string;Continent:string;Population:number;LocationLat?:number|null;LocationLng?:number|null};
 type Camera={zoom:number;x:number;y:number};
+type HomeNews={id:string;category:'war'|'market'|'world';headline:string;summary:string;link?:string;createdAt:string};
 const continentCenters:Record<string,[number,number]>={Africa:[12,7],Asia:[95,38],Europe:[17,51],'North America':[-104,43],'South America':[-61,-17],Oceania:[135,-25],Antarctica:[15,-76]};
 const navigate=(path:string)=>{history.pushState(null,'',path);window.dispatchEvent(new PopStateEvent('popstate'))};
 const compact=(value:number)=>Intl.NumberFormat(undefined,{notation:'compact',maximumFractionDigits:1}).format(Number(value||0));
 
 export default function HomeScreen(){
- const[data,setData]=useState<any>(),[nations,setNations]=useState<HomeNation[]>([]),[nation,setNation]=useState<CurrentNation>(),[error,setError]=useState('');
- useEffect(()=>{let active=true;Promise.all([fetch('/api/world/stats',{credentials:'include'}),fetch('/api/nations',{credentials:'include'}),fetch('/api/me',{credentials:'include'})]).then(async([statsResponse,nationsResponse,meResponse])=>{if(!statsResponse.ok||!nationsResponse.ok||!meResponse.ok)throw Error('World intelligence is temporarily unavailable.');const[stats,worldNations,me]=await Promise.all([statsResponse.json(),nationsResponse.json(),meResponse.json()]);if(active){setData(stats);setNations(worldNations);setNation(me.nation)}}).catch(reason=>active&&setError(reason.message));return()=>{active=false}},[]);
+ const[data,setData]=useState<any>(),[nations,setNations]=useState<HomeNation[]>([]),[nation,setNation]=useState<CurrentNation>(),[news,setNews]=useState<HomeNews[]>([]),[error,setError]=useState('');
+ useEffect(()=>{let active=true;Promise.all([fetch('/api/world/stats',{credentials:'include'}),fetch('/api/nations',{credentials:'include'}),fetch('/api/me',{credentials:'include'}),fetch('/api/world/news',{credentials:'include'})]).then(async([statsResponse,nationsResponse,meResponse,newsResponse])=>{if(!statsResponse.ok||!nationsResponse.ok||!meResponse.ok)throw Error('World intelligence is temporarily unavailable.');const[stats,worldNations,me,worldNews]=await Promise.all([statsResponse.json(),nationsResponse.json(),meResponse.json(),newsResponse.ok?newsResponse.json():[]]);if(active){setData(stats);setNations(worldNations);setNation(me.nation);setNews(worldNews)}}).catch(reason=>active&&setError(reason.message));return()=>{active=false}},[]);
  const leaders=useMemo(()=>[...nations].sort((a,b)=>Number(b.population)-Number(a.population)).slice(0,10),[nations]);
  const mapNations=useMemo(()=>{if(!nation)return[];const ranked:(HomeNation&{rank?:number;isCurrent:boolean})[]=leaders.map((item,index)=>({...item,rank:index+1,isCurrent:item.id===nation.ID}));if(!ranked.some(item=>item.id===nation.ID))ranked.push({id:nation.ID,name:nation.Name,leaderName:nation.LeaderName,continent:nation.Continent,population:nation.Population,cityCount:0,locationLat:nation.LocationLat,locationLng:nation.LocationLng,isCurrent:true});return ranked},[leaders,nation]);
  if(error)return <section className="panel wide home-error"><Globe2/><h2>World Home unavailable</h2><p>{error}</p></section>;
@@ -21,6 +23,7 @@ export default function HomeScreen(){
  return <div className="world-command">
   <section className="world-command-heading"><div><span className="eyebrow">WORLD OVERVIEW</span><h2>Diplomatia at a glance</h2></div><div className="world-live"><i/><span>Live world</span><b>{data.activePlayers} active now</b></div></section>
   <section className="world-indicator-strip">{primaryStats.map(([label,value,Icon])=><article key={label}><Icon/><span>{label}</span><b title={Number(value).toLocaleString()}>{compact(value)}</b></article>)}</section>
+  <WorldNews items={news}/>
   <div className="world-command-grid">
    <section className="world-map-panel"><header><div><span className="eyebrow">GEOPOLITICAL MAP</span><h3>Leading nations</h3></div><span>Population ranking · top 10{mapNations.length>10?' + your nation':''}</span></header><WorldCommandMap nations={mapNations}/></section>
    <section className="world-rankings"><header><div><span className="eyebrow">WORLD RANKING</span><h3>Largest nations</h3></div><button onClick={()=>navigate('/leaderboards')}>All rankings <ChevronRight/></button></header><div className="world-ranking-list">{leaders.map((item,index)=><button className={item.id===nation.ID?'current':''} key={item.id} onClick={()=>navigate(`/nation/${encodeURIComponent(item.id)}`)}><span className="rank-number">{String(index+1).padStart(2,'0')}</span><img src={`/api/nations/${encodeURIComponent(item.id)}/flag`} alt=""/><span><b>{item.name}</b><small>{item.continent}{item.allianceName?` · ${item.allianceName}`:''}</small></span><strong>{compact(item.population)}</strong></button>)}</div></section>
@@ -32,6 +35,10 @@ export default function HomeScreen(){
   </div>
  </div>
 }
+
+function WorldNews({items}:{items:HomeNews[]}){return <section className="world-news-wire"><header><div><span className="eyebrow">WORLD NEWS</span><h3>Latest dispatches</h3></div><span className="world-news-live"><i/>Live desk</span></header><div className="world-news-scroll">{items.length?items.map(item=><article className={`world-news-item ${item.category}`} key={item.id} onClick={()=>item.link&&navigate(item.link)} tabIndex={item.link?0:undefined} role={item.link?'link':undefined} onKeyDown={event=>{if(item.link&&(event.key==='Enter'||event.key===' '))navigate(item.link)}}><span>{item.category}</span><div><b>{item.headline}</b><p>{item.summary}</p></div><time dateTime={item.createdAt}>{newsAge(item.createdAt)}</time></article>):<div className="world-news-empty">No major developments are being reported.</div>}</div></section>}
+
+function newsAge(raw:string){const seconds=Math.max(0,Math.floor((Date.now()-new Date(raw).getTime())/1000));if(seconds<60)return'just now';if(seconds<3600)return`${Math.floor(seconds/60)}m`;if(seconds<86400)return`${Math.floor(seconds/3600)}h`;return`${Math.floor(seconds/86400)}d`}
 
 function WorldCommandMap({nations}:{nations:(HomeNation&{rank?:number;isCurrent:boolean})[]}){
  const svg=useRef<SVGSVGElement>(null),drag=useRef<{clientX:number;clientY:number;x:number;y:number}|null>(null),[camera,setCamera]=useState<Camera>({zoom:1,x:0,y:0});
