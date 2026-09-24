@@ -215,6 +215,11 @@ func (a *app) processHourlyTurn(turn time.Time) {
 	if err := a.captureWorldResourceSnapshot(ctx, turn); err != nil {
 		log.Printf("world resource snapshot failed: %v", err)
 	}
+	if turn.UTC().Hour()%3 == 0 {
+		if err := a.ensureWorldNews(ctx, turn); err != nil {
+			log.Printf("world news generation failed: %v", err)
+		}
+	}
 	log.Printf("hourly economic turn processed %d nations", processed)
 }
 

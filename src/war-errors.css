@@ -1,0 +1,18 @@
+.war-declaration-error {
+  padding: 14px 16px;
+  border: 1px solid rgba(206, 86, 86, 0.55);
+  border-left: 3px solid var(--danger);
+  background: rgba(153, 42, 42, 0.12);
+}
+
+.war-declaration-error b {
+  display: block;
+  color: #efaaaa;
+  letter-spacing: 0.04em;
+}
+
+.war-declaration-error p {
+  margin: 5px 0 0;
+  line-height: 1.55;
+  color: var(--text);
+}

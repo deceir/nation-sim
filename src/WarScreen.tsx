@@ -4,6 +4,7 @@ import WarTheaterMap from './WarTheaterMap';
 import {WarDamageSummary,WarRulesPanel} from './WarInformation';
 import './war-system.css';
 import './war-reinforcements.css';
+import './war-errors.css';
 
 const api=async(path:string,options?:RequestInit)=>{const response=await fetch('/api'+path,{credentials:'include',headers:{'Content-Type':'application/json'},...options}),text=await response.text();let data:any={};try{data=text?JSON.parse(text):{}}catch{throw Error(`Invalid war response (${response.status}).`)}if(!response.ok)throw Error(data.error||'War action failed.');return data};
 const units=['soldiers','tanks','ships','jets','drones'];
@@ -32,7 +33,7 @@ function WarOverview(){
 <h2>War Room</h2>
 <p>Direct finite campaigns through three-hour strategic rounds. Distance delays deployment, supply affects combat power, and every war reaches a firm conclusion.</p>
 </div>
-</section>{error&&<p className="error notice">{error}</p>}<section className="war-status-strip">
+</section>{error&&view!=='declare'&&<p className="error notice">{error}</p>}<section className="war-status-strip">
 <div>
 <Activity/>
 <span>War exhaustion</span>
@@ -87,6 +88,10 @@ function WarOverview(){
 </div>
 <Flag/>
 </div>
+{error&&<div className="war-declaration-error" role="alert">
+<b>Declaration failed</b>
+<p>{error}</p>
+</div>}
 <label>Defending nation<input value={target} onChange={event=>{setTarget(event.target.value);setReview(false)}} placeholder="Enter the exact nation name"/>
 </label>
 <div className="war-objectives">{Object.entries(data.objectives).map(([key,value]:any)=>
