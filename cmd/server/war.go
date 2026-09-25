@@ -973,7 +973,7 @@ func applyWarLosses(ctx context.Context, tx *sql.Tx, id, nid, theater string, ro
 			for _, d := range deps {
 				take := min(d.n, remainingLoss)
 				if take > 0 {
-					if _, err = tx.ExecContext(ctx, `UPDATE war_deployments SET remaining=remaining-? WHERE id=?`, take, d.id); err != nil {
+					if _, err := tx.ExecContext(ctx, `UPDATE war_deployments SET remaining=remaining-? WHERE id=?`, take, d.id); err != nil {
 						return losses, err
 					}
 					remainingLoss -= take
@@ -983,7 +983,7 @@ func applyWarLosses(ctx context.Context, tx *sql.Tx, id, nid, theater string, ro
 				}
 			}
 		}
-		if _, err = tx.ExecContext(ctx, `UPDATE military_inventory SET quantity=GREATEST(0,quantity-?) WHERE nation_id=? AND unit_type=?`, loss, nid, unit); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE military_inventory SET quantity=GREATEST(0,quantity-?) WHERE nation_id=? AND unit_type=?`, loss, nid, unit); err != nil {
 			return losses, err
 		}
 		losses[unit] = loss

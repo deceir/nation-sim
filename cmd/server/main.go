@@ -227,7 +227,7 @@ func (a *app) health(w http.ResponseWriter, r *http.Request) {
 		problem(w, http.StatusServiceUnavailable, "Database unavailable.")
 		return
 	}
-	write(w, http.StatusOK, map[string]string{"status": "ready"})
+	write(w, http.StatusOK, map[string]string{"status": "ready", "build": "power-level-v2"})
 }
 
 func (a *app) register(w http.ResponseWriter, r *http.Request) {
