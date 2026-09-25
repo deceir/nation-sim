@@ -1,0 +1,30 @@
+.world-directory .nation-directory-table .directory-table-head,
+.world-directory .nation-directory-table .directory-table-row {
+  grid-template-columns: 42px minmax(250px, 1.5fr) 108px minmax(135px, .8fr) 108px 78px minmax(105px, .65fr) minmax(90px, .55fr);
+}
+
+@media (max-width: 1050px) and (min-width: 781px) {
+  .world-directory .nation-directory-table .directory-table-head,
+  .world-directory .nation-directory-table .directory-table-row {
+    grid-template-columns: 36px minmax(210px, 1.35fr) 98px minmax(115px, .75fr) 82px 68px minmax(95px, .65fr) 82px;
+  }
+}
+
+.world-directory .alliance-directory-table .directory-table-head,
+.world-directory .alliance-directory-table .directory-table-row {
+  grid-template-columns: 42px minmax(220px, 1.45fr) 104px 70px 76px minmax(100px, .65fr) minmax(92px, .55fr) minmax(92px, .55fr);
+}
+
+@media (max-width: 1050px) and (min-width: 781px) {
+  .world-directory .alliance-directory-table .directory-table-head,
+  .world-directory .alliance-directory-table .directory-table-row {
+    grid-template-columns: 36px minmax(190px, 1.3fr) 94px 62px 66px 92px 82px 82px;
+  }
+}
+
+@media (max-width: 780px) {
+  .world-directory .nation-directory-table .directory-table-row,
+  .world-directory .alliance-directory-table .directory-table-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}

@@ -52,11 +52,21 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	q := strings.TrimSpace(r.URL.Query().Get("search"))
 	q = strings.ReplaceAll(strings.ReplaceAll(q, "\\", "\\\\"), "%", "\\%")
 	q = strings.ReplaceAll(q, "_", "\\_")
-	orderBy := "n.population DESC"
-	if r.URL.Query().Get("sort") == "powerLevel" {
-		orderBy = "power_level DESC"
+	orderBy := powerLevelSQL("c", "p", "m") + " DESC"
+	switch r.URL.Query().Get("sort") {
+	case "population":
+		orderBy = "n.population DESC"
+	case "provinces":
+		orderBy = "c.province_count DESC"
+	case "founded":
+		orderBy = "n.created_at DESC"
+	case "name":
+		orderBy = "n.name ASC"
+	case "powerLevel", "":
+		orderBy = powerLevelSQL("c", "p", "m") + " DESC"
 	}
-	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,COALESCE(c.province_count,0),COALESCE(a.id,''),COALESCE(a.name,''),n.location_lat,n.location_lng,%s power_level
+	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.government_type,n.continent,n.motto,n.user_type,n.population,n.created_at,COALESCE(c.province_count,0),COALESCE(a.id,''),COALESCE(a.name,''),n.location_lat,n.location_lng,
+		COALESCE(c.total_infrastructure,0),COALESCE(p.project_count,0),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
 		FROM nations n
 		LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id
 		LEFT JOIN (SELECT nation_id,COUNT(*) province_count,COALESCE(SUM(infrastructure),0) total_infrastructure FROM cities GROUP BY nation_id) c ON c.nation_id=n.id
@@ -66,7 +76,7 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 			SUM(CASE WHEN unit_type='ships' THEN quantity ELSE 0 END) ships,SUM(CASE WHEN unit_type='jets' THEN quantity ELSE 0 END) jets,SUM(CASE WHEN unit_type='drones' THEN quantity ELSE 0 END) drones
 			FROM (SELECT nation_id,unit_type,quantity FROM military_inventory UNION ALL SELECT nation_id,resource,CAST(escrow_goods AS SIGNED) FROM market_orders WHERE side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) holdings GROUP BY nation_id) m ON m.nation_id=n.id
 		WHERE NOT EXISTS(SELECT 1 FROM user_bans b WHERE b.user_id=n.owner_id AND (b.expires_at IS NULL OR b.expires_at>NOW())) AND (?='' OR n.name LIKE CONCAT('%%',?,'%%') ESCAPE '\\' OR n.leader_name LIKE CONCAT('%%',?,'%%') ESCAPE '\\' OR a.name LIKE CONCAT('%%',?,'%%') ESCAPE '\\')
-		ORDER BY %s,n.name LIMIT 100`, powerLevelSQL("c", "p", "m"), orderBy)
+		ORDER BY %s,n.name LIMIT 100`, orderBy)
 	rows, e := a.db.Query(r.Context(), query, q, q, q, q)
 	if e != nil {
 		problem(w, 500, "Nation directory unavailable.")
@@ -77,12 +87,15 @@ func (a *app) nationDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	for rows.Next() {
 		var id, name, leader, government, continent, motto, userType, allianceID, allianceName string
 		var cityCount int
-		var population, powerLevel int64
+		var population, soldiers, tanks, ships, jets, drones int64
+		var totalInfrastructure float64
+		var projectCount int
 		var createdAt time.Time
 		var locationLat, locationLng *float64
-		if rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &createdAt, &cityCount, &allianceID, &allianceName, &locationLat, &locationLng, &powerLevel) != nil {
+		if rows.Scan(&id, &name, &leader, &government, &continent, &motto, &userType, &population, &createdAt, &cityCount, &allianceID, &allianceName, &locationLat, &locationLng, &totalInfrastructure, &projectCount, &soldiers, &tanks, &ships, &jets, &drones) != nil {
 			continue
 		}
+		powerLevel := calculatePowerLevel(powerLevelComponents{Provinces: cityCount, Infrastructure: totalInfrastructure, Projects: projectCount, Soldiers: soldiers, Tanks: tanks, Ships: ships, Jets: jets, Drones: drones}).Total
 		out = append(out, map[string]any{"id": id, "name": name, "leaderName": leader, "government": government, "continent": continent, "motto": motto, "userType": userType, "population": population, "powerLevel": powerLevel, "createdAt": createdAt, "cityCount": cityCount, "allianceID": allianceID, "allianceName": allianceName, "locationLat": locationLat, "locationLng": locationLng})
 	}
 	write(w, 200, out)
