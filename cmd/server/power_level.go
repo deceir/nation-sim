@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 )
@@ -66,16 +67,36 @@ func loadNationPowerLevel(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nationID string) (powerLevelBreakdown, error) {
 	var c powerLevelComponents
-	err := q.QueryRowContext(ctx, `SELECT
-		(SELECT COUNT(*) FROM cities WHERE nation_id=?),
-		(SELECT COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?),
-		(SELECT (SELECT COUNT(*) FROM national_projects WHERE nation_id=?)+(SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=?)),
-		COALESCE((SELECT SUM(CASE WHEN unit_type='soldiers' THEN quantity ELSE 0 END) FROM military_inventory WHERE nation_id=?),0),
-		COALESCE((SELECT SUM(CASE WHEN unit_type='tanks' THEN quantity ELSE 0 END) FROM military_inventory WHERE nation_id=?),0)+COALESCE((SELECT CAST(SUM(escrow_goods) AS SIGNED) FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource='tanks'),0),
-		COALESCE((SELECT SUM(CASE WHEN unit_type='ships' THEN quantity ELSE 0 END) FROM military_inventory WHERE nation_id=?),0)+COALESCE((SELECT CAST(SUM(escrow_goods) AS SIGNED) FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource='ships'),0),
-		COALESCE((SELECT SUM(CASE WHEN unit_type='jets' THEN quantity ELSE 0 END) FROM military_inventory WHERE nation_id=?),0)+COALESCE((SELECT CAST(SUM(escrow_goods) AS SIGNED) FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource='jets'),0),
-		COALESCE((SELECT SUM(CASE WHEN unit_type='drones' THEN quantity ELSE 0 END) FROM military_inventory WHERE nation_id=?),0)+COALESCE((SELECT CAST(SUM(escrow_goods) AS SIGNED) FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending') AND resource='drones'),0)`,
-		nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID, nationID).Scan(
-		&c.Provinces, &c.Infrastructure, &c.Projects, &c.Soldiers, &c.Tanks, &c.Ships, &c.Jets, &c.Drones)
-	return calculatePowerLevel(c), err
+	// Keep these reads independent. Power Level is displayed across the game and
+	// must retain its valid province/infrastructure base if an optional subsystem
+	// is temporarily unavailable or an older deployment has not created its table.
+	baseErr := q.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(infrastructure),0) FROM cities WHERE nation_id=?`, nationID).
+		Scan(&c.Provinces, &c.Infrastructure)
+	projectErr := q.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM national_projects WHERE nation_id=?)+
+		(SELECT COUNT(*) FROM national_long_term_projects WHERE nation_id=?)`, nationID, nationID).
+		Scan(&c.Projects)
+	militaryErr := q.QueryRowContext(ctx, `SELECT
+		COALESCE(SUM(CASE WHEN unit_type='soldiers' THEN quantity ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN unit_type='tanks' THEN quantity ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN unit_type='ships' THEN quantity ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN unit_type='jets' THEN quantity ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN unit_type='drones' THEN quantity ELSE 0 END),0)
+		FROM military_inventory WHERE nation_id=?`, nationID).
+		Scan(&c.Soldiers, &c.Tanks, &c.Ships, &c.Jets, &c.Drones)
+
+	var escrowTanks, escrowShips, escrowJets, escrowDrones int64
+	escrowErr := q.QueryRowContext(ctx, `SELECT
+		COALESCE(CAST(SUM(CASE WHEN resource='tanks' THEN escrow_goods ELSE 0 END) AS SIGNED),0),
+		COALESCE(CAST(SUM(CASE WHEN resource='ships' THEN escrow_goods ELSE 0 END) AS SIGNED),0),
+		COALESCE(CAST(SUM(CASE WHEN resource='jets' THEN escrow_goods ELSE 0 END) AS SIGNED),0),
+		COALESCE(CAST(SUM(CASE WHEN resource='drones' THEN escrow_goods ELSE 0 END) AS SIGNED),0)
+		FROM market_orders WHERE nation_id=? AND side='sell' AND status IN('open','pending')`, nationID).
+		Scan(&escrowTanks, &escrowShips, &escrowJets, &escrowDrones)
+	c.Tanks += escrowTanks
+	c.Ships += escrowShips
+	c.Jets += escrowJets
+	c.Drones += escrowDrones
+
+	return calculatePowerLevel(c), errors.Join(baseErr, projectErr, militaryErr, escrowErr)
 }

@@ -328,9 +328,8 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	n.Military = loadMilitaryOverview(r.Context(), a.db, n.ID)
-	if powerLevel, powerErr := loadNationPowerLevel(r.Context(), a.db, n.ID); powerErr == nil {
-		n.PowerLevel, n.PowerLevelBreakdown = powerLevel.Total, powerLevel
-	}
+	powerLevel, _ := loadNationPowerLevel(r.Context(), a.db, n.ID)
+	n.PowerLevel, n.PowerLevelBreakdown = powerLevel.Total, powerLevel
 	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
 		result := calculateEconomy(economicNation)
 		n.EmploymentRate = result.EffectiveEmploymentRate
