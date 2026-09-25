@@ -180,6 +180,8 @@ func main() {
 	mux.HandleFunc("GET /api/wars/{id}", a.auth(a.warDetails))
 	mux.HandleFunc("POST /api/wars/{id}/deploy", a.auth(a.deployWarForces))
 	mux.HandleFunc("PUT /api/wars/{id}/orders", a.auth(a.submitWarOrders))
+	mux.HandleFunc("PUT /api/wars/{id}/drone-defense", a.auth(a.setWarDroneDefense))
+	mux.HandleFunc("POST /api/wars/{id}/drone-strikes", a.auth(a.launchWarDroneStrike))
 	mux.HandleFunc("POST /api/wars/{id}/capitulate", a.auth(a.capitulateWar))
 	mux.HandleFunc("GET /api/conflicts", a.auth(a.conflictDirectory))
 	mux.HandleFunc("GET /api/conflicts/{id}", a.auth(a.publicConflictDetails))
@@ -317,6 +319,8 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		LocationLat, LocationLng                                                                                                     *float64
 		Military                                                                                                                     []militaryOverviewItem
 		NationalDetails                                                                                                              nationalDetails
+		PowerLevel                                                                                                                   int64
+		PowerLevelBreakdown                                                                                                          powerLevelBreakdown
 	}
 	err := a.db.QueryRow(r.Context(), `SELECT n.id,n.name,n.motto,n.currency_name,n.leader_name,n.government_type,n.continent,n.user_type,n.treasury,n.population,n.happiness,n.education,n.technology,n.quality_of_life,(SELECT max(expires_at) FROM guardian_grants g WHERE g.nation_id=n.id AND g.revoked_at IS NULL AND g.starts_at<=now() AND g.expires_at>now()),COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(ar.title,''),n.created_at,n.employment_rate,n.tax_rate,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id),COALESCE((SELECT gear FROM nation_economic_strategy s WHERE s.nation_id=n.id),'balanced'),n.location_lat,n.location_lng FROM nations n LEFT JOIN alliance_members am ON am.nation_id=n.id LEFT JOIN alliances a ON a.id=am.alliance_id LEFT JOIN alliance_roles ar ON ar.id=am.role_id WHERE owner_id=?`, u.ID).Scan(&n.ID, &n.Name, &n.Motto, &n.Currency, &n.LeaderName, &n.Government, &n.Continent, &n.UserType, &n.Treasury, &n.Population, &n.Happiness, &n.Education, &n.Technology, &n.QOL, &n.GuardianUntil, &n.AllianceID, &n.AllianceName, &n.AllianceRole, &n.CreatedAt, &n.EmploymentRate, &n.TaxRate, &n.ProvinceCount, &n.EconomicGear, &n.LocationLat, &n.LocationLng)
 	if err != nil {
@@ -324,6 +328,8 @@ func (a *app) me(w http.ResponseWriter, r *http.Request, u user) {
 		return
 	}
 	n.Military = loadMilitaryOverview(r.Context(), a.db, n.ID)
+	powerLevel, _ := loadNationPowerLevel(r.Context(), a.db, n.ID)
+	n.PowerLevel, n.PowerLevelBreakdown = powerLevel.Total, powerLevel
 	if economicNation, _, _, economicErr := a.loadEconomicNationContext(r.Context(), u.ID); economicErr == nil {
 		result := calculateEconomy(economicNation)
 		n.EmploymentRate = result.EffectiveEmploymentRate

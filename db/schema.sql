@@ -259,6 +259,39 @@ CREATE TABLE IF NOT EXISTS war_reports (
   UNIQUE KEY uq_war_report_round(conflict_id,round_number),
   CONSTRAINT fk_war_reports_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_drone_defenses (
+  conflict_id CHAR(36) NOT NULL,
+  nation_id CHAR(36) NOT NULL,
+  posture ENUM('interceptor_screen','dispersed_forces','hardened_sites') NOT NULL DEFAULT 'interceptor_screen',
+  updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY(conflict_id,nation_id),
+  CONSTRAINT fk_war_drone_defense_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_war_drone_defense_nation FOREIGN KEY(nation_id) REFERENCES nations(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS war_drone_strikes (
+  id CHAR(36) PRIMARY KEY,
+  conflict_id CHAR(36) NOT NULL,
+  attacker_nation_id CHAR(36) NOT NULL,
+  defender_nation_id CHAR(36) NOT NULL,
+  mission ENUM('reconnaissance','precision_strike','infrastructure_disruption') NOT NULL,
+  target_unit VARCHAR(20) NOT NULL DEFAULT '',
+  drones_committed INT NOT NULL,
+  drones_lost INT NOT NULL DEFAULT 0,
+  target_losses JSON NOT NULL,
+  readiness_damage DECIMAL(7,3) NOT NULL DEFAULT 0,
+  organization_damage DECIMAL(7,3) NOT NULL DEFAULT 0,
+  damage_pressure DECIMAL(9,4) NOT NULL DEFAULT 0,
+  intel_bonus DECIMAL(7,4) NOT NULL DEFAULT 0,
+  applies_round INT NOT NULL,
+  launched_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  next_available_at TIMESTAMP(6) NOT NULL,
+  summary TEXT NOT NULL,
+  CONSTRAINT fk_war_drone_strike_conflict FOREIGN KEY(conflict_id) REFERENCES conflicts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_war_drone_strike_attacker FOREIGN KEY(attacker_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_war_drone_strike_defender FOREIGN KEY(defender_nation_id) REFERENCES nations(id) ON DELETE CASCADE,
+  INDEX idx_war_drone_strike_cooldown(conflict_id,attacker_nation_id,launched_at),
+  INDEX idx_war_drone_strike_daily(attacker_nation_id,launched_at)
+) ENGINE=InnoDB;
 CREATE TABLE IF NOT EXISTS nation_war_status (
   nation_id CHAR(36) PRIMARY KEY,
   war_exhaustion DECIMAL(7,3) NOT NULL DEFAULT 0,

@@ -32,16 +32,45 @@ func (a *app) alliancePermission(ctx context.Context, userID, allianceID string)
 	return p, err
 }
 
+func (a *app) alliancePowerTotals(ctx context.Context, allianceID string) map[string]int64 {
+	totals := map[string]int64{}
+	rows, err := a.db.QueryContext(ctx, `SELECT am.alliance_id,COALESCE(c.province_count,0),COALESCE(c.total_infrastructure,0),COALESCE(p.project_count,0),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
+		FROM alliance_members am
+		LEFT JOIN (SELECT nation_id,COUNT(*) province_count,COALESCE(SUM(infrastructure),0) total_infrastructure FROM cities GROUP BY nation_id) c ON c.nation_id=am.nation_id
+		LEFT JOIN (SELECT nation_id,COUNT(*) project_count FROM (SELECT nation_id FROM national_projects UNION ALL SELECT nation_id FROM national_long_term_projects) completed_projects GROUP BY nation_id) p ON p.nation_id=am.nation_id
+		LEFT JOIN (SELECT nation_id,
+			SUM(CASE WHEN unit_type='soldiers' THEN quantity ELSE 0 END) soldiers,SUM(CASE WHEN unit_type='tanks' THEN quantity ELSE 0 END) tanks,
+			SUM(CASE WHEN unit_type='ships' THEN quantity ELSE 0 END) ships,SUM(CASE WHEN unit_type='jets' THEN quantity ELSE 0 END) jets,SUM(CASE WHEN unit_type='drones' THEN quantity ELSE 0 END) drones
+			FROM (SELECT nation_id,unit_type,quantity FROM military_inventory UNION ALL SELECT nation_id,resource,CAST(escrow_goods AS SIGNED) FROM market_orders WHERE side='sell' AND status IN('open','pending') AND resource IN('tanks','ships','jets','drones')) holdings GROUP BY nation_id) m ON m.nation_id=am.nation_id
+		WHERE (?='' OR am.alliance_id=?)`, allianceID, allianceID)
+	if err != nil {
+		return totals
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var provinces, projects int
+		var infrastructure float64
+		var soldiers, tanks, ships, jets, drones int64
+		if rows.Scan(&id, &provinces, &infrastructure, &projects, &soldiers, &tanks, &ships, &jets, &drones) != nil {
+			continue
+		}
+		totals[id] += calculatePowerLevel(powerLevelComponents{Provinces: provinces, Infrastructure: infrastructure, Projects: projects, Soldiers: soldiers, Tanks: tanks, Ships: ships, Jets: jets, Drones: drones}).Total
+	}
+	return totals
+}
+
 func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) {
 	search := strings.TrimSpace(r.URL.Query().Get("search"))
 	search = strings.ReplaceAll(strings.ReplaceAll(search, "\\", "\\\\"), "%", "\\%")
 	search = strings.ReplaceAll(search, "_", "\\_")
-	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) members,(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id) population,(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) provinces FROM alliances a WHERE (?='' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\') ORDER BY population DESC,a.name ASC LIMIT 100`, search, search)
+	rows, e := a.db.QueryContext(r.Context(), `SELECT a.id,a.name,a.description,a.emblem_url,a.join_policy,a.created_at,(SELECT COUNT(*) FROM alliance_members m WHERE m.alliance_id=a.id) members,(SELECT COALESCE(SUM(n.population),0) FROM alliance_members m JOIN nations n ON n.id=m.nation_id WHERE m.alliance_id=a.id) population,(SELECT COUNT(*) FROM alliance_members m JOIN cities c ON c.nation_id=m.nation_id WHERE m.alliance_id=a.id) provinces FROM alliances a WHERE (?='' OR a.name LIKE CONCAT('%',?,'%') ESCAPE '\\')`, search, search)
 	if e != nil {
 		problem(w, 500, "Alliances unavailable.")
 		return
 	}
 	defer rows.Close()
+	powerTotals := a.alliancePowerTotals(r.Context(), "")
 	out := []map[string]any{}
 	for rows.Next() {
 		var id, name, description, emblem, policy string
@@ -49,8 +78,20 @@ func (a *app) allianceDirectory(w http.ResponseWriter, r *http.Request, u user) 
 		var pop int64
 		var createdAt time.Time
 		rows.Scan(&id, &name, &description, &emblem, &policy, &createdAt, &members, &pop, &provinces)
-		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "createdAt": createdAt, "members": members, "population": pop, "provinces": provinces})
+		totalPower := powerTotals[id]
+		averagePower := 0.0
+		if members > 0 {
+			averagePower = float64(totalPower) / float64(members)
+		}
+		out = append(out, map[string]any{"id": id, "name": name, "description": description, "emblemUrl": emblem, "joinPolicy": policy, "createdAt": createdAt, "members": members, "population": pop, "provinces": provinces, "powerLevel": totalPower, "averagePowerLevel": averagePower})
 	}
+	sort.SliceStable(out, func(i, j int) bool {
+		left, right := out[i]["powerLevel"].(int64), out[j]["powerLevel"].(int64)
+		if left == right {
+			return out[i]["name"].(string) < out[j]["name"].(string)
+		}
+		return left > right
+	})
 	var membership map[string]any
 	nid, _ := a.nationID(r.Context(), u.ID)
 	var aid, aname, role string
@@ -303,7 +344,12 @@ func (a *app) allianceDetail(w http.ResponseWriter, r *http.Request, u user) {
 			rows.Close()
 		}
 	}
-	write(w, 200, map[string]any{"alliance": out, "members": members, "roles": roles, "taxBrackets": brackets, "taxHistory": taxHistory, "announcements": announcements, "treatyTypes": treatyCatalog(), "treaties": activeTreaties, "treatyProposals": pendingTreaties, "military": military, "isMember": isMember, "permissions": map[string]any{"nationID": p.NationID, "role": p.Title, "rank": p.Rank, "viewBank": p.ViewBank, "deposit": p.Deposit, "withdraw": p.Withdraw, "tax": p.Tax, "applicants": p.Applicants, "remove": p.Remove, "edit": p.Edit, "roles": p.Roles, "promote": p.Promote, "announcements": p.Announcements, "audit": p.Audit, "war": p.War}, "bank": bank, "memberBalances": memberBalances, "transactions": logs, "applications": applications})
+	totalPower := a.alliancePowerTotals(r.Context(), id)[id]
+	averagePower := 0.0
+	if len(members) > 0 {
+		averagePower = float64(totalPower) / float64(len(members))
+	}
+	write(w, 200, map[string]any{"alliance": out, "members": members, "roles": roles, "taxBrackets": brackets, "taxHistory": taxHistory, "announcements": announcements, "treatyTypes": treatyCatalog(), "treaties": activeTreaties, "treatyProposals": pendingTreaties, "military": military, "powerLevel": totalPower, "averagePowerLevel": averagePower, "isMember": isMember, "permissions": map[string]any{"nationID": p.NationID, "role": p.Title, "rank": p.Rank, "viewBank": p.ViewBank, "deposit": p.Deposit, "withdraw": p.Withdraw, "tax": p.Tax, "applicants": p.Applicants, "remove": p.Remove, "edit": p.Edit, "roles": p.Roles, "promote": p.Promote, "announcements": p.Announcements, "audit": p.Audit, "war": p.War}, "bank": bank, "memberBalances": memberBalances, "transactions": logs, "applications": applications})
 }
 
 func (a *app) updateAlliance(w http.ResponseWriter, r *http.Request, u user) {

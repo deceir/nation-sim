@@ -15,7 +15,7 @@ func TestLeaderboardParametersValidateAndNormalizeFilters(t *testing.T) {
 
 func TestLeaderboardParametersUseSafeDefaults(t *testing.T) {
 	got := leaderboardParameters(url.Values{"metric": {"treasury"}, "order": {"sideways"}, "continent": {"Atlantis"}, "pageSize": {"500"}})
-	if got.Metric != "population" || got.Order != "desc" || got.Continent != "" || got.Page != 1 || got.PageSize != 10 {
+	if got.Metric != "powerLevel" || got.Order != "desc" || got.Continent != "" || got.Page != 1 || got.PageSize != 10 {
 		t.Fatalf("unexpected leaderboard defaults: %#v", got)
 	}
 }

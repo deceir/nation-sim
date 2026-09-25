@@ -43,7 +43,8 @@ func (a *app) conflictDirectory(w http.ResponseWriter, r *http.Request, _ user) 
 	page = min(page, pages)
 	query := `SELECT c.id,c.declared_at,c.attacker_id,an.name,an.leader_name,COALESCE(aa.id,''),COALESCE(aa.name,''),
 		c.defender_id,dn.name,dn.leader_name,COALESCE(da.id,''),COALESCE(da.name,''),
-		w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.rounds_resolved,w.distance_km,w.route_type,COALESCE(w.outcome,''),COALESCE(w.winner_nation_id,'')
+		w.objective,w.stage,w.attacker_score,w.defender_score,w.attacker_resolve,w.defender_resolve,w.rounds_resolved,w.distance_km,w.route_type,COALESCE(w.outcome,''),COALESCE(w.winner_nation_id,''),
+		COALESCE(w.attacker_lat,an.location_lat,0),COALESCE(w.attacker_lng,an.location_lng,0),COALESCE(w.defender_lat,dn.location_lat,0),COALESCE(w.defender_lng,dn.location_lng,0)
 		FROM conflicts c JOIN wars w ON w.conflict_id=c.id
 		JOIN nations an ON an.id=c.attacker_id JOIN nations dn ON dn.id=c.defender_id
 		LEFT JOIN alliance_members aam ON aam.nation_id=an.id LEFT JOIN alliances aa ON aa.id=aam.alliance_id
@@ -62,12 +63,13 @@ func (a *app) conflictDirectory(w http.ResponseWriter, r *http.Request, _ user) 
 		var objective, stage, route, outcome, winner string
 		var declared time.Time
 		var attackerScore, defenderScore, attackerResolve, defenderResolve, distance float64
+		var attackerLat, attackerLng, defenderLat, defenderLng float64
 		var rounds int
-		if rows.Scan(&id, &declared, &attackerID, &attackerName, &attackerLeader, &attackerAllianceID, &attackerAllianceName, &defenderID, &defenderName, &defenderLeader, &defenderAllianceID, &defenderAllianceName, &objective, &stage, &attackerScore, &defenderScore, &attackerResolve, &defenderResolve, &rounds, &distance, &route, &outcome, &winner) == nil {
+		if rows.Scan(&id, &declared, &attackerID, &attackerName, &attackerLeader, &attackerAllianceID, &attackerAllianceName, &defenderID, &defenderName, &defenderLeader, &defenderAllianceID, &defenderAllianceName, &objective, &stage, &attackerScore, &defenderScore, &attackerResolve, &defenderResolve, &rounds, &distance, &route, &outcome, &winner, &attackerLat, &attackerLng, &defenderLat, &defenderLng) == nil {
 			items = append(items, map[string]any{
 				"id": id, "declaredAt": declared, "objective": objective, "objectiveName": warObjectives[objective].Name, "stage": stage,
-				"attacker":       map[string]any{"id": attackerID, "name": attackerName, "leaderName": attackerLeader, "allianceID": attackerAllianceID, "allianceName": attackerAllianceName, "score": attackerScore, "resolve": attackerResolve},
-				"defender":       map[string]any{"id": defenderID, "name": defenderName, "leaderName": defenderLeader, "allianceID": defenderAllianceID, "allianceName": defenderAllianceName, "score": defenderScore, "resolve": defenderResolve},
+				"attacker":       map[string]any{"id": attackerID, "name": attackerName, "leaderName": attackerLeader, "allianceID": attackerAllianceID, "allianceName": attackerAllianceName, "score": attackerScore, "resolve": attackerResolve, "lat": attackerLat, "lng": attackerLng},
+				"defender":       map[string]any{"id": defenderID, "name": defenderName, "leaderName": defenderLeader, "allianceID": defenderAllianceID, "allianceName": defenderAllianceName, "score": defenderScore, "resolve": defenderResolve, "lat": defenderLat, "lng": defenderLng},
 				"roundsResolved": rounds, "distanceKm": distance, "routeType": route, "outcome": outcome, "winnerNationID": winner,
 			})
 		}
@@ -104,7 +106,7 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 		return
 	}
 	forces := map[string]map[string]any{"attacker": {}, "defender": {}}
-	forceRows, _ := a.db.QueryContext(r.Context(), `SELECT nation_id,unit_type,deployment_theater,SUM(quantity),SUM(remaining),MIN(arrives_round),SUM(CASE WHEN arrives_round<=? THEN remaining ELSE 0 END),SUM(CASE WHEN arrives_round>? THEN remaining ELSE 0 END) FROM war_deployments WHERE conflict_id=? GROUP BY nation_id,unit_type,deployment_theater`, rounds, rounds, id)
+	forceRows, _ := a.db.QueryContext(r.Context(), `SELECT nation_id,unit_type,deployment_theater,SUM(quantity),SUM(remaining),MIN(arrives_round),SUM(CASE WHEN arrives_round<=? THEN remaining ELSE 0 END),SUM(CASE WHEN arrives_round>? THEN remaining ELSE 0 END) FROM war_deployments WHERE conflict_id=? AND deployment_theater=CASE WHEN nation_id=? THEN 'defender_homeland' ELSE 'attacker_homeland' END GROUP BY nation_id,unit_type,deployment_theater`, rounds, rounds, id, attackerID)
 	if forceRows != nil {
 		defer forceRows.Close()
 		for forceRows.Next() {
@@ -134,7 +136,19 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 			}
 		}
 	}
+	for side, nationID := range map[string]string{"attacker": attackerID, "defender": defenderID} {
+		for _, unit := range warConventionalUnitKeys() {
+			force, ok := forces[side][unit].(map[string]any)
+			if !ok {
+				force = map[string]any{"deployed": int64(0), "remaining": int64(0), "lost": int64(0), "homeTheater": int64(0), "foreignTheater": int64(0), "enRoute": int64(0)}
+				forces[side][unit] = force
+			}
+			force["homeTheater"] = committedAvailable(r.Context(), a.db, nationID, unit)
+			force["reserve"] = int64(0)
+		}
+	}
 	reports := []map[string]any{}
+	cumulativeLosses := map[string]map[string]int64{"attacker": {}, "defender": {}}
 	reportRows, _ := a.db.QueryContext(r.Context(), `SELECT round_number,resolved_at,attacker_operation,defender_operation,attacker_foreign_posture,defender_foreign_posture,attacker_home_operation,attacker_home_posture,defender_home_operation,defender_home_posture,attacker_strength,defender_strength,attacker_losses,defender_losses,attacker_supply,defender_supply,attacker_score_change,defender_score_change,attacker_resolve_change,defender_resolve_change,summary FROM war_reports WHERE conflict_id=? ORDER BY round_number DESC`, id)
 	if reportRows != nil {
 		defer reportRows.Close()
@@ -147,7 +161,16 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 				attackerLosses, defenderLosses := map[string]int64{}, map[string]int64{}
 				_ = json.Unmarshal([]byte(attackerLossesJSON), &attackerLosses)
 				_ = json.Unmarshal([]byte(defenderLossesJSON), &defenderLosses)
+				mergeWarLosses(cumulativeLosses["attacker"], attackerLosses)
+				mergeWarLosses(cumulativeLosses["defender"], defenderLosses)
 				reports = append(reports, map[string]any{"round": round, "resolvedAt": resolved, "attackerOperation": attackerOperation, "defenderOperation": defenderOperation, "attackerForeignPosture": attackerForeignPosture, "defenderForeignPosture": defenderForeignPosture, "attackerHomeOperation": attackerHomeOperation, "attackerHomePosture": attackerHomePosture, "defenderHomeOperation": defenderHomeOperation, "defenderHomePosture": defenderHomePosture, "attackerStrength": attackerStrength, "defenderStrength": defenderStrength, "attackerLosses": attackerLosses, "defenderLosses": defenderLosses, "attackerSupply": attackerSupply, "defenderSupply": defenderSupply, "attackerScoreChange": attackerScoreChange, "defenderScoreChange": defenderScoreChange, "attackerResolveChange": attackerResolveChange, "defenderResolveChange": defenderResolveChange, "summary": summary})
+			}
+		}
+	}
+	for side, losses := range cumulativeLosses {
+		for unit, lost := range losses {
+			if force, ok := forces[side][unit].(map[string]any); ok {
+				force["lost"] = lost
 			}
 		}
 	}
@@ -156,11 +179,12 @@ func (a *app) publicConflictDetails(w http.ResponseWriter, r *http.Request, _ us
 		endedAt = ended.Time
 	}
 	deployments, _ := warDeploymentBatches(r.Context(), a.db, id, attackerID, stage, rounds, next)
+	droneStrikes := a.warDroneHistory(r.Context(), id, "")
 	write(w, http.StatusOK, map[string]any{
 		"id": id, "declaredAt": declared, "objective": objective, "objectiveName": warObjectives[objective].Name, "objectiveDescription": warObjectives[objective].Description, "objectiveEffect": warObjectives[objective].Effect, "stage": stage,
 		"attacker":       map[string]any{"id": attackerID, "name": attackerName, "leaderName": attackerLeader, "allianceID": attackerAllianceID, "allianceName": attackerAllianceName, "score": attackerScore, "resolve": attackerResolve, "readiness": attackerReadiness, "organization": attackerOrganization, "damagePressureInflicted": attackerDamagePressure, "damagePressureReceived": defenderDamagePressure, "infrastructureDamage": attackerInfrastructureDamage, "institutionsDestroyed": attackerInstitutionsDestroyed, "lat": attackerLat, "lng": attackerLng, "fobs": a.fobsForNation(r.Context(), attackerID)},
 		"defender":       map[string]any{"id": defenderID, "name": defenderName, "leaderName": defenderLeader, "allianceID": defenderAllianceID, "allianceName": defenderAllianceName, "score": defenderScore, "resolve": defenderResolve, "readiness": defenderReadiness, "organization": defenderOrganization, "damagePressureInflicted": defenderDamagePressure, "damagePressureReceived": attackerDamagePressure, "infrastructureDamage": defenderInfrastructureDamage, "institutionsDestroyed": defenderInstitutionsDestroyed, "lat": defenderLat, "lng": defenderLng, "fobs": a.fobsForNation(r.Context(), defenderID)},
 		"roundsResolved": rounds, "maximumRounds": warMaximumRounds, "nextRoundAt": next, "endsAt": ends, "endedAt": endedAt, "distanceKm": distance, "routeType": route, "mobilizationRounds": mobilization, "supplyFactor": supplyFactor,
-		"winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "rules": warRules(),
+		"winnerNationID": winner, "outcome": outcome, "endReason": endReason, "forces": forces, "deployments": deployments, "reports": reports, "droneStrikes": droneStrikes, "droneMissions": warDroneMissions, "rules": warRules(),
 	})
 }

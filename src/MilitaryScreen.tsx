@@ -2,7 +2,6 @@ import {useEffect,useState} from 'react';
 import {Anchor,Box,Coins,Factory,MapPinned,Shield,Trash2,Users,Wheat,Zap} from 'lucide-react';
 import WorldLocationPicker,{type WorldLocation} from './WorldLocationPicker';
 import './military-system.css';
-import './military-defense-settings.css';
 import './forward-operating-bases.css';
 
 const yen=(value:number)=>`¥${Number(value||0).toLocaleString(undefined,{maximumFractionDigits:1})}`;
@@ -13,15 +12,12 @@ const api=async(path:string,options?:RequestInit)=>{const response=await fetch('
 export default function MilitaryScreen(){
  const[data,setData]=useState<any>(),[fobs,setFobs]=useState<any>();
  const[amounts,setAmounts]=useState<Record<string,number>>({});
- const[defense,setDefense]=useState<Record<string,number>>({});
- const[defenseStatus,setDefenseStatus]=useState('');
  const[error,setError]=useState('');
  const[busy,setBusy]=useState('');
  const[fobLocation,setFobLocation]=useState<WorldLocation|null>(null);
- const load=()=>Promise.all([api('/military'),api('/fobs')]).then(([next,bases])=>{setData(next);setFobs(bases);setDefense(Object.fromEntries((next.units||[]).map((unit:any)=>[unit.key,Number(unit.automaticDefensePercent??60)])))}).catch(e=>setError(e.message));
+ const load=()=>Promise.all([api('/military'),api('/fobs')]).then(([next,bases])=>{setData(next);setFobs(bases)}).catch(e=>setError(e.message));
  useEffect(()=>{void load()},[]);
  const act=async(unit:string,action:'produce'|'decommission')=>{const quantity=Math.floor(Number(amounts[unit]||0));if(quantity<1){setError('Enter a whole-unit quantity greater than zero.');return}setBusy(unit+action);setError('');try{await api(`/military/${action}`,{method:'POST',body:JSON.stringify({unitType:unit,quantity})});setAmounts({...amounts,[unit]:0});window.dispatchEvent(new Event('diplomatia:resources'));await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
- const saveDefense=async()=>{setBusy('defense');setError('');setDefenseStatus('');try{const percentages=Object.fromEntries(data.units.map((unit:any)=>[unit.key,Math.max(0,Math.min(100,Math.round(Number(defense[unit.key]??60))))]));await api('/military/defense-settings',{method:'PUT',body:JSON.stringify({percentages})});setDefense(percentages);setDefenseStatus('Automatic defense settings saved.')}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  const buildFob=async()=>{if(!fobLocation||!confirm('Build this Forward Operating Base for ¥25,000,000?'))return;setBusy('fob');setError('');try{await api('/fobs',{method:'POST',body:JSON.stringify(fobLocation)});setFobLocation(null);window.dispatchEvent(new Event('diplomatia:resources'));await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  const demolishFob=async(id:string)=>{if(!confirm('Demolish this Forward Operating Base? There is no refund and construction will be locked for 60 days.'))return;setBusy('fob');setError('');try{await api('/fobs/'+encodeURIComponent(id),{method:'DELETE'});await load()}catch(e){setError((e as Error).message)}finally{setBusy('')}};
  if(!data||!fobs)return <section className="panel wide">Reviewing military readiness…</section>;
@@ -65,24 +61,6 @@ export default function MilitaryScreen(){
 <b>{dailyFood.toLocaleString(undefined,{maximumFractionDigits:2})} t/day</b>
 </div>
 </div>
-  <section className="panel automatic-defense">
-   <header>
-<div>
-<span className="eyebrow">DEFENSIVE MOBILIZATION</span>
-<h3>Automatic Defense</h3>
-</div>
-<button className="primary" disabled={busy!==''} onClick={()=>void saveDefense()}>{busy==='defense'?'Saving…':'Save'}</button>
-</header>
-   <div className="automatic-defense-grid">{data.units.map((unit:any)=>
-<label key={unit.key}>
-<span>{unit.name}</span>
-<div>
-<input type="number" min="0" max="100" step="1" value={defense[unit.key]??60} onChange={e=>setDefense({...defense,[unit.key]:Number(e.target.value)})}/>
-<b>%</b>
-</div>
-</label>)}</div>
-   {defenseStatus&&<small className="defense-saved">{defenseStatus}</small>}
-  </section>
   <section className="panel fob-command">
 <header>
 <div>
@@ -123,7 +101,8 @@ export default function MilitaryScreen(){
    <div className="military-capacity">
 <i style={{width:Math.min(100,Number(unit.quantity)/Math.max(1,Number(unit.capacity))*100)+'%'}}/>
 </div>
-   <small>{Number(unit.availableQuantity).toLocaleString()} available · {Number(unit.committedQuantity||0).toLocaleString()} deployed · {Number(unit.escrowedQuantity||0).toLocaleString()} in market escrow</small>
+   <small>{unit.key==='drones'?`${Number(unit.availableQuantity).toLocaleString()} available for sorties · ${Number(unit.escrowedQuantity||0).toLocaleString()} in market escrow`:`${Number(unit.availableQuantity).toLocaleString()} available · ${Number(unit.committedQuantity||0).toLocaleString()} deployed · ${Number(unit.escrowedQuantity||0).toLocaleString()} in market escrow`}</small>
+   {unit.key==='drones'&&<p className="military-mobilization">Drones launch immediate missions through Drone Command during an active war. They do not deploy to fronts or add ordinary round strength.</p>}
    <div className="unit-facts">
 <span>
 <Coins/> {yen(unit.dailyCashUpkeep)} daily upkeep</span>{Number(unit.dailyEnergyUpkeep)>0&&<span>

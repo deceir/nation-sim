@@ -15,6 +15,7 @@ type leaderboardQuery struct {
 }
 
 var leaderboardMetrics = map[string]string{
+	"powerLevel": "power_level",
 	"population": "n.population",
 	"gdp":        "n.gdp",
 	"provinces":  "province_count",
@@ -28,7 +29,7 @@ var leaderboardMetrics = map[string]string{
 func leaderboardParameters(values url.Values) leaderboardQuery {
 	result := leaderboardQuery{Metric: values.Get("metric"), Order: strings.ToLower(values.Get("order")), Continent: values.Get("continent"), Search: strings.TrimSpace(values.Get("search")), Page: 1, PageSize: 10}
 	if _, ok := leaderboardMetrics[result.Metric]; !ok {
-		result.Metric = "population"
+		result.Metric = "powerLevel"
 	}
 	if result.Order != "asc" {
 		result.Order = "desc"
@@ -68,10 +69,15 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 		return
 	}
 	orderColumn := leaderboardMetrics[filters.Metric]
-	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,n.gdp,(SELECT COUNT(*) FROM cities c WHERE c.nation_id=n.id) province_count,COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0)
+	if filters.Metric == "powerLevel" {
+		orderColumn = powerLevelSQL("c", "p", "m")
+	}
+	query := fmt.Sprintf(`SELECT n.id,n.name,n.leader_name,n.continent,n.population,n.gdp,COALESCE(c.province_count,0),COALESCE(a.id,''),COALESCE(a.name,''),COALESCE(m.soldiers,0),COALESCE(m.tanks,0),COALESCE(m.ships,0),COALESCE(m.jets,0),COALESCE(m.drones,0),COALESCE(c.total_infrastructure,0),COALESCE(p.project_count,0)
 		FROM nations n
 		LEFT JOIN alliance_members am ON am.nation_id=n.id
 		LEFT JOIN alliances a ON a.id=am.alliance_id
+		LEFT JOIN (SELECT nation_id,COUNT(*) province_count,COALESCE(SUM(infrastructure),0) total_infrastructure FROM cities GROUP BY nation_id) c ON c.nation_id=n.id
+		LEFT JOIN (SELECT nation_id,COUNT(*) project_count FROM (SELECT nation_id FROM national_projects UNION ALL SELECT nation_id FROM national_long_term_projects) completed_projects GROUP BY nation_id) p ON p.nation_id=n.id
 		LEFT JOIN (
 			SELECT nation_id,
 			SUM(CASE WHEN unit_type='soldiers' THEN quantity ELSE 0 END) soldiers,
@@ -98,11 +104,13 @@ func (a *app) leaderboards(w http.ResponseWriter, r *http.Request, _ user) {
 	for rows.Next() {
 		var id, name, leader, continentName, allianceID, allianceName string
 		var population, gdp, soldiers, tanks, ships, jets, drones int64
-		var provinces int
-		if rows.Scan(&id, &name, &leader, &continentName, &population, &gdp, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones) != nil {
+		var totalInfrastructure float64
+		var provinces, projectCount int
+		if rows.Scan(&id, &name, &leader, &continentName, &population, &gdp, &provinces, &allianceID, &allianceName, &soldiers, &tanks, &ships, &jets, &drones, &totalInfrastructure, &projectCount) != nil {
 			continue
 		}
-		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "gdp": gdp, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones})
+		powerLevel := calculatePowerLevel(powerLevelComponents{Provinces: provinces, Infrastructure: totalInfrastructure, Projects: projectCount, Soldiers: soldiers, Tanks: tanks, Ships: ships, Jets: jets, Drones: drones}).Total
+		items = append(items, map[string]any{"rank": position, "id": id, "name": name, "leaderName": leader, "continent": continentName, "population": population, "gdp": gdp, "provinces": provinces, "allianceID": allianceID, "allianceName": allianceName, "soldiers": soldiers, "tanks": tanks, "ships": ships, "jets": jets, "drones": drones, "powerLevel": powerLevel})
 		position++
 	}
 	write(w, 200, map[string]any{"metric": filters.Metric, "order": filters.Order, "page": filters.Page, "pageSize": filters.PageSize, "total": total, "items": items})

@@ -110,7 +110,12 @@ func committedMilitary(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nationID, unit string) int64 {
 	var committed int64
-	_ = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(d.remaining),0) FROM war_deployments d JOIN wars w ON w.conflict_id=d.conflict_id WHERE d.nation_id=? AND d.unit_type=? AND w.stage<>'ended'`, nationID, unit).Scan(&committed)
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(d.remaining),0)
+		FROM war_deployments d
+		JOIN wars w ON w.conflict_id=d.conflict_id
+		JOIN conflicts c ON c.id=d.conflict_id
+		WHERE d.nation_id=? AND d.unit_type=? AND w.stage<>'ended'
+		AND d.deployment_theater=CASE WHEN d.nation_id=c.attacker_id THEN 'defender_homeland' ELSE 'attacker_homeland' END`, nationID, unit).Scan(&committed)
 	return committed
 }
 
@@ -247,9 +252,13 @@ func militaryFoodUpkeepProjection(ctx context.Context, q interface {
 func warFoodUpkeepProjection(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nationID string) float64 {
-	var deployed int64
-	_ = q.QueryRowContext(ctx, `SELECT COALESCE(SUM(d.remaining),0) FROM war_deployments d JOIN wars w ON w.conflict_id=d.conflict_id WHERE d.nation_id=? AND d.unit_type='soldiers' AND w.stage<>'ended'`, nationID).Scan(&deployed)
-	return float64(deployed) * balance.SoldierWarFoodPerRound * (24 / float64(warRoundHours))
+	var owned, expeditionary, activeWars int64
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE((SELECT quantity FROM military_inventory WHERE nation_id=? AND unit_type='soldiers'),0)`, nationID).Scan(&owned)
+	expeditionary = committedMilitary(ctx, q, nationID, "soldiers")
+	_ = q.QueryRowContext(ctx, `SELECT COUNT(*) FROM conflicts c JOIN wars w ON w.conflict_id=c.id WHERE w.stage<>'ended' AND (c.attacker_id=? OR c.defender_id=?)`, nationID, nationID).Scan(&activeWars)
+	homelandDefense := max(int64(0), owned-expeditionary)
+	engagedPerRound := expeditionary + homelandDefense*activeWars
+	return float64(engagedPerRound) * balance.SoldierWarFoodPerRound * (24 / float64(warRoundHours))
 }
 
 func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) {
@@ -310,7 +319,7 @@ func (a *app) militaryDashboard(w http.ResponseWriter, r *http.Request, u user) 
 			foodEach = balance.SoldierFoodPerDay
 			dailyFood = float64(totalOwned) * foodEach
 		}
-		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "dailyFoodUpkeep": dailyFood, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "foodUpkeepEach": foodEach, "requiredProject": spec.Project, "canProduce": canProduce, "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": dailyRemaining, "maximumProductionNow": maximumProductionNow, "automaticDefensePercent": defensiveCommitmentPercent(r.Context(), a.db, nid, key)})
+		items = append(items, map[string]any{"key": key, "name": spec.Name, "quantity": totalOwned, "availableQuantity": max(int64(0), quantity-committed), "committedQuantity": committed, "escrowedQuantity": escrowed, "capacity": capacity, "cashCost": spec.Cash, "resourceCosts": spec.Resources, "dailyCashUpkeep": float64(totalOwned) * spec.DailyCash, "dailyEnergyUpkeep": float64(totalOwned) * spec.DailyEnergy, "dailyFoodUpkeep": dailyFood, "cashUpkeepEach": spec.DailyCash, "energyUpkeepEach": spec.DailyEnergy, "foodUpkeepEach": foodEach, "requiredProject": spec.Project, "canProduce": canProduce, "tradable": spec.Tradable, "decommissionLocked": producedToday > 0, "producedToday": producedToday, "dailyProductionLimit": dailyLimit, "dailyProductionRemaining": dailyRemaining, "maximumProductionNow": maximumProductionNow})
 	}
 	write(w, http.StatusOK, map[string]any{"units": items, "population": population, "provinces": provinces, "serverDate": time.Now().UTC().Format("2006-01-02"), "projectRequirementsEnabled": requireProjects})
 }
