@@ -3,6 +3,7 @@ import {Activity,Building2,ChevronRight,Globe2,PackageCheck,Plane,RadioTower,Shi
 import {calculateMaritimeRoute,type MapPoint} from './maritimeRouting';
 import './world-traffic.css';
 import './world-news.css';
+import './world-news-split.css';
 
 type HomeNation={id:string;name:string;leaderName:string;continent:string;population:number;powerLevel:number;cityCount:number;allianceID?:string;allianceName?:string;locationLat?:number|null;locationLng?:number|null};
 type CurrentNation={ID:string;Name:string;LeaderName:string;Continent:string;Population:number;PowerLevel:number;LocationLat?:number|null;LocationLng?:number|null};
@@ -25,7 +26,7 @@ export default function HomeScreen(){
  return <div className="world-command">
   <section className="world-command-heading"><div><span className="eyebrow">WORLD OVERVIEW</span><h2>Diplomatia at a glance</h2></div><div className="world-live"><i/><span>Live world</span><b>{data.activePlayers} active now</b></div></section>
   <section className="world-indicator-strip">{primaryStats.map(([label,value,Icon])=><article key={label}><Icon/><span>{label}</span><b title={Number(value).toLocaleString()}>{compact(value)}</b></article>)}</section>
-  <WorldNews items={news}/>
+  <WorldNews items={news} homeRegion={nation.Continent}/>
   <div className="world-command-grid">
    <section className="world-map-panel"><header><div><span className="eyebrow">GEOPOLITICAL MAP</span><h3>Leading nations</h3></div><span>Power Level ranking · top 10{mapNations.length>10?' + your nation':''}</span></header><WorldCommandMap nations={mapNations} conflicts={conflicts}/></section>
    <section className="world-rankings"><header><div><span className="eyebrow">WORLD RANKING</span><h3>Leading nations</h3></div><button onClick={()=>navigate('/leaderboards')}>All rankings <ChevronRight/></button></header><div className="world-ranking-list">{leaders.map((item,index)=><button className={item.id===nation.ID?'current':''} key={item.id} onClick={()=>navigate(`/nation/${encodeURIComponent(item.id)}`)}><span className="rank-number">{String(index+1).padStart(2,'0')}</span><img src={`/api/nations/${encodeURIComponent(item.id)}/flag`} alt=""/><span><b>{item.name}</b><small>{item.continent}{item.allianceName?` · ${item.allianceName}`:''}</small></span><strong title={`${Number(item.powerLevel||0).toLocaleString()} Power Level`}>{compact(item.powerLevel)} PL</strong></button>)}</div></section>
@@ -38,7 +39,15 @@ export default function HomeScreen(){
  </div>
 }
 
-function WorldNews({items}:{items:HomeNews[]}){return <section className="world-news-wire"><header><div><span className="eyebrow">WORLD NEWS</span><h3>Latest dispatches</h3></div><span className="world-news-live"><i/>Live desk</span></header><div className="world-news-scroll">{items.length?items.map(item=><article className={`world-news-item ${item.category}`} key={item.id} onClick={()=>item.link&&navigate(item.link)} tabIndex={item.link?0:undefined} role={item.link?'link':undefined} onKeyDown={event=>{if(item.link&&(event.key==='Enter'||event.key===' '))navigate(item.link)}}><span>{item.category}</span><div><b>{item.headline}</b><p>{item.summary}</p></div><time dateTime={item.createdAt}>{newsAge(item.createdAt)}</time></article>):<div className="world-news-empty">No major developments are being reported.</div>}</div></section>}
+function WorldNews({items,homeRegion}:{items:HomeNews[];homeRegion:string}){
+ const[region,setRegion]=useState(homeRegion),[regional,setRegional]=useState<HomeNews[]>([]),[loading,setLoading]=useState(true);
+ useEffect(()=>{setRegion(homeRegion)},[homeRegion]);
+ useEffect(()=>{let active=true;setLoading(true);void fetch(`/api/world/news?region=${encodeURIComponent(region)}`,{credentials:'include'}).then(response=>response.ok?response.json():[]).then(result=>{if(active)setRegional(result)}).catch(()=>{if(active)setRegional([])}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[region]);
+ return <section className="world-news-wire"><header><div><span className="eyebrow">NEWS WIRE</span><h3>Current events</h3></div><span className="world-news-live"><i/>Live desk</span></header><div className="world-news-columns"><NewsDesk title="World news" items={items} empty="No major world developments are being reported."/><div className="world-news-desk regional"><header><div><span className="eyebrow">REGIONAL DESK</span><h4>{region}</h4></div><label><span>Region</span><select value={region} onChange={event=>setRegion(event.target.value)}>{Object.keys(continentCenters).map(value=><option value={value} key={value}>{value}</option>)}</select></label></header>{loading?<div className="world-news-empty">Loading regional dispatches…</div>:<NewsList items={regional} empty={`No current developments are being reported from ${region}.`}/>}</div></div></section>
+}
+
+function NewsDesk({title,items,empty}:{title:string;items:HomeNews[];empty:string}){return <div className="world-news-desk"><header><div><span className="eyebrow">GLOBAL DESK</span><h4>{title}</h4></div></header><NewsList items={items} empty={empty}/></div>}
+function NewsList({items,empty}:{items:HomeNews[];empty:string}){return <div className="world-news-scroll">{items.length?items.map(item=><article className={`world-news-item ${item.category}`} key={item.id} onClick={()=>item.link&&navigate(item.link)} tabIndex={item.link?0:undefined} role={item.link?'link':undefined} onKeyDown={event=>{if(item.link&&(event.key==='Enter'||event.key===' '))navigate(item.link)}}><span>{item.category}</span><div><b>{item.headline}</b><p>{item.summary}</p></div><time dateTime={item.createdAt}>{newsAge(item.createdAt)}</time></article>):<div className="world-news-empty">{empty}</div>}</div>}
 
 function newsAge(raw:string){const seconds=Math.max(0,Math.floor((Date.now()-new Date(raw).getTime())/1000));if(seconds<60)return'just now';if(seconds<3600)return`${Math.floor(seconds/60)}m`;if(seconds<86400)return`${Math.floor(seconds/3600)}h`;return`${Math.floor(seconds/86400)}d`}
 

@@ -237,7 +237,18 @@ func direction(change float64) string {
 }
 
 func (a *app) worldNews(w http.ResponseWriter, r *http.Request) {
-	rows, err := a.db.QueryContext(r.Context(), `SELECT id,category,headline,summary,COALESCE(link_path,''),created_at FROM world_news_items WHERE expires_at>UTC_TIMESTAMP() ORDER BY created_at DESC,importance DESC LIMIT 20`)
+	region := strings.TrimSpace(r.URL.Query().Get("region"))
+	if region != "" && !continents[region] {
+		problem(w, http.StatusBadRequest, "Unknown news region.")
+		return
+	}
+	rows, err := a.db.QueryContext(r.Context(), `SELECT i.id,i.category,i.headline,i.summary,COALESCE(i.link_path,''),i.created_at
+		FROM world_news_items i
+		LEFT JOIN conflicts c ON i.subject_key=CONCAT('war:',c.id)
+		LEFT JOIN nations attacker ON attacker.id=c.attacker_id
+		LEFT JOIN nations defender ON defender.id=c.defender_id
+		WHERE i.expires_at>UTC_TIMESTAMP() AND (?='' OR attacker.continent=? OR defender.continent=?)
+		ORDER BY i.created_at DESC,i.importance DESC LIMIT 20`, region, region, region)
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "World news is temporarily unavailable.")
 		return
